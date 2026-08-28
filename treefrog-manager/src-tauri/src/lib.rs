@@ -31,8 +31,24 @@ pub struct PlanEntry {
     pub action: String, // copy | extract | skip_unchanged | skip_duplicate | conflict | manual_review | unsupported_archive
     pub reason: String,
     pub hash: Option<String>,
+    #[serde(default)]
+    pub source_hash: Option<String>,
+    #[serde(default)]
+    pub destination_hash: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
     pub size: Option<u64>,
     pub group: Option<Vec<String>>,
+    #[serde(default)]
+    pub members: Option<Vec<String>>,
+    #[serde(default)]
+    pub default_action: Option<String>,
+    #[serde(default)]
+    pub resolution: Option<String>,
+    #[serde(default)]
+    pub resolved_action: Option<String>,
+    #[serde(default)]
+    pub original_destination: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

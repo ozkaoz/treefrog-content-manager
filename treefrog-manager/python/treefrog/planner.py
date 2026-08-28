@@ -147,6 +147,128 @@ def _detect_collisions(destinations):
             seen[norm] = d
     return collisions
 
+def _content_type_for_classification(c, profile):
+    kind = c.get("kind")
+    if kind == "rom":
+        sys_id = c.get("system_id") or "unknown"
+        return f"rom/{sys_id}"
+    if kind == "music":
+        return "music"
+    if kind == "video":
+        return "video"
+    if kind == "image":
+        return "image"
+    if kind == "ebook":
+        return "ebook"
+    if kind == "bios":
+        return "bios"
+    if kind == "lgpt_sample":
+        return "lgpt/sample"
+    if kind == "lgpt_project":
+        return "lgpt/project"
+    if kind == "archive":
+        return "archive"
+    return "unknown"
+
+# Phase 2B resolution model
+VALID_RESOLUTIONS = {"skip", "replace", "keep_both", "keep_destination", "keep_source"}
+
+def _default_resolution_for_action(action: str) -> str:
+    if action == "skip_duplicate":
+        return "skip"
+    if action == "skip_unchanged":
+        return "skip"
+    if action == "conflict":
+        return "conflict"
+    if action == "manual_review":
+        return "manual_review"
+    if action == "unsupported_archive":
+        return "skip"
+    if action in ("copy", "extract"):
+        return "copy"
+    return "skip"
+
+def _apply_single_resolution(entry, resolution: str):
+    orig_action = entry.get("action")
+    dest = entry.get("destination")
+    if not resolution or resolution not in VALID_RESOLUTIONS:
+        return entry
+    resolved = dict(entry)
+    resolved["resolution"] = resolution
+    if "default_action" not in resolved:
+        resolved["default_action"] = orig_action
+    if resolution == "skip":
+        resolved["resolved_action"] = "skip"
+        resolved["reason"] = entry.get("reason", "") + " [resolved: skip]"
+    elif resolution == "keep_destination":
+        resolved["resolved_action"] = "skip"
+        resolved["reason"] = entry.get("reason", "") + " [resolved: keep_destination]"
+    elif resolution in ("replace", "keep_source"):
+        if orig_action in ("conflict", "manual_review", "skip_duplicate"):
+            resolved["resolved_action"] = "copy" if orig_action == "skip_duplicate" else "replace"
+            resolved["reason"] = entry.get("reason", "") + f" [resolved: {resolution}]"
+        else:
+            resolved["resolved_action"] = "copy"
+            resolved["reason"] = entry.get("reason", "") + f" [resolved: {resolution}]"
+    elif resolution == "keep_both":
+        p = pathlib.Path(dest)
+        if "." in p.name and p.suffix:
+            new_name = f"{p.stem}_1{p.suffix}"
+            new_dest = str(p.parent / new_name) if str(p.parent) != "." else new_name
+        else:
+            new_dest = dest + "_1"
+        new_dest = new_dest.replace("\\", "/")
+        resolved["destination"] = new_dest
+        resolved["resolved_action"] = "copy" if orig_action in ("skip_duplicate", "conflict", "copy", "extract") else "extract"
+        if orig_action == "extract":
+            resolved["resolved_action"] = "extract"
+        resolved["reason"] = entry.get("reason", "") + " [resolved: keep_both -> renamed]"
+        resolved["original_destination"] = dest
+    else:
+        resolved["resolved_action"] = orig_action
+    return resolved
+
+def apply_resolutions(plan, decisions: dict):
+    if not decisions:
+        return plan
+    new_entries = []
+    for idx, entry in enumerate(plan.get("entries", [])):
+        key = None
+        if str(idx) in decisions:
+            key = str(idx)
+        elif entry.get("source") in decisions:
+            key = entry.get("source")
+        elif entry.get("destination") in decisions:
+            key = entry.get("destination")
+        combined = f"{entry.get('source')}->{entry.get('destination')}"
+        if combined in decisions:
+            key = combined
+        resolution = decisions.get(key) if key else None
+        if idx in decisions:
+            resolution = decisions[idx]
+        if resolution:
+            new_entries.append(_apply_single_resolution(entry, resolution))
+        else:
+            e = dict(entry)
+            if "resolved_action" not in e:
+                e["resolved_action"] = e.get("action")
+                e["resolution"] = _default_resolution_for_action(e.get("action"))
+                if "default_action" not in e:
+                    e["default_action"] = e.get("action")
+            new_entries.append(e)
+    new_plan = dict(plan)
+    new_plan["entries"] = new_entries
+    resolved_summary = {
+        "skip": sum(1 for e in new_entries if e.get("resolved_action") == "skip"),
+        "copy": sum(1 for e in new_entries if e.get("resolved_action") == "copy"),
+        "extract": sum(1 for e in new_entries if e.get("resolved_action") == "extract"),
+        "replace": sum(1 for e in new_entries if e.get("resolved_action") == "replace"),
+        "conflict": sum(1 for e in new_entries if e.get("resolved_action") == "conflict"),
+        "manual_review": sum(1 for e in new_entries if e.get("resolved_action") == "manual_review"),
+    }
+    new_plan["resolved_summary"] = resolved_summary
+    return new_plan
+
 def plan(scanned, sd_root: str, profile):
     sd_path = pathlib.Path(sd_root)
     entries = []
@@ -467,16 +589,16 @@ def plan(scanned, sd_root: str, profile):
         dst_hash = None
 
         if exists:
-            dst_size = dest_abs.stat().st_size if dest_abs.is_file() else -1
-            if dst_size != sf["size"]:
-                same_hash = False
-            else:
-                try:
-                    src_hash = hmod.sha256_file(sf["source_path"])
-                    dst_hash = hmod.sha256_file(dest_abs)
-                    same_hash = (src_hash == dst_hash)
-                except:
+            try:
+                src_hash = hmod.sha256_file(sf["source_path"])
+                dst_hash = hmod.sha256_file(dest_abs) if dest_abs.is_file() else None
+                # Sizes differ => cannot be same hash, but still provide hashes for UI
+                if dest_abs.is_file() and dest_abs.stat().st_size != sf["size"]:
                     same_hash = False
+                else:
+                    same_hash = (src_hash == dst_hash) if dst_hash else False
+            except:
+                same_hash = False
             cls = hmod.classify_duplicate(True, same_hash, True)
             if cls == "unchanged":
                 unchanged+=1; action="skip_unchanged"; reason="same path + same hash -> unchanged"
@@ -504,7 +626,81 @@ def plan(scanned, sd_root: str, profile):
         else:
             group_names = None
 
-        entries.append({"source": src_str, "destination": dest_rel, "action": action, "reason": reason, "hash": src_hash, "size": sf["size"], "group": group_names})
+        # Determine content_type for UI
+        content_type = _content_type_for_classification(c, profile)
+        # For grouped, content_type is grouped
+        if sf.get("group"):
+            content_type = "grouped/CUE_BBIN" if "cue" in sf["source_path"].suffix.lower() or any("cue" in str(g).lower() for g in (sf.get("group") or [])) else content_type
+
+        entry = {
+            "source": src_str,
+            "destination": dest_rel,
+            "action": action,
+            "reason": reason,
+            "hash": src_hash,
+            "source_hash": src_hash,
+            "destination_hash": dst_hash,
+            "content_type": content_type,
+            "size": sf["size"],
+            "group": group_names,
+            "members": group_names,
+            "default_action": action,
+            "resolution": _default_resolution_for_action(action),
+            "resolved_action": action,
+        }
+        # For conflict/duplicate/manual, keep both hashes for UI
+        entries.append(entry)
+
+    # Enrich any entries that were created earlier (archive paths) with missing metadata for UI consistency
+    for e in entries:
+        # Content type: grouped takes precedence
+        if "content_type" not in e or not e["content_type"]:
+            if e.get("members") and len(e["members"]) > 1:
+                e["content_type"] = "grouped/CUE_BBIN"
+            elif e.get("group") and len(e["group"]) > 1:
+                e["content_type"] = "grouped/CUE_BBIN"
+            else:
+                dest = e.get("destination", "")
+                if "cps" in dest or "neogeo" in dest or "m2k" in dest:
+                    e["content_type"] = "rom/arcade"
+                elif dest.startswith("roms/"):
+                    parts = dest.split("/")
+                    if len(parts) >= 2:
+                        e["content_type"] = f"rom/{parts[1]}"
+                    else:
+                        e["content_type"] = "rom/unknown"
+                elif dest.startswith("lgpt/"):
+                    e["content_type"] = "lgpt/project" if "projects" in dest else "lgpt/sample"
+                elif dest.startswith("roms/music"):
+                    e["content_type"] = "music"
+                else:
+                    e["content_type"] = "unknown"
+        if "source_hash" not in e or e["source_hash"] is None:
+            e["source_hash"] = e.get("hash")
+        if "destination_hash" not in e or e["destination_hash"] is None:
+            # For conflict where destination exists, try to provide destination_hash for UI
+            if e.get("action") in ("conflict", "manual_review") and e.get("destination"):
+                # Try to hash destination if it exists on SD and we have not already
+                # We have sd_path available, but in enrichment we don't have it directly; keep as None if not already set
+                # The planner already set it for non-archive conflicts, for archive extracts it was set via inner_hash logic
+                e["destination_hash"] = e.get("destination_hash")
+            else:
+                e["destination_hash"] = e.get("destination_hash")
+        if "default_action" not in e:
+            e["default_action"] = e.get("action")
+        if "resolution" not in e:
+            e["resolution"] = _default_resolution_for_action(e.get("action"))
+        if "resolved_action" not in e:
+            e["resolved_action"] = e.get("action")
+        if "members" not in e:
+            e["members"] = e.get("group")
+        # Ensure deterministic keys: sort members if present
+        if e.get("members"):
+            e["members"] = sorted(e["members"])
+            e["group"] = sorted(e["group"]) if e.get("group") else e["members"]
+
+    # Final deterministic sort by source then destination (stable)
+    entries.sort(key=lambda x: (x.get("source", ""), x.get("destination", "")))
 
     summary = {"unchanged": unchanged, "new": new, "changed": changed, "duplicate_content": duplicate, "conflicts": conflicts, "deletions": 0, "manual_review": manual, "unsupported_archive": unsupported}
     warnings = ["PROVISIONAL_UNVALIDATED video preset — not hardware validated", "arch archives bounded: depth=1 entries=1024 expansion=1GiB"]

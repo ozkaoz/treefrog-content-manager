@@ -1,6 +1,6 @@
 # DECISIONS — Durable Technical Decisions
 
-**Last reviewed:** 2026-08-29
+**Last reviewed:** 2026-08-28
 **Policy:** Only durable architecture/project decisions. Operational events (push, copy to SD, one-off build PASS) belong in Git/evidence, not here.
 
 | Field | Meaning |
@@ -258,9 +258,9 @@
 
 ---
 
-## DEC-2026-08-29-01 — Phase 2A archive ingestion: profile-driven, temp-workspace, logical-unit planner
+## DEC-2026-08-28-02 — Phase 2A archive ingestion: profile-driven, temp-workspace, logical-unit planner
 
-**Date:** 2026-08-29
+**Date:** 2026-08-28
 **Status:** ACTIVE
 **Scope:** TreeFrog Content Manager / archive ingestion / scanner / planner / profiles
 
@@ -275,6 +275,26 @@
 **Evidence:** `profiles/treefrogui/archive_policy.json` (handlers, safety, modes, per_system, grouping), `profile.json 1.1.0`, `systems.json 1.1.0`, `treefrog-manager/python/treefrog/archive.py` (full safety + HANDLERS), `treefrog-manager/python/treefrog/planner.py` (logical units, manual_review, unsupported), `treefrog-manager/src-tauri/src/archive.rs` (ZipHandler, stubs, drive-letter, hardlink, collision, temp), `treefrog-manager/src-tauri/src/planner.rs` (grouped, mode, temp hashing), `treefrog-manager/tests/test_phase2a_archive_ingestion.py` 22 tests PASS, `pytest treefrog-manager/tests` 53 PASS, `test_agent_context_contract PASS`, `preflight PASS`, `git diff -- sd_root` empty.
 
 **Related:** `profiles/treefrogui/archive_policy.json`, `profiles/treefrogui/profile.json`, `profiles/treefrogui/systems.json`, `treefrog-manager/python/treefrog/archive.py`, `treefrog-manager/python/treefrog/planner.py`, `treefrog-manager/src-tauri/src/archive.rs`, `treefrog-manager/src-tauri/src/planner.rs`, `treefrog-manager/src-tauri/src/profile.rs`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`, `DEC-2026-08-28-01`
+
+---
+
+## DEC-2026-08-28-03 — Phase 2B duplicate/conflict resolution: planner single source of truth
+
+**Date:** 2026-08-28
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / planner / duplicate/conflict / UI
+
+**Context:** Phase 2B requires deterministic duplicate/conflict layer on top of scanner/archive/logical-unit planner + SHA-256 engine, with zero SD writes. Need to distinguish exact duplicate / same-filename-diff-content (conflict) / different-filename-identical (alias) / grouped identical / archive-vs-extracted / unchanged, expose full metadata for UI, support explicit overrideable resolutions, keep planner as single source.
+
+**Decision:** Extend planner entries to carry `source`, `destination`, `logical content type` (`content_type` e.g. `rom/GBA`, `grouped/CUE_BBIN`, `archive-payload`), `source_hash`, `destination_hash`, `reason`, `logical-unit members` (`members`/`group`), `default_action`, `resolution`, `resolved_action`, `original_destination` (for keep_both). Defaults: exact duplicate → `skip` (`skip_duplicate`), same filename different SHA → `conflict`, different filename identical SHA → `duplicate` (`skip_duplicate`), grouped identical → `skip_duplicate` with combined hash, archive-vs-extracted → not double-counted via temp-hashed inner content, unchanged → `skip_unchanged`. All defaults overrideable via explicit `resolution` in `{skip, replace, keep_both, keep_destination, keep_source}`; `apply_resolutions(plan, decisions)` maps `conflict`→`replace`/`skip`/`keep_both` (renamed `_1`), `duplicate`→`skip`/`keep_both`, never silently replaces. Planner remains single source of truth: `plan(scanned, sd_root, profile)` is deterministic (stable-sort `source`/`destination`, sorted members, sorted group hashes) and future SD writers must execute its output (via `resolved_action`/`destination` after `apply_resolutions`) rather than recomputing classification. UI (`App.tsx`, `DryRunPreview.tsx`) shows `status/action`, `source`, `destination`, `reason`, `source_hash`/`destination_hash` (first 16 chars), `content_type`, `members`, and per-entry `<select>` for `skip/replace/keep_both/keep_destination/keep_source` (read-only preview, no SD writes). Grouped CUE/BIN handled as one logical unit.
+
+**Reason:** Deterministic, metadata-rich planner with explicit overrideable resolutions prevents silent data loss, enables auditable UI, and keeps one decision system. Treating planner as single source avoids divergence where a future writer might reclassify differently from preview.
+
+**Consequences:** `treefrog-manager/python/treefrog/planner.py` and `src-tauri/src/planner.rs` now expose full metadata and `apply_resolutions`; UI shows hashes/members/resolution controls but remains read-only; tests cover 13 Phase 2B cases. Future SD writing (Phase 2C) must take `plan`/`resolved_plan` as input, not re-derive.
+
+**Evidence:** `treefrog-manager/python/treefrog/planner.py` (2B helpers, content_type, source_hash/destination_hash, apply_resolutions), `src-tauri/src/planner.rs` (same, `content_type_for_classification`, `apply_resolutions`), `src-tauri/src/lib.rs` (PlanEntry new fields), `treefrog-manager/src/App.tsx` + `DryRunPreview.tsx` (resolution UI), `tests/test_phase2b_duplicate_resolution.py` 13 tests PASS, `pytest 66 PASS`, `preflight PASS`, `git diff -- sd_root` empty.
+
+**Related:** `treefrog-manager/python/treefrog/planner.py`, `treefrog-manager/src-tauri/src/planner.rs`, `treefrog-manager/src/App.tsx`, `DEC-2026-08-28-02`, `docs/ARCHITECTURE.md`
 
 ---
 

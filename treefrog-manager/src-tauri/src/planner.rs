@@ -140,6 +140,111 @@ fn detect_collisions(dests: &[String]) -> Vec<(String,String)> {
     out
 }
 
+fn content_type_for_classification(kind: &crate::classify::Kind, system_id: &Option<String>) -> String {
+    match kind {
+        crate::classify::Kind::Rom => format!("rom/{}", system_id.clone().unwrap_or("unknown".to_string())),
+        crate::classify::Kind::Music => "music".to_string(),
+        crate::classify::Kind::Video => "video".to_string(),
+        crate::classify::Kind::Image => "image".to_string(),
+        crate::classify::Kind::Ebook => "ebook".to_string(),
+        crate::classify::Kind::Bios => "bios".to_string(),
+        crate::classify::Kind::LgptSample => "lgpt/sample".to_string(),
+        crate::classify::Kind::LgptProject => "lgpt/project".to_string(),
+        crate::classify::Kind::Archive => "archive".to_string(),
+        crate::classify::Kind::Unknown => "unknown".to_string(),
+    }
+}
+
+const VALID_RESOLUTIONS: &[&str] = &["skip", "replace", "keep_both", "keep_destination", "keep_source"];
+
+fn default_resolution_for_action(action: &str) -> String {
+    match action {
+        "skip_duplicate" => "skip".to_string(),
+        "skip_unchanged" => "skip".to_string(),
+        "conflict" => "conflict".to_string(),
+        "manual_review" => "manual_review".to_string(),
+        "unsupported_archive" => "skip".to_string(),
+        "copy" | "extract" => "copy".to_string(),
+        _ => "skip".to_string(),
+    }
+}
+
+fn apply_single_resolution(entry: &crate::PlanEntry, resolution: &str) -> crate::PlanEntry {
+    let mut resolved = entry.clone();
+    resolved.resolution = Some(resolution.to_string());
+    if resolved.default_action.is_none() {
+        resolved.default_action = Some(entry.action.clone());
+    }
+    match resolution {
+        "skip" => {
+            resolved.resolved_action = Some("skip".to_string());
+            resolved.reason = format!("{} [resolved: skip]", entry.reason);
+        },
+        "keep_destination" => {
+            resolved.resolved_action = Some("skip".to_string());
+            resolved.reason = format!("{} [resolved: keep_destination]", entry.reason);
+        },
+        "replace" | "keep_source" => {
+            let ra = if entry.action == "skip_duplicate" { "copy".to_string() } else { "replace".to_string() };
+            resolved.resolved_action = Some(ra);
+            resolved.reason = format!("{} [resolved: {}]", entry.reason, resolution);
+        },
+        "keep_both" => {
+            let dest = entry.destination.clone();
+            let p = Path::new(&dest);
+            let new_dest = if p.extension().is_some() && p.file_name().is_some() {
+                let stem = p.file_stem().unwrap().to_string_lossy().to_string();
+                let ext = p.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+                let parent = p.parent().map(|pp| pp.to_string_lossy().to_string()).unwrap_or_default();
+                if parent.is_empty() || parent == "." {
+                    format!("{}_1{}", stem, ext)
+                } else {
+                    format!("{}/{}_1{}", parent, stem, ext)
+                }
+            } else {
+                format!("{}_1", dest)
+            };
+            resolved.destination = new_dest.replace('\\', "/");
+            resolved.original_destination = Some(dest);
+            resolved.resolved_action = Some(if entry.action == "extract" { "extract".to_string() } else { "copy".to_string() });
+            resolved.reason = format!("{} [resolved: keep_both -> renamed]", entry.reason);
+        },
+        _ => {
+            resolved.resolved_action = Some(entry.action.clone());
+        }
+    }
+    resolved
+}
+
+pub fn apply_resolutions(plan: crate::Plan, decisions: &std::collections::HashMap<String, String>) -> crate::Plan {
+    let mut new_entries = Vec::new();
+    for (idx, entry) in plan.entries.iter().enumerate() {
+        let key_idx = idx.to_string();
+        let key_src = entry.source.clone();
+        let key_dst = entry.destination.clone();
+        let key_combined = format!("{}->{}", entry.source, entry.destination);
+        let resolution = decisions.get(&key_idx)
+            .or_else(|| decisions.get(&key_src))
+            .or_else(|| decisions.get(&key_dst))
+            .or_else(|| decisions.get(&key_combined))
+            .or_else(|| decisions.get(&idx.to_string()));
+        if let Some(res) = resolution {
+            new_entries.push(apply_single_resolution(entry, res));
+        } else {
+            let mut e = entry.clone();
+            if e.resolved_action.is_none() {
+                e.resolved_action = Some(e.action.clone());
+                e.resolution = Some(default_resolution_for_action(&e.action));
+                if e.default_action.is_none() {
+                    e.default_action = Some(e.action.clone());
+                }
+            }
+            new_entries.push(e);
+        }
+    }
+    crate::Plan { summary: plan.summary.clone(), entries: new_entries, warnings: plan.warnings.clone() }
+}
+
 pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -> anyhow::Result<Plan> {
     let sd_path = Path::new(sd_root);
     let mut entries: Vec<PlanEntry> = Vec::new();
@@ -432,23 +537,26 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             continue;
         }
 
-        // Normal file: hash compare
+        // Normal file: hash compare (always compute hashes for UI, even when sizes differ)
         let exists = dest_abs.exists();
         let same_path = exists;
         let (src_hash, dst_hash) = if exists {
-            let dst_meta = std::fs::metadata(&dest_abs).ok();
-            let dst_size = dst_meta.map(|m| m.len()).unwrap_or(0);
-            if dst_size != sf.size {
-                (None, None)
-            } else {
-                let sh = hash::sha256_file(&sf.source_path).ok();
-                let dh = hash::sha256_file(&dest_abs).ok();
-                (sh, dh)
-            }
+            let sh = hash::sha256_file(&sf.source_path).ok();
+            let dh = hash::sha256_file(&dest_abs).ok();
+            (sh, dh)
         } else {
             (None, None)
         };
-        let same_hash = match (&src_hash, &dst_hash) { (Some(a), Some(b)) => a==b, _ => false };
+        let same_hash = if exists {
+            if let (Some(a), Some(b)) = (&src_hash, &dst_hash) {
+                // Also check size: if sizes differ, hashes cannot be equal, but we already have hashes
+                if std::fs::metadata(&dest_abs).map(|m| m.len()).unwrap_or(0) != sf.size {
+                    false
+                } else {
+                    a == b
+                }
+            } else { false }
+        } else { false };
 
         let duplicate_elsewhere = if !same_path {
             if let Ok(h) = hash::sha256_file(&sf.source_path) {
@@ -476,15 +584,77 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
         let r = if action=="copy" { reason } else { reason2.to_string() };
 
         let src_str = if let Some(members) = sf.group_members { format!("{} (group {} files)", sf.source_path.display(), members.len()) } else { sf.source_path.to_string_lossy().to_string() };
+        let ct = content_type_for_classification(&sf.classification.kind, &sf.classification.system_id);
+        let members_vec = sf.group_members.as_ref().map(|v| v.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect::<Vec<_>>());
         entries.push(PlanEntry {
             source: src_str,
-            destination: dest_rel,
-            action: action.into(),
-            reason: r,
-            hash: src_hash,
+            destination: dest_rel.clone(),
+            action: action.clone().into(),
+            reason: r.clone(),
+            hash: src_hash.clone(),
+            source_hash: src_hash.clone(),
+            destination_hash: dst_hash.clone(),
+            content_type: Some(ct),
             size: Some(sf.size),
-            group: sf.group_members.map(|v| v.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect()),
+            group: members_vec.clone(),
+            members: members_vec,
+            default_action: Some(action.clone()),
+            resolution: Some(default_resolution_for_action(&action)),
+            resolved_action: Some(action.clone()),
+            original_destination: None,
         });
+    }
+
+    // Enrich entries with Phase 2B metadata for UI (content_type, hashes, resolution)
+    for e in &mut entries {
+        if e.content_type.is_none() {
+            // For grouped logical units, keep grouped type
+            if let Some(m) = &e.members {
+                if m.len() > 1 {
+                    e.content_type = Some("grouped/CUE_BBIN".to_string());
+                    continue;
+                }
+            }
+            if let Some(g) = &e.group {
+                if g.len() > 1 {
+                    e.content_type = Some("grouped/CUE_BBIN".to_string());
+                    continue;
+                }
+            }
+            let dest = e.destination.clone();
+            let ct = if dest.starts_with("roms/") {
+                let parts: Vec<&str> = dest.split('/').collect();
+                if parts.len() >= 2 { format!("rom/{}", parts[1]) } else { "rom/unknown".to_string() }
+            } else if dest.starts_with("lgpt/") {
+                if dest.contains("projects") { "lgpt/project".to_string() } else { "lgpt/sample".to_string() }
+            } else if dest.starts_with("roms/music") { "music".to_string() }
+            else if e.action == "copy" && e.destination.ends_with(".zip") { "archive-payload".to_string() }
+            else if dest.contains("archive") { "archive".to_string() }
+            else { "unknown".to_string() };
+            e.content_type = Some(ct);
+        }
+        if e.source_hash.is_none() {
+            e.source_hash = e.hash.clone();
+        }
+        // destination_hash already set where applicable; keep None otherwise
+        if e.default_action.is_none() {
+            e.default_action = Some(e.action.clone());
+        }
+        if e.resolution.is_none() {
+            e.resolution = Some(default_resolution_for_action(&e.action));
+        }
+        if e.resolved_action.is_none() {
+            e.resolved_action = Some(e.action.clone());
+        }
+        if e.members.is_none() {
+            e.members = e.group.clone();
+        }
+        if let Some(m) = &mut e.members { m.sort(); }
+        if let Some(g) = &mut e.group { g.sort(); }
+        // Ensure hash fields are consistent
+        if e.hash.is_none() && e.source_hash.is_some() {
+            e.hash = e.source_hash.clone();
+        }
     }
 
     // Deterministic: sort entries by source then destination

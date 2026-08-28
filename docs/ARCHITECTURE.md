@@ -1,8 +1,8 @@
 # TreeFrog Content Manager — Architecture
 
 **Version:** 1.1.0  
-**Date:** 2026-08-29  
-**Scope:** Phase 2A archive ingestion and safe temp extraction (zero SD writes) — read-only planner architecture
+**Date:** 2026-08-28  
+**Scope:** Phase 2B duplicate & conflict resolution (deterministic, single source of truth) — read-only planner architecture, zero SD writes
 
 ---
 
@@ -14,7 +14,7 @@ Stack: Tauri 2 + Rust backend + React TS frontend + SQLite + serde versioned JSO
 
 Filesystem layer is portable; Windows first.
 
-Invariant: **no SD writes in Phase 0-2A**. All archive work happens in a temporary workspace (`tempfile::TempDir` / `tempfile.TemporaryDirectory`), never to SD, never overwriting source.
+Invariant: **no SD writes in Phase 0-2B**. All archive work and duplicate checks happen in memory/temp (`tempfile::TempDir` / `SHA-256`), never to SD, never overwriting source, never silently replacing conflicting content.
 
 ---
 
@@ -83,36 +83,31 @@ Planner sorts `scanned` by `source_path` and archive inner entries are processed
 
 ---
 
-## 5. Planner — logical units, zero-write
+## 5. Planner — logical units, duplicate/conflict resolution, zero-write, single source of truth
 
-`planner.rs` / `planner.py`: read-only, zero-write to SD. Input: `Vec<ScannedFile>` + `sd_root` + `profile`. Output: `Plan { summary, entries, warnings }`.
+`planner.rs` / `planner.py`: read-only, zero-write to SD. Input: `Vec<ScannedFile>` + `sd_root` + `profile`. Output: `Plan { summary, entries, warnings }` where planner is **single source of truth**; future SD writers must execute `resolved_action`/`destination` from `apply_resolutions` output, not recompute.
 
-**Summary:** `unchanged, new, changed, duplicate_content, conflicts, deletions=0, manual_review, unsupported_archive`
+**Summary:** `unchanged, new, changed, duplicate_content, conflicts, deletions=0, manual_review, unsupported_archive` plus `resolved_summary` after `apply_resolutions`.
 
-**Entry actions:** `copy, extract, skip_duplicate, skip_unchanged, conflict, manual_review, unsupported_archive`
+**Entry actions (default):** `copy, extract, skip_duplicate, skip_unchanged, conflict, manual_review, unsupported_archive`
+**Resolved actions after explicit decision:** `skip, copy, extract, replace, conflict, manual_review` (via `skip/replace/keep_both/keep_destination/keep_source`).
 
-**Flow for archive:**
+**Entry metadata for UI (Phase 2B):** `source`, `destination`, `action`, `reason`, `hash` (legacy), `source_hash`, `destination_hash`, `content_type` (`rom/GBA`, `grouped/CUE_BBIN`, `archive-payload`, `music`…), `size`, `group`/`members` (logical-unit members), `default_action`, `resolution`, `resolved_action`, `original_destination` (for `keep_both`).
 
-1. Check handler availability → `unsupported_archive` if stub.
-2. `inspect_archive` with limits → `SafetyViolation/Collision/NestedBomb` → `manual_review` (not `conflict`).
-3. Per-job `max_total_files_per_job` guard → `manual_review`.
-4. `decide_archive_mode` (profile-driven):
-   - `payload` → copy intact (hash archive file itself)
-   - `grouped` → `group_members` (CUE/BIN in same folder, stem match), one logical entry per group
-   - `extract_and_classify` / `container` → each member individually, but opportunistic CUE/BIN grouping if both present
-   - `manual` / `unsupported` → respective actions
-   - Mixed systems: **not** manual; mixed `GBA+SFC` in same zip extracts each to its correct system folder. Only `nested` or `collision` or `unknown` triggers `manual`.
-5. For `payload`: copy intact, duplicate check via `sha256(archive)` against `sd_hash_map` and `hash_to_dest`.
-6. For `extract`/`grouped`: for each logical group, `safe_extract_to_temp` to temp, hash inner content (`sha256(file)` or combined `sha256(sorted member hashes)` for groups), check `sd_hash_map` and `hash_to_dest` for *duplicate extracted payload* vs `duplicate archive`, check `dest.exists()` for `skip_unchanged`/`conflict` via `inner_hash == dst_hash`, detect collisions among archive members via `detect_collisions`.
+**Flow for archive (as in 2A):** handler check → `unsupported_archive`; `inspect_archive` safety → `manual_review`; per-job limit → `manual_review`; `decide_archive_mode` profile-driven (payload/grouped/extract/manual); for `payload` hash archive; for `extract`/`grouped` temp-hash inner content, check `sd_hash_map`/`hash_to_dest` for duplicate extracted payload, `dest.exists()` for `skip_unchanged`/`conflict`, collisions via `detect_collisions`.
 
-**Duplicate handling (SHA-256 exact):**
+**Duplicate handling (SHA-256 exact, Phase 2B):**
 
-- Identical content (same bytes, different path) → `skip_duplicate`
-- Same filename different content → `conflict` (if same path) or `copy` (if different path but different hash, it's still new)
-- Grouped payload identical → combined hash of sorted member hashes compared
-- Duplicate archive vs duplicate extracted payload → planner temp-hashes inner content, so a loose `game.gba` and a zip containing identical `inner.gba` are recognized as `skip_duplicate`, not two independent copies. *We do not silently classify container and its extracted file as two independent copies.*
+- Identical content (same logical bytes, any path) → `skip_duplicate` (default `skip`)
+- Same filename different SHA → `conflict` (default `conflict`, needs explicit `replace`/`keep_both`/`keep_destination`/`skip`)
+- Different filename identical SHA → `duplicate`/`alias` → `skip_duplicate` (default `skip`, overrideable to `keep_both`)
+- Grouped logical unit identical → combined `SHA-256(sorted member hashes)` compared → `skip_duplicate` (e.g., two identical CUE/BIN zips)
+- Archive container vs extracted payload → planner temp-hashes inner `inner.gba` and compares to loose `game.gba`; identical logical content → `skip_duplicate`, not two independent copies.
+- Unchanged target (source and destination already identical SHA) → `skip_unchanged`.
 
-All `hash_to_dest` and `sd_hash_map` are keyed by SHA-256, not filename. Cheap metadata (size) first, then SHA-256 only when needed.
+All `hash_to_dest` and `sd_hash_map` are keyed by SHA-256, not filename. Cheap metadata (size) first, then SHA-256 only when needed. Deterministic stable-sort `source` → `destination`, sorted members, sorted group hashes.
+
+**Resolution model (explicit, overrideable):** `VALID_RESOLUTIONS = {skip, replace, keep_both, keep_destination, keep_source}`; `_default_resolution_for_action` maps `skip_duplicate→skip`, `conflict→conflict`, etc.; `apply_resolutions(plan, decisions)` (where `decisions: {index|source|destination|source->destination: resolution}`) returns new plan with `resolved_action`/`destination` (for `keep_both` adds `_1` suffix) and `reason` annotated `[resolved: …]`, without recomputing classification — planner remains single source.
 
 **Temp workspace:** every `safe_extract_to_temp` call uses a fresh `TempDir` that is dropped after hashing. No file is ever written to `sd_path`.
 
@@ -120,7 +115,7 @@ All `hash_to_dest` and `sd_hash_map` are keyed by SHA-256, not filename. Cheap m
 
 ## 6. Why profile-driven instead of globally extracting every archive
 
-*Decision:* `DEC-2026-08-29-01`
+*Decision:* `DEC-2026-08-28-02`
 
 Some TreeFrog content **must** remain compressed. Arcade cores (`cps1/cps2/cps3/neogeo/m2k`) are validated as `.zip` payloads; their cores open the zip directly and expect the romset's internal layout (often dozens of `.rom` blobs with specific CRCs). Extracting such a zip would break core loading and scatter opaque blobs into `roms/cps1/` where the core would not find them.
 
@@ -134,10 +129,11 @@ See `archive_policy.json:rationale`.
 
 ## 7. Testing
 
-`treefrog-manager/tests/` 53 tests:
+`treefrog-manager/tests/` 66 tests:
 
 - 31 original: profile_loader, scanner_classification, archive_inspection, duplicate_engine, dry_run_planner, sd_detection, bios_and_lgpt
-- 22 new Phase 2A (`test_phase2a_archive_ingestion.py`): valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS colon, collision, expansion limit, member count limit, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven
+- 22 Phase 2A (`test_phase2a_archive_ingestion.py`): valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS colon, collision, expansion limit, member count limit, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven
+- 13 Phase 2B (`test_phase2b_duplicate_resolution.py`): identical loose files, identical different filenames, same filename diff content, grouped CUE/BIN duplicates, archive vs extracted duplicates, destination unchanged, explicit replace/keep_destination/keep_both/skip, deterministic, collision/resolution metadata, zero SD writes
 
 All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `cubegm/`+`roms/` markers). No test writes to real SD.
 
@@ -145,15 +141,23 @@ All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `c
 
 ---
 
-## 8. Git discipline and next
+## 8. Planner as single source of truth
 
-- `sd_root/` untouched (`git diff -- sd_root` empty)
-- Content manager repo independent from LGPT runtime payload
-- Phase 2B (SD detection, sync execution with staging, progress, conflict handling, resume, SQLite) is next and **not** in this task.
+**Rule:** *The deployment planner is the single source of truth for content decisions; future SD writers must execute its output rather than independently reclassifying content.*
+
+`plan()` is deterministic and metadata-rich; `apply_resolutions()` only maps explicit user decisions to `resolved_action`/`destination` without re-running classification. No second competing decision system exists. The dry-run preview and the future `sync` command share the same `Plan` type (`lib.rs:Plan`, `App.tsx:Plan`). This prevents divergence where preview says `skip_duplicate` but writer would `copy`.
 
 ---
 
-## 9. Unresolved requiring real-device validation
+## 9. Git discipline and next
+
+- `sd_root/` untouched (`git diff -- sd_root` empty)
+- Content manager repo independent from LGPT runtime payload
+- Phase 2C (SD detection, sync execution with staging, progress, resume, SQLite) is next and **not** in this task. Phase 2B remains read-only (no `video conversion`, `BIOS UI`, `7z/RAR` implementation).
+
+---
+
+## 10. Unresolved requiring real-device validation
 
 - Arcade `.zip` payload handling is profile-driven as `payload` but not physically validated on R36SX that those cores require the zip to stay compressed (plausible per upstream docs/cores/arcade.md, but needs device).
 - 7z/RAR payload handling when handlers become available.

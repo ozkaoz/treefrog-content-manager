@@ -112,5 +112,5 @@
       "strategy": "normalize lowercased dest path + collision map"
     }
   },
-  "rationale": "Why profile-driven instead of globally extracting every archive: Some TreeFrog content MUST remain compressed. Arcade romsets (cps1/neogeo/m2k) are validated as .zip payloads per core; extracting them would break core loading. Other systems (NES/SNES/GBA) traditionally accept both loose and .zip but user may want to preserve .zip as-is for some sets. Hardcoding ZIP=>always extract in scanner would be wrong and not portable across devices. Profile-driven policy keeps scanner generic, planner deterministic, and allows future per-system tuning without rewriting planner. See DECISIONS.md DEC-2026-08-29-01."
+  "rationale": "Why profile-driven instead of globally extracting every archive: Some TreeFrog content MUST remain compressed. Arcade romsets (cps1/neogeo/m2k) are validated as .zip payloads per core; extracting them would break core loading. Other systems (NES/SNES/GBA) traditionally accept both loose and .zip but user may want to preserve .zip as-is for some sets. Hardcoding ZIP=>always extract in scanner would be wrong and not portable across devices. Profile-driven policy keeps scanner generic, planner deterministic, and allows future per-system tuning without rewriting planner. See DECISIONS.md DEC-2026-08-28-02."
 }

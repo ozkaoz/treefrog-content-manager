@@ -1,7 +1,7 @@
 # TreeFrog Content Manager — Development Plan
 
 **Version:** 1.1.0  
-**Date:** 2026-08-29  
+**Date:** 2026-08-28  
 **Scope:** Global TreeFrogUI SD-card content manager (desktop) — not per-device fork  
 **Stack:** Tauri 2 + Rust backend + React + TypeScript frontend + SQLite + serde + versioned declarative JSON profiles 1.1.0 + SHA-256 + FFmpeg/ffprobe adapter + maintained archive libs (ZIP implemented, 7z/RAR stubs)
 
@@ -62,10 +62,23 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 - **Tests:** `test_phase2a_archive_ingestion.py` 22 tests covering valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS, collision, expansion, member count, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven — **all run without SD**
 - **Gate:** `pytest treefrog-manager/tests` 53 PASS, `test_agent_context_contract PASS`, `preflight PASS`, `git diff -- sd_root` empty, zero-write
 
-### Phase 2B — SD Detection + Sync Execution + Progress + Conflict + Resume (next)
+### Phase 2B — Duplicate & Conflict Resolution (done, zero SD writes)
+
+> **Objective:** Deterministic duplicate/conflict layer on top of scanner/archive/logical-unit planner + SHA-256 engine; planner single source of truth; UI shows hashes/members/resolution.
+
+- [x] Planner distinguishes: exact duplicate (same hash) → `skip_duplicate` (default `skip`), same filename different content → `conflict` (default `conflict`), different filename identical → `duplicate`/`alias` → `skip_duplicate`, grouped identical → `skip_duplicate` with combined hash, archive-vs-extracted → not double-counted via temp-hashed inner content, unchanged → `skip_unchanged`; all via SHA-256 exact, cheap metadata first.
+- [x] Extend planner model: entries carry `source`, `destination`, `content_type`, `source_hash`, `destination_hash`, `reason`, `members`/`group`, `default_action`, `resolution`, `resolved_action`, `original_destination`; UI can explain.
+- [x] Explicit resolutions: `skip`, `replace`, `keep_both` (renamed `_1`), `keep_destination`, `keep_source`; defaults overrideable via `apply_resolutions(plan, decisions)`; never silently replace; `replace`/`keep_source` → `replace`, `keep_both` → renamed `copy`/`extract`, `keep_destination`/`skip` → `skip`.
+- [x] Determinism: stable-sort `source`/`destination`, sorted members, sorted group hashes; `plan(scanned, sd_root, profile)` deterministic.
+- [x] Planner / execution boundary: `planner` remains single source; future SD writers must execute `resolved_action`/`destination` from `apply_resolutions` output, not recompute.
+- [x] UI: `App.tsx` + `DryRunPreview.tsx` show `status/action`, `source`, `destination`, `reason`, `source_hash`/`destination_hash` (16 chars), `content_type`, `members`, per-entry `<select>` for 5 resolutions, read-only (no SD writes).
+- **Tests:** `test_phase2b_duplicate_resolution.py` 13 tests covering identical, alias, conflict, grouped, archive vs extracted, unchanged, explicit replace/keep_destination/keep_both/skip, deterministic, metadata, zero SD writes — **all run without SD, zero writes**.
+- **Gate:** `pytest 66 PASS` (53+13), `context-contract PASS`, `preflight PASS`, `git diff -- sd_root` empty
+
+### Phase 2C — SD Detection + Sync Execution + Progress + Resume (next)
 
 - SD detection via markers (`cubegm/` + `roms/` etc profile `sd_markers.json`), optional capability checks, mount health/writable probes, filesystem portable layer
-- Sync execution: staging + atomic rename where supported, progress events, cancellable without corrupt finals, conflict handling (skip/rename/replace with backup), resume/consistent state on interrupt
+- Sync execution: staging + atomic rename where supported, progress events, cancellable without corrupt finals, conflict handling via `resolved_action` from planner (skip/replace/keep_both), resume/consistent state on interrupt
 - Normal Sync must not delete destination files; deletion explicit separate action
 - SQLite deployments/history + tool/profile versioning
 - **Gate:** integration tests with temp SD fixtures, interruption tests, `git diff -- sd_root` still NO for manager ops outside target
@@ -142,9 +155,9 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ---
 
-## Next Exact Action (2026-08-29)
+## Next Exact Action (2026-08-28)
 
-- Phase 2A complete: archive ingestion with safe temp extraction and logical-unit planner — next is Phase 2B SD detection + sync execution (staging, progress, conflict, resume) — not in this task. Run `python3 -m pytest treefrog-manager/tests -v` + `bash scripts/agent_preflight.sh --allow-dirty` to verify.
+- Phase 2B complete: deterministic duplicate/conflict resolution with explicit overrideable decisions — next is Phase 2C SD detection + sync execution (staging, progress, resume) — not in this task. Run `python3 -m pytest treefrog-manager/tests -v` + `bash scripts/agent_preflight.sh --allow-dirty` to verify.
 
 ## Unresolved for real-device validation
 
