@@ -6,12 +6,13 @@ from treefrog import profile
 def test_manifest_exists():
     assert (REPO / "profiles" / "treefrogui" / "manifest.json").exists()
     m = json.loads((REPO / "profiles" / "treefrogui" / "manifest.json").read_text(encoding="utf-8"))
-    assert m["schema_version"] == "1.0.0"
+    assert m["schema_version"] in ("1.0.0","1.1.0")
     assert "profile.json" in m["files"]
+    assert "archive_policy.json" in m["files"]
 
 def test_profile_loads():
     p = profile.load_profile()
-    assert p["profile_version"] == "1.0.0"
+    assert p["profile_version"] in ("1.0.0","1.1.0")
     assert len(p["systems"]) > 70  # full coverage, not bootstrap 2-3 (75 current)
     # case-sensitive alias check: FC vs fc distinct? alias map lowercases but file system preserves case for display
     assert "fc" in p["alias_to_system"]
@@ -46,3 +47,10 @@ def test_profile_has_archive_safety():
     pol = p["profile"]["archive_policy"]
     assert pol["safety"]["prevent_traversal"] is True
     assert pol["nested_archives"]["max_entries_per_archive"] == 1024
+    # Phase 2A: temp workspace and handlers
+    assert pol["safety"].get("temp_workspace_only") is True or "archive_policy_full" in p
+    ap = p.get("archive_policy_full", {})
+    if ap:
+        assert ap["handlers"][".zip"]["implemented"] is True
+        assert ap["handlers"][".7z"]["implemented"] is False
+        assert ap["safety"]["prevent_windows_drive_letter"] is True

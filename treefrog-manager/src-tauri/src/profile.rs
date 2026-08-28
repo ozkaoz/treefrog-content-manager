@@ -26,6 +26,10 @@ pub struct ArchivePolicy {
     pub supported_extensions: Vec<String>,
     pub nested_archives: Option<NestedPolicy>,
     pub safety: Option<serde_json::Value>,
+    #[serde(default)]
+    pub profile_file: Option<String>,
+    #[serde(default)]
+    pub abstraction: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -56,17 +60,14 @@ pub struct SystemsFile {
 pub struct LoadedProfile {
     pub profile_version: String,
     pub systems: Vec<SystemEntry>,
-    // extension -> system ids (lowercased)
     pub ext_to_system: HashMap<String, Vec<String>>,
-    // lowercased folder alias -> system id
     pub alias_to_system: HashMap<String, String>,
     pub archive_valid_exts: Vec<String>,
     pub archive_policy: ArchivePolicy,
+    pub archive_policy_full: serde_json::Value,
 }
 
 pub fn load_profile() -> anyhow::Result<LoadedProfile> {
-    // profiles live at repo_root/profiles/treefrogui relative to this crate's manifest
-    // Try multiple candidates for dev vs installed.
     let candidates = [
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/treefrogui"),
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/treefrogui"),
@@ -80,13 +81,19 @@ pub fn load_profile() -> anyhow::Result<LoadedProfile> {
             break;
         }
     }
-    let base = base.ok_or_else(|| anyhow::anyhow!("profiles/treefrogui not found (tried CARGO_MANIFEST_DIR candidates)"))?;
+    let base = base.ok_or_else(|| anyhow::anyhow!("profiles/treefrogui not found"))?;
     let profile: Profile = serde_json::from_str(&fs::read_to_string(base.join("profile.json"))?)?;
     let systems: SystemsFile = serde_json::from_str(&fs::read_to_string(base.join("systems.json"))?)?;
+    let archive_policy_full: serde_json::Value = fs::read_to_string(base.join("archive_policy.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Object(Default::default()));
     let archive_policy = profile.archive_policy.clone().unwrap_or(ArchivePolicy {
         supported_extensions: vec![".zip".into(), ".7z".into(), ".rar".into()],
         nested_archives: Some(NestedPolicy { max_depth: 1, max_entries_per_archive: 1024, max_expansion_bytes: 1024*1024*1024, max_total_files_per_job: 10000 }),
         safety: None,
+        profile_file: None,
+        abstraction: None,
     });
 
     let mut ext_to_system: HashMap<String, Vec<String>> = HashMap::new();
@@ -107,7 +114,6 @@ pub fn load_profile() -> anyhow::Result<LoadedProfile> {
         alias_to_system,
         archive_valid_exts: archive_policy.supported_extensions.clone(),
         archive_policy,
+        archive_policy_full,
     })
 }
-
-// Python mirror: treefrog-manager/python/treefrog/profile.py loads same JSONs via stdlib json.

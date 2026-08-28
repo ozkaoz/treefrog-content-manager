@@ -1,9 +1,9 @@
 # TreeFrog Content Manager — Development Plan
 
-**Version:** 1.0.0  
-**Date:** 2026-08-28  
+**Version:** 1.1.0  
+**Date:** 2026-08-29  
 **Scope:** Global TreeFrogUI SD-card content manager (desktop) — not per-device fork  
-**Stack:** Tauri 2 + Rust backend + React + TypeScript frontend + SQLite + serde + versioned declarative JSON profiles + SHA-256 + FFmpeg/ffprobe adapter + maintained archive libs (ZIP/7z/RAR)
+**Stack:** Tauri 2 + Rust backend + React + TypeScript frontend + SQLite + serde + versioned declarative JSON profiles 1.1.0 + SHA-256 + FFmpeg/ffprobe adapter + maintained archive libs (ZIP implemented, 7z/RAR stubs)
 
 Windows is first supported desktop platform; core filesystem layer portable for later macOS/Linux.
 
@@ -28,28 +28,41 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 
 ## Phases
 
-### Phase 0 — Bootstrap (current)
+### Phase 0 — Bootstrap (done)
 
 - [x] Evidence: inspect live upstream TreeFrogUI (`tzubertowski/treefrog-ui` main, cores.md, docs/cores/*, docs/standalone-apps.md, sdcard) and LGPT R36SX Bacon-1.5 payload (`sd_root/`, LGPT_R36SX_Bacon-1.5_SHA256SUMS.txt)
-- [ ] Profile loader: versioned declarative JSON under `profiles/treefrogui/` (manifest, profile, systems, media, bios, lgpt, video_presets, sd_markers) with serde + Python mirror
-- [ ] App shell: Tauri 2 scaffold (`treefrog-manager/`), Rust backend, React+TS frontend, SQLite placeholder, CI stub, agent contract tests
-- [ ] Fixtures: archive samples, duplicate sets, media samples, BIOS patterns, LGPT sample/project samples
-- [ ] CURRENT/CONTEXT_MAP/DECISIONS preservation per AGENTS.md contracts
-- **Gate:** `scripts/agent_preflight.sh --allow-dirty`, `test_agent_context_contract.py PASS`, `test_release_audio_bootstrap.py PASS`, profile JSON schema validation PASS, no `sd_root` mutation (`git diff -- sd_root` = NO)
+- [x] Profile loader: versioned declarative JSON 1.0.0 under `profiles/treefrogui/` (manifest, profile, systems, media, bios, lgpt, video_presets, sd_markers) with serde + Python mirror
+- [x] App shell: Tauri 2 scaffold (`treefrog-manager/`), Rust backend, React+TS frontend, SQLite placeholder, CI stub, agent contract tests
+- [x] Fixtures: archive samples, duplicate sets, media samples, BIOS patterns, LGPT sample/project samples
+- [x] CURRENT/CONTEXT_MAP/DECISIONS preservation per AGENTS.md contracts
+- **Gate:** `scripts/agent_preflight.sh --allow-dirty` PASS, `test_agent_context_contract.py PASS`, `test_release_audio_bootstrap.py PASS`, profile JSON validation PASS, `git diff -- sd_root` = NO
 
-### Phase 1 — Scanner + Classification + Archive + Duplicate + Dry-Run Planner (first demonstrable milestone)
+### Phase 1 — Scanner + Classification + Archive + Duplicate + Dry-Run Planner (done)
 
 > **Milestone:** Select source folder + select TreeFrogUI SD + scan + preview exactly what would be copied/extracted/skipped/conflicted, without writing anything.
 
-- [ ] Scanner: recursive arbitrary source libraries; classify by profile + extension/content hints (not filenames alone); multi-file groups (CUE/BIN, CHD, m3u, baseq2, pico286 img sets) preserved as groups
-- [ ] Archive inspection: recognize ZIP/7z/RAR, inspect entries, determine if archive itself is valid runtime payload per profile, copy intact vs extract to canonical destination, bounded nested-archive policy, safety (traversal/absolute/symlink/collisions/limits/never silent overwrite)
-- [ ] Duplicate engine: SHA-256 exact identity; cheap metadata first; classify: same path+same hash unchanged, different path+same hash duplicate skip, same path+different hash conflict, new path+new hash copy; never delete source
-- [ ] Planner: dry-run preview table with counts (`unchanged / new / changed / duplicate_content / conflicts / deletions=0`) and per-item action (copy/extract/skip/conflict)
-- [ ] SD reader: read-only scan of destination for fingerprint comparison (no writes)
-- **Tests:** `test_scanner_classification.py`, `test_archive_inspection.py`, `test_duplicate_engine.py`, `test_dry_run_planner.py` + fixtures under `treefrog-manager/tests/fixtures/`
-- **Gate:** targeted unit/integration PASS, fixture tests PASS, formatter/linter/build PASS, CURRENT updated only for mutable state, no SD mutation
+- [x] Scanner: recursive arbitrary source libraries; classify by profile + extension/content hints (not filenames alone); multi-file groups (CUE/BIN, CHD, m3u, baseq2, pico286 img sets) preserved as groups
+- [x] Archive inspection (Phase 1 baseline): recognize ZIP, inspect entries, heuristic payload vs extract, bounded nested-archive policy, safety (traversal/absolute/symlink/collisions/limits/never silent overwrite) — extended in Phase 2A
+- [x] Duplicate engine: SHA-256 exact identity; cheap metadata first; classify: same path+same hash unchanged, different path+same hash duplicate skip, same path+different hash conflict, new path+new hash copy; never delete source
+- [x] Planner: dry-run preview table with counts (`unchanged / new / changed / duplicate_content / conflicts / deletions=0`) and per-item action (copy/extract/skip/conflict)
+- [x] SD reader: read-only scan of destination for fingerprint comparison (no writes)
+- **Tests:** `test_scanner_classification.py`, `test_archive_inspection.py`, `test_duplicate_engine.py`, `test_dry_run_planner.py` + fixtures under `treefrog-manager/tests/fixtures/` — **53 tests PASS (31+22 Phase 2A)**
+- **Gate:** targeted unit/integration PASS, fixture tests PASS, CURRENT updated only for mutable state, no SD mutation
 
-### Phase 2 — SD Detection + Sync Execution + Progress + Conflict + Resume
+### Phase 2A — Archive ingestion and safe temp extraction (current, no SD writes)
+
+> **Objective:** Inspect compressed sources and decide (copy as-is / safely extract in temp workspace / grouped multi-file game / rejected / manual_review / unsupported_archive) with profile-driven policy; planner operates on logical units, zero-write.
+
+- [x] Extend profile to 1.1.0: `archive_policy.json` (handlers `.zip` implemented + `.7z`/`.rar` stubs, safety, modes `payload/container/extract_and_classify/grouped/manual/unsupported`, per_system overrides for arcade `cps1/neogeo/m2k` → payload, `ps/segacd` → grouped, grouping rules for CUE/BIN)
+- [x] Archive abstraction `ArchiveHandler` (Rust trait / Python registry `HANDLERS`): `ZipHandler` via `zip` crate, `SevenZ`/`Rar` stubs return `unsupported_archive` without rewriting planner; deterministic dispatch via `archive_policy.handlers`
+- [x] Safety: traversal `../`, absolute `/`, Windows drive-letter `C:/`, symlink `0o120000`, hardlink/ADS `:`, collisions normalized lowercased, expansion 1GiB, member count 1024, nested depth 1, per-job 10k, compression ratio, all extraction in `tempfile::TempDir` via `safe_extract_to_temp` (never to SD, never overwrites source)
+- [x] Profile-driven decision `decide_archive_mode`: early grouped detection for CUE/BIN in same folder, nested bomb → manual, no known inner → payload, single system → per_system mode, mixed → extract_and_classify (not manual), grouped hint → grouped
+- [x] Planner logical units: `group_members` for CUE/BIN (same folder, stem match), planner creates one entry per logical game with `group` members, temp-hashes inner content for duplicate detection (duplicate archive vs duplicate extracted payload not double-counted), collision detection among archive members, deterministic sorting, `manual_review`/`unsupported_archive` actions, per-job limits
+- [x] Duplicate: SHA-256 exact with grouped payload combined hash (sorted member hashes), distinguish identical vs same filename diff content vs grouped identical vs duplicate container vs duplicate payload
+- **Tests:** `test_phase2a_archive_ingestion.py` 22 tests covering valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS, collision, expansion, member count, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven — **all run without SD**
+- **Gate:** `pytest treefrog-manager/tests` 53 PASS, `test_agent_context_contract PASS`, `preflight PASS`, `git diff -- sd_root` empty, zero-write
+
+### Phase 2B — SD Detection + Sync Execution + Progress + Conflict + Resume (next)
 
 - SD detection via markers (`cubegm/` + `roms/` etc profile `sd_markers.json`), optional capability checks, mount health/writable probes, filesystem portable layer
 - Sync execution: staging + atomic rename where supported, progress events, cancellable without corrupt finals, conflict handling (skip/rename/replace with backup), resume/consistent state on interrupt
@@ -129,6 +142,12 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ---
 
-## Next Exact Action (2026-08-28)
+## Next Exact Action (2026-08-29)
 
-- Finish Phase 0 bootstrap: profile loader (Rust + Python mirror), Tauri shell scaffold, fixtures, and Phase 1 scanner/dry-run planner core (no SD writes) — then `cargo test` + `pytest` + `agent_preflight`.
+- Phase 2A complete: archive ingestion with safe temp extraction and logical-unit planner — next is Phase 2B SD detection + sync execution (staging, progress, conflict, resume) — not in this task. Run `python3 -m pytest treefrog-manager/tests -v` + `bash scripts/agent_preflight.sh --allow-dirty` to verify.
+
+## Unresolved for real-device validation
+
+- Arcade payload `.zip` handling (cps1/neogeo/m2k) is profile-driven as `payload` per `archive_policy.json` but has not been physically validated on R36SX/SF3000 hardware that those cores require the zip to stay compressed. The same for 7z payload when handler becomes available.
+- Video preset remains `PROVISIONAL_UNVALIDATED`; no claim of hardware decoder support without device probe.
+- Large-library performance (10k+ files, hash caching) not yet exercised on real SD; per-job limit 10k is conservative.

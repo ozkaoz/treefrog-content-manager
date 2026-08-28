@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0.0",
-  "profile_version": "1.0.0",
+  "schema_version": "1.1.0",
+  "profile_version": "1.1.0",
   "description": "Global TreeFrogUI content manager profile manifest — declarative, versioned, device-independent",
   "treefrogui_compatibility": {
     "min_version": "v1.0.14_a",
@@ -16,7 +16,8 @@
     "bios.json",
     "lgpt.json",
     "video_presets.json",
-    "sd_markers.json"
+    "sd_markers.json",
+    "archive_policy.json"
   ],
   "notes": "Folder mappings, media destinations and BIOS rules must live in declarative profiles — never hardcoded in UI code (device-independence invariant). Profiles are loaded via serde in Rust backend and mirrored in Python domain for tests."
 }

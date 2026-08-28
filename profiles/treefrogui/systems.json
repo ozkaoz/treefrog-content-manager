@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0.0",
-  "profile_version": "1.0.0",
+  "schema_version": "1.1.0",
+  "profile_version": "1.1.0",
   "description": "Global TreeFrogUI ROM/system folder mappings — authoritative folder aliases (case-sensitive) and extensions. Manager must support full profile, not just bootstrap examples.",
   "source": "https://github.com/tzubertowski/treefrog-ui — README.md ROM folder setup + cores.md + docs/cores/*.md (verified 2026-08-28)",
   "systems": [

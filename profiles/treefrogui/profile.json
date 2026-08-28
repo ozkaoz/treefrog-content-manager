@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.0.0",
-  "profile_version": "1.0.0",
+  "schema_version": "1.1.0",
+  "profile_version": "1.1.0",
   "id": "treefrogui-global",
   "description": "Global TreeFrogUI content profile — one schema for all handhelds (R36SX/SF3000/SF3500/GB350 etc). Device-specific logic limited to SD detection/markers and optional capability checks.",
   "supported_devices": ["R36SX", "R36SXv2.7", "R36HD", "SF3000", "SF3000HD", "SF3100", "SF3500", "GB350"],
@@ -20,25 +20,31 @@
   },
   "archive_policy": {
     "supported_extensions": [".zip", ".7z", ".rar"],
-    "inspection": "inspect entries before copy",
-    "copy_intact_when": "profile says archive itself is valid runtime payload for target system",
-    "otherwise": "extract supported contents into canonical TreeFrogUI destination",
+    "inspection": "inspect entries before copy — see archive_policy.json for full Phase 2A policy",
+    "copy_intact_when": "per-system mode == payload (e.g., arcade cps1/neogeo/m2k)",
+    "otherwise": "extract_and_classify or grouped per per-system mode; manual_review if unresolved",
+    "profile_file": "profiles/treefrogui/archive_policy.json",
     "nested_archives": {
       "policy": "bounded",
       "max_depth": 1,
       "max_entries_per_archive": 1024,
       "max_expansion_bytes": 1073741824,
       "max_total_files_per_job": 10000,
-      "notes": "Handle nested archives only within bounded explicit policy"
+      "notes": "Handle nested archives only within bounded explicit policy; depth>max_depth => manual_review (bomb guard)"
     },
     "safety": {
       "prevent_traversal": true,
       "prevent_absolute_paths": true,
+      "prevent_windows_drive_letter": true,
       "handle_symlink_hazards": true,
+      "handle_hardlink_hazards": true,
       "detect_name_collisions": true,
       "never_overwrite_silently": true,
-      "enforce_extraction_count_and_size_limits": true
-    }
+      "enforce_extraction_count_and_size_limits": true,
+      "temp_workspace_only": true,
+      "never_extract_to_sd": true
+    },
+    "abstraction": "ArchiveHandler trait (ZipHandler implemented, SevenZ/Rar stubs return unsupported_archive) — planner does not need rewrite when 7z/RAR tooling becomes available"
   },
   "duplicate_handling": {
     "definition": "same content, not merely same filename",

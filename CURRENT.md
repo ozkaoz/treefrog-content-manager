@@ -1,7 +1,7 @@
 # Current Workspace State
 
-**Last reviewed:** 2026-08-28
-**Repo:** https://github.com/ozkaoz/lgpt-r36sx-port
+**Last reviewed:** 2026-08-29
+**Repo:** https://github.com/ozkaoz/treefrog-content-manager
 > This is a last-known snapshot and must be verified against direct evidence (Git, build, device, release asset). If it contradicts direct evidence, direct evidence wins.
 
 ---
@@ -46,9 +46,9 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **TreeFrog Content Manager — Phase 0/1 (bootstrap + scanner + dry-run planner):** Implement global TreeFrogUI content manager (Tauri 2 + Rust + React + SQLite) with declarative profiles, scanner/classification, archive inspection, duplicate engine, and dry-run planner (preview without SD mutation). First milestone: Select source folder + select TreeFrogUI SD + scan + preview what would be copied/extracted/skipped/conflicted.
+- **TreeFrog Content Manager — Phase 2A (archive ingestion + safe temp extraction):** Extend read-only scanner/dry-run architecture to inspect compressed sources and decide (copy as-is / safely extract in temp workspace / grouped multi-file game / rejected / manual_review / unsupported_archive) with profile-driven policy; no SD writes. Supported formats via ArchiveHandler abstraction (ZIP implemented, 7z/RAR stubs → unsupported_archive without planner rewrite); safety against traversal/absolute/Windows drive-letter/symlink/hardlink/collision/expansion/member-count/nested бомб, temp workspace only, never to SD, never silent overwrite; planner operates on logical units (CUE/BIN etc), SHA-256 exact with grouped duplicate handling; preview actions `copy/extract/skip_duplicate/skip_unchanged/conflict/manual_review/unsupported_archive` with deterministic ordering.
 - **Release golden preserved:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation in this phase; verify `git diff -- sd_root` = NO).
-- **Idle baseline:** No active implementation/runtime task beyond content-manager bootstrap — Await explicit user-approved objective for next runtime change.
+- **Idle baseline:** No active LGPT runtime task beyond content-manager Phase 2A — Await explicit user-approved objective for next Phase (2B SD writes) — No active implementation/runtime task beyond manager bootstrap — Await explicit user-approved objective for next runtime change.
 
 ## Last Relevant Validation
 
@@ -56,6 +56,7 @@ Do not trust hardcoded historical state.
 - `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
 - `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
 - `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
+- `MANAGER Phase 2A`: `profile 1.1.0 PASS` + `archive abstraction PASS` + `planner logical-units PASS` + `53 tests PASS` (31+22 Phase 2A) + `context-contract PASS` + `preflight PASS` + `sd_root clean`
 
 ## Known Issues / Risks
 
@@ -65,11 +66,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- Content Manager Phase 0/1: `profile loader PASS`, `scanner/dry-run planner PASS`, `archive safety PASS` (no SD writes), `context-contract PASS` — awaiting review.
+- Content Manager Phase 2A: awaiting review — then Phase 2B SD writes (not in this task).
 
 ## Next Exact Action
 
-- Continue Phase 1 scanner/classification + archive inspection + duplicate engine + dry-run planner; run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v`, and `bash scripts/agent_preflight.sh --allow-dirty`.
+- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v`, `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root` and prepare Phase 2B planning.
 
 ## Stop Conditions
 

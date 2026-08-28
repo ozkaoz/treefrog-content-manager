@@ -18,13 +18,17 @@ pub struct PlanSummary {
     pub duplicate_content: usize,
     pub conflicts: usize,
     pub deletions: usize,
+    #[serde(default)]
+    pub manual_review: usize,
+    #[serde(default)]
+    pub unsupported_archive: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlanEntry {
     pub source: String,
     pub destination: String,
-    pub action: String, // copy | extract | skip_unchanged | skip_duplicate | conflict
+    pub action: String, // copy | extract | skip_unchanged | skip_duplicate | conflict | manual_review | unsupported_archive
     pub reason: String,
     pub hash: Option<String>,
     pub size: Option<u64>,

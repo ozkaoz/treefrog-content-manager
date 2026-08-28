@@ -1,0 +1,116 @@
+{
+  "schema_version": "1.1.0",
+  "profile_version": "1.1.0",
+  "description": "Phase 2A archive ingestion policy — profile-driven decisions for compressed sources. Determines copy-as-payload vs extract-then-classify vs grouped vs manual_review vs unsupported. All extraction in temp workspace, never to SD.",
+  "handlers": {
+    ".zip": {
+      "implemented": true,
+      "library": "zip 2.x (Rust) / zipfile (Python)",
+      "supports_temp_extract": true
+    },
+    ".7z": {
+      "implemented": false,
+      "library": "sevenz-rust (future)",
+      "supports_temp_extract": false,
+      "stub_action": "unsupported_archive",
+      "note": "Abstraction already exists; planner will return unsupported_archive without rewriting planner when handler becomes available."
+    },
+    ".rar": {
+      "implemented": false,
+      "library": "unrar (future)",
+      "supports_temp_extract": false,
+      "stub_action": "unsupported_archive",
+      "note": "Same abstraction as 7z."
+    }
+  },
+  "safety": {
+    "prevent_traversal": true,
+    "prevent_absolute": true,
+    "prevent_windows_drive_letter": true,
+    "reject_symlink": true,
+    "reject_hardlink_like": true,
+    "detect_collisions": true,
+    "enforce_limits": true,
+    "temp_workspace_only": true,
+    "never_overwrite_source": true,
+    "never_extract_to_sd": true,
+    "limits": {
+      "max_entries": 1024,
+      "max_expansion_bytes": 1073741824,
+      "max_total_files_per_job": 10000,
+      "max_depth": 1,
+      "max_compression_ratio": 100
+    }
+  },
+  "defaults": {
+    "comment": "Global fallback when no per-system rule matches. Most archives are containers that should be extracted and classified.",
+    "zip_mode": "extract_and_classify",
+    "seven_zip_mode": "unsupported_archive",
+    "rar_mode": "unsupported_archive"
+  },
+  "modes": {
+    "payload": {
+      "description": "archive-is-payload: copy the archive file intact to its system folder; do NOT extract.",
+      "action": "copy",
+      "example_systems": ["cps1", "cps2", "cps3", "neogeo", "m2k", "arcade"]
+    },
+    "container": {
+      "description": "archive-is-container: archive is a delivery container; contents are independent files. Extract-then-classify each member.",
+      "action": "extract",
+      "note": "Legacy alias for extract_and_classify; kept for backwards compat."
+    },
+    "extract_and_classify": {
+      "description": "Default: extract safely to temp workspace, then classify each member via systems/media/bios profiles as if it were a loose file.",
+      "action": "extract"
+    },
+    "grouped": {
+      "description": "grouped multi-file payload: members that form one logical game (e.g., CUE+BIN, chd + cue) must be kept together. Planner operates on logical units, not individual files.",
+      "action": "extract",
+      "grouping": ["CUE/BIN", "M3U", "CHD", "ADF multi-disk", "baseq2", "pico286 IMG set"]
+    },
+    "manual": {
+      "description": "unresolved/manual review: ambiguous, mixed, or policy-undecided. Planner returns manual_review for explicit user decision.",
+      "action": "manual_review",
+      "triggers": ["mixed_system_content", "collision", "nested_archive_depth_exceeded", "unknown_inner_type", "policy_gap"]
+    },
+    "unsupported": {
+      "description": "Format recognized but handler not available in this runtime/tooling. Returns unsupported_archive.",
+      "action": "unsupported_archive"
+    }
+  },
+  "per_system": {
+    "cps1": { ".zip": "payload", ".7z": "payload" },
+    "cps2": { ".zip": "payload", ".7z": "payload" },
+    "cps3": { ".zip": "payload", ".7z": "payload" },
+    "neogeo": { ".zip": "payload", ".7z": "payload" },
+    "m2k": { ".zip": "payload", ".7z": "payload" },
+    "segacd": { ".zip": "grouped", ".7z": "grouped", ".rar": "grouped" },
+    "ps_psx": { ".zip": "grouped", ".7z": "grouped", ".rar": "grouped", ".pbp": "payload" },
+    "ps1r": { ".zip": "grouped" },
+    "pce": { ".zip": "extract_and_classify" },
+    "pcfx": { ".zip": "grouped" },
+    "amiga": { ".zip": "grouped", ".adz": "payload" },
+    "pico286": { ".zip": "grouped" },
+    "quake2": { ".zip": "grouped" },
+    "wolf3d": { ".zip": "grouped" }
+  },
+  "grouping_rules": {
+    "cue_bin": {
+      "description": "Any .cue with sibling .bin files forms one logical unit. Includes archive members: a directory containing game.cue + game.bin (+ maybe .img) is grouped.",
+      "detect": ["*.cue references FILE \"*.bin\"", "same basename .cue + .bin in same folder"],
+      "action": "single planner entry with group members"
+    },
+    "m3u": {
+      "description": "M3U playlist referencing multiple disc images -> grouped"
+    },
+    "nested_archive": {
+      "description": "Archive inside archive (depth > max_depth) -> manual_review, not automatic bomb extraction.",
+      "max_depth": 1
+    },
+    "collision": {
+      "description": "Two members would collide to same destination path (case-insensitive on Windows, case-sensitive on SD). Detect and return manual_review or conflict instead of silent overwrite.",
+      "strategy": "normalize lowercased dest path + collision map"
+    }
+  },
+  "rationale": "Why profile-driven instead of globally extracting every archive: Some TreeFrog content MUST remain compressed. Arcade romsets (cps1/neogeo/m2k) are validated as .zip payloads per core; extracting them would break core loading. Other systems (NES/SNES/GBA) traditionally accept both loose and .zip but user may want to preserve .zip as-is for some sets. Hardcoding ZIP=>always extract in scanner would be wrong and not portable across devices. Profile-driven policy keeps scanner generic, planner deterministic, and allows future per-system tuning without rewriting planner. See DECISIONS.md DEC-2026-08-29-01."
+}

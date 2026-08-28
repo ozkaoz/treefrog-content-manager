@@ -1,6 +1,6 @@
 # DECISIONS — Durable Technical Decisions
 
-**Last reviewed:** 2026-08-28
+**Last reviewed:** 2026-08-29
 **Policy:** Only durable architecture/project decisions. Operational events (push, copy to SD, one-off build PASS) belong in Git/evidence, not here.
 
 | Field | Meaning |
@@ -255,6 +255,26 @@
 **Evidence:** `profiles/treefrogui/manifest.json` + `systems.json` (100+ aliases from cores.md), `media.json`, `bios.json`, `lgpt.json` (verified `sd_root/lgpt/samples` + `lgpt/projects` with .keep; latest Bacon payload `faf7a230` 57 files), `video_presets.json` (PROVISIONAL_UNVALIDATED conservative preset), `sd_markers.json` (cubegm/ + roms/ heuristic), `docs/PLAN.md` phases 0-7, `CONTEXT_MAP.md` router added, live upstream inspection 2026-08-28 (`~/treefrog-ui` cores.md + README + docs/standalone-apps.md) and `wsl ls ~/treefrog-ui/sdcard`.
 
 **Related:** `profiles/treefrogui/`, `treefrog-manager/`, `docs/PLAN.md`, `CONTEXT_MAP.md`, `AGENTS.md §3-6`, `docs/ai/VALIDATION.md`, `sd_root/lgpt/*`, `https://github.com/tzubertowski/treefrog-ui`, `https://github.com/tzubertowski/mini-scraper-cfw/releases`
+
+---
+
+## DEC-2026-08-29-01 — Phase 2A archive ingestion: profile-driven, temp-workspace, logical-unit planner
+
+**Date:** 2026-08-29
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / archive ingestion / scanner / planner / profiles
+
+**Context:** Phase 2A requires inspecting compressed sources and deciding copy-as-payload vs safe extract vs grouped multi-file vs rejected vs manual_review vs unsupported_archive, with zero SD writes. Earlier scanner treated ZIP heuristically (extract if inner has known ROM). Need robust safety (traversal, absolute, Windows drive-letter `C:/`, symlink, hardlink/ADS `:` , collisions, expansion 1GiB, member count 1024, nested depth 1, per-job 10k, compression-ratio bomb) and TreeFrog semantics that some ZIPs must stay compressed (arcade cps1/neogeo/m2k are payload, not containers). Supported formats must be extensible: ZIP implemented, 7z/RAR stubs must return `unsupported_archive` without rewriting planner.
+
+**Decision:** Extend profile to 1.1.0 with `profiles/treefrogui/archive_policy.json` (handlers, safety limits, modes, per_system, grouping). Modes: `payload` (archive-is-payload → `copy`), `container`/`extract_and_classify` (→ `extract` then classify each member), `grouped` (CUE/BIN etc → one logical unit), `manual` (ambiguous/mixed/nested/collision/unknown → `manual_review`), `unsupported` (handler not available → `unsupported_archive`). Per-system overrides (e.g., `cps1/neogeo/m2k` → `.zip: payload`, `ps_psx/segacd/pcfx` → `.zip: grouped`). Archive abstraction `ArchiveHandler` (Rust trait / Python registry `HANDLERS`): `ZipHandler` implemented via `zip` crate / `zipfile`, `SevenZHandler`/`RarHandler` stubs return `UnsupportedArchive`. All safety checks in `archive.rs`/`archive.py`: `inspect_*` validates traversal, absolute, drive-letter regex `^[A-Za-z]:`, symlink `is_symlink` / `unix_mode` `0o120000`, hardlink/ADS `:` , collision via normalized lowercased dest map, expansion sum, member count, compression ratio, nested depth; `safe_extract_to_temp` extracts only to `tempfile::TempDir` and verifies `dest.starts_with(temp_dir)` and `!dest == archive_path` and no silent overwrite. Planner operates on logical units: `group_members` groups CUE+BIN in same folder (stem match, single cue groups all bin), `decide_archive_mode` is profile-driven (early grouped detection for CUE/BIN, nested → manual, no known inner → payload, single system → per_system mode, mixed → extract_and_classify not manual), then for each logical group creates one planner entry with `extract` or `grouped` and temp-hashes inner content for duplicate detection (archive vs extracted payload not double-counted). Planner actions now `copy/extract/skip_duplicate/skip_unchanged/conflict/manual_review/unsupported_archive` plus `deletions=0` unchanged; deterministic sorting, per-job total-files guard, zero-write invariant (never to SD, never overwrites source). Duplicate handling extended: identical content, same filename diff content, grouped payload identical (combined SHA-256 of sorted member hashes), duplicate archive vs duplicate extracted payload via temp hashing.
+
+**Reason:** Profile-driven instead of `ZIP=>always extract` because some TreeFrog content must remain compressed: arcade romsets are validated as `.zip` payloads per core (`cps1` etc); extracting would break core loading. Other systems accept both, user may want to preserve `.zip`. Hardcoding extraction in scanner would be wrong, not portable, and would require planner rewrite when 7z/RAR tooling arrives. Profile-driven keeps scanner generic, planner deterministic, allows per-system tuning (adding a new system or changing arcade payload rule) without code change, and documents intent in declarative JSON. Temp workspace guarantees bomb safety and no SD mutation; logical-unit planning prevents CUE/BIN split.
+
+**Consequences:** `profiles/treefrogui/` is 1.1.0 (manifest, profile, systems 1.1.0, archive_policy new). Scanner/planner use profile, not hardcoded `always extract`. Archive ingestion is safe and profile-driven; adding 7z/RAR only needs implementing handler and flipping `implemented:true` in `archive_policy.json`, no planner rewrite. Tests cover 22 new cases (valid, nested, traversal, absolute, drive-letter, symlink, hardlink/ADS, collision, expansion, member count, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported, deterministic, temp guard, no overwrite). Planner remains zero-write; physical SD writes remain Phase 2B.
+
+**Evidence:** `profiles/treefrogui/archive_policy.json` (handlers, safety, modes, per_system, grouping), `profile.json 1.1.0`, `systems.json 1.1.0`, `treefrog-manager/python/treefrog/archive.py` (full safety + HANDLERS), `treefrog-manager/python/treefrog/planner.py` (logical units, manual_review, unsupported), `treefrog-manager/src-tauri/src/archive.rs` (ZipHandler, stubs, drive-letter, hardlink, collision, temp), `treefrog-manager/src-tauri/src/planner.rs` (grouped, mode, temp hashing), `treefrog-manager/tests/test_phase2a_archive_ingestion.py` 22 tests PASS, `pytest treefrog-manager/tests` 53 PASS, `test_agent_context_contract PASS`, `preflight PASS`, `git diff -- sd_root` empty.
+
+**Related:** `profiles/treefrogui/archive_policy.json`, `profiles/treefrogui/profile.json`, `profiles/treefrogui/systems.json`, `treefrog-manager/python/treefrog/archive.py`, `treefrog-manager/python/treefrog/planner.py`, `treefrog-manager/src-tauri/src/archive.rs`, `treefrog-manager/src-tauri/src/planner.rs`, `treefrog-manager/src-tauri/src/profile.rs`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`, `DEC-2026-08-28-01`
 
 ---
 

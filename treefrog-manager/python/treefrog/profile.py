@@ -6,6 +6,10 @@ PROFILE_DIR = REPO_ROOT / "profiles" / "treefrogui"
 def load_profile():
     profile = json.loads((PROFILE_DIR / "profile.json").read_text(encoding="utf-8"))
     systems = json.loads((PROFILE_DIR / "systems.json").read_text(encoding="utf-8"))
+    try:
+        archive_policy = json.loads((PROFILE_DIR / "archive_policy.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        archive_policy = {}
     # Build maps
     ext_to_system = {}
     alias_to_system = {}
@@ -24,9 +28,16 @@ def load_profile():
         "ext_to_system": ext_to_system,
         "alias_to_system": alias_to_system,
         "archive_policy": profile.get("archive_policy", {}),
+        "archive_policy_full": archive_policy,
         "profile": profile,
         "systems_raw": systems,
     }
+
+def load_archive_policy():
+    p = PROFILE_DIR / "archive_policy.json"
+    if p.exists():
+        return json.loads(p.read_text(encoding="utf-8"))
+    return {}
 
 def load_media():
     return json.loads((PROFILE_DIR / "media.json").read_text(encoding="utf-8"))
