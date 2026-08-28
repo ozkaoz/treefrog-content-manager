@@ -25,6 +25,9 @@ Stable navigation only — no mutable branch/HEAD/SHA/objective here (those live
 | **Build** | docs/BUILD_EN.md, docs/BUILD_ES.md | `source/BUILD_TREEFROG_*.sh`, `source/projects/Makefile.TREEFROG` | `scripts/audit.sh`, `tests/host_syntax_check.sh` | — |
 | **Release packaging** | docs/ai/RELEASE_CONTRACT.md, docs/ai/VALIDATION.md | `scripts/build_copy_root_release.py`, `sd_root/`, `LGPT_R36SX_Bacon-1.5_SHA256SUMS.txt`, `docs/BACON_1_5_RELEASE_MANIFEST.md` | `tests/test_release_audio_bootstrap.py`, `scripts/verify_copy_root_layout.sh` | DEC-2026-08-23-02, DEC-2026-08-23-03, DEC-2026-08-23-04 |
 | **Agent infrastructure** | AGENTS.md, docs/ai/VALIDATION.md | `.opencode/agents/`, `scripts/agent_preflight.sh`, `tests/test_agent_context_contract.py` | `tests/test_agent_context_contract.py` | DEC-2026-08-23-01 |
+| **TreeFrog Content Manager** | AGENTS.md, docs/PLAN.md, `profiles/treefrogui/` | `treefrog-manager/`, `profiles/treefrogui/`, `treefrog-manager/src-tauri/src/`, `treefrog-manager/src/` | `treefrog-manager/tests/*`, `tests/test_content_manager_*.py`, `tests/test_profile_*.py`, `cargo test`, `pytest` | DEC-2026-08-28-01 |
+| **Content Manager profiles** | docs/PLAN.md | `profiles/treefrogui/manifest.json`, `profiles/treefrogui/profile.json`, `profiles/treefrogui/systems.json`, `profiles/treefrogui/media.json`, `profiles/treefrogui/bios.json`, `profiles/treefrogui/lgpt.json`, `profiles/treefrogui/video_presets.json`, `profiles/treefrogui/sd_markers.json` | `tests/test_profile_loader.py` | DEC-2026-08-28-01 |
+| **Content Manager scanner/planner** | profiles/treefrogui/systems.json, profiles/treefrogui/media.json | `treefrog-manager/src-tauri/src/scanner.rs`, `treefrog-manager/src-tauri/src/classify.rs`, `treefrog-manager/src-tauri/src/archive.rs`, `treefrog-manager/src-tauri/src/hash.rs`, `treefrog-manager/src-tauri/src/planner.rs` | `tests/test_scanner_classification.py`, `tests/test_archive_inspection.py`, `tests/test_duplicate_engine.py`, `tests/test_dry_run_planner.py` | DEC-2026-08-28-01 |
 
 ---
 
@@ -42,11 +45,14 @@ Do not modify their functional behavior in CLASS A tasks — only label them.
 ## Canonical Payload Locations
 
 - Build artifact: `sd_root/cubegm/cores/lgpt_core.so` (and `sd_root/cubegm/lgpt` launcher)
-- Release ZIP: `LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` (56 files, see `docs/RELEASE_SD_INCLUDED_FILES.txt`)
+- Release ZIP: `LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` (57 files Apps→LGPT, see `docs/RELEASE_SD_INCLUDED_FILES.txt`)
 - SHA manifest: `LGPT_R36SX_Bacon-1.5_SHA256SUMS.txt`
-- Golden evidence: `docs/BACON_1_5_GOLDEN_BOOTSTRAP_PHYSICAL_PASS.md`, `docs/BACON_1_5_RELEASE_MANIFEST.md`
+- Golden evidence: `docs/BACON_1_5_GOLDEN_BOOTSTRAP_PHYSICAL_PASS.md`, `docs/BACON_1_5_RELEASE_MANIFEST.md`, `docs/BACON_1_5_TREEFROG_APPS_PHYSICAL_PASS.md`
+- Content Manager profiles: `profiles/treefrogui/` (versioned declarative JSON, serde + Python mirror)
+- Content Manager app: `treefrog-manager/` (Tauri 2 + Rust backend + React TS frontend + SQLite)
+- Content Manager tests: `treefrog-manager/tests/` + `tests/test_content_manager_*.py` (fixtures for archives/duplicates/media/BIOS/LGPT/video)
 
-`BUILD/`, `buildTREEFROG/`, `source/dist/` are `.gitignore`'d — not source.
+`BUILD/`, `buildTREEFROG/`, `source/dist/`, `treefrog-manager/src-tauri/target/` are `.gitignore`'d — not source.
 
 ---
 

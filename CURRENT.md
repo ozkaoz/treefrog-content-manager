@@ -1,6 +1,6 @@
 # Current Workspace State
 
-**Last reviewed:** 2026-08-24
+**Last reviewed:** 2026-08-28
 **Repo:** https://github.com/ozkaoz/lgpt-r36sx-port
 > This is a last-known snapshot and must be verified against direct evidence (Git, build, device, release asset). If it contradicts direct evidence, direct evidence wins.
 
@@ -13,9 +13,9 @@ Do not trust hardcoded historical state.
 
 ## Repository
 
-- Branch: `main` — verify `git branch --show-current` at session start
-- HEAD: `ba43a71` (Bacon-1.5 Apps clean-install + release golden) — `git rev-parse HEAD`
-- Upstream: `origin/main` `ba43a71` — `git status --short --branch`
+- Branch: RESOLVE FROM GIT AT SESSION START — `git branch --show-current` at session start
+- HEAD: RESOLVE FROM GIT AT SESSION START — `git rev-parse HEAD` at session start (do not hardcode SHA here; see Source/Physical/Release Golden for authoritative SHAs)
+- Upstream: RESOLVE FROM GIT AT SESSION START — `git rev-parse --abbrev-ref --symbolic-full-name @{u}` + `git status --short --branch`
 - Worktree: environment-specific — `git worktree list`
 - Stash: verify `git stash list`
 
@@ -46,7 +46,9 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **Release golden:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS`.
+- **TreeFrog Content Manager — Phase 0/1 (bootstrap + scanner + dry-run planner):** Implement global TreeFrogUI content manager (Tauri 2 + Rust + React + SQLite) with declarative profiles, scanner/classification, archive inspection, duplicate engine, and dry-run planner (preview without SD mutation). First milestone: Select source folder + select TreeFrogUI SD + scan + preview what would be copied/extracted/skipped/conflicted.
+- **Release golden preserved:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation in this phase; verify `git diff -- sd_root` = NO).
+- **Idle baseline:** No active implementation/runtime task beyond content-manager bootstrap — Await explicit user-approved objective for next runtime change.
 
 ## Last Relevant Validation
 
@@ -63,11 +65,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- None — `RELEASE_GOLDEN PASS`, awaiting next user-approved objective.
+- Content Manager Phase 0/1: `profile loader PASS`, `scanner/dry-run planner PASS`, `archive safety PASS` (no SD writes), `context-contract PASS` — awaiting review.
 
 ## Next Exact Action
 
-- Await next task: `bash scripts/agent_preflight.sh`, classify via `docs/ai/VALIDATION.md`, route via `CONTEXT_MAP.md`.
+- Continue Phase 1 scanner/classification + archive inspection + duplicate engine + dry-run planner; run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v`, and `bash scripts/agent_preflight.sh --allow-dirty`.
 
 ## Stop Conditions
 

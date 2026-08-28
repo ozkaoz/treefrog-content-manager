@@ -1,6 +1,6 @@
 # DECISIONS — Durable Technical Decisions
 
-**Last reviewed:** 2026-08-23
+**Last reviewed:** 2026-08-28
 **Policy:** Only durable architecture/project decisions. Operational events (push, copy to SD, one-off build PASS) belong in Git/evidence, not here.
 
 | Field | Meaning |
@@ -235,6 +235,26 @@
 **Consequences:** `sd_root` now contains `cubegm/cores/frogui_libretro.so` `76034b` (326700) — previously vendor-only. ZIP grows 56→57 files (`c5c77a` 7138546→`faf7a230` 7295274) with exactly one added path. `POST_INSTALL_MANUAL_FIXES=0` preserved. `core 46bd84`/`wrapper ee1ecfe5`/`H38 89a99d` unchanged. Clean-install now `Stock OS + TreeFrogUI v1.0.15_a + ZIP`.
 **Evidence:** `build/frogui_candidate/vanilla_official/frogui_libretro.so` `f10caa` PASS, `build/frogui_candidate/apps_dual/frogui_libretro.so` `656242` dual PASS, `build/frogui_candidate/apps_only/frogui_libretro.so` `76034b` Apps-only PASS (full matrix + switching), `patches/frogui_apps_lgpt.patch` (3 hunks), `tests/test_frogui_apps_lgpt.py` + `test_treefrog_apps_lgpt_release.py` PASS, `docs/BACON_1_5_RELEASE_MANIFEST.md` updated.
 **Related:** `patches/frogui_apps_lgpt.patch`, `sd_root/cubegm/cores/frogui_libretro.so`, `sd_root/roms/lgpt/start.lgpt`, `docs/BACON_1_5_RELEASE_MANIFEST.md`, `LGPT_R36SX_Bacon-1.5_SHA256SUMS.txt`
+
+---
+
+## DEC-2026-08-28-01 — TreeFrog Content Manager global profile + archive safety + duplicate handling
+
+**Date:** 2026-08-28
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / profiles / scanner / archive / sync
+
+**Context:** Requirement to build global TreeFrogUI content manager (not per-device fork) managing ROMs, music, videos, images, ebooks, BIOS, LGPT samples/projects, incremental SD sync. Must inspect live upstream TreeFrogUI (`tzubertowski/treefrog-ui` main, cores.md, docs/standalone-apps.md, README ROM setup) and Bacon-1.5 payload (`sd_root/`) to avoid stale assumptions. Need safety for archives (ZIP/7z/RAR, traversal, absolute, symlink, collisions, limits) and duplicate semantics (same content not same filename).
+
+**Decision:** Global schema in versioned declarative JSON profiles under `profiles/treefrogui/` (manifest, profile, systems, media, bios, lgpt, video_presets, sd_markers) — sole authoritative source for folder aliases (case-sensitive), media destinations, BIOS rules, LGPT destinations (`lgpt/samples`, `lgpt/projects` verified against Bacon-1.5 `sd_root/lgpt/*`), video preset `PROVISIONAL_UNVALIDATED`. UI code must NOT hardcode mappings. Manager treats TreeFrogUI content as one device-independent schema; device-specific limited to SD detection/markers and optional capability checks per `sd_markers.json`. Archive policy: inspect entries before copy, copy intact only if profile says archive itself is valid runtime payload for target system, otherwise extract supported contents; bounded nested-archive policy (depth 1, 1024 entries, 1 GiB expansion, 10k files). Safety: prevent `../` traversal, absolute paths, symlink/reparse hazards (skip + warn), detect collisions, enforce count/size limits, never silent overwrite. Duplicate: cheap metadata first, SHA-256 for exact identity, classify same-path+same-hash unchanged, different-path+same-hash duplicate skip, same-path+different-hash conflict, new-path+new-hash copy; never delete source. Artwork: Mini Scraper remains external (`mini-scraper-cfw` releases) — manager provides launch/open + optional `.res` verification only. Video: ffprobe inspection required, auto-convert via FFmpeg when incompatible with staging, re-probe, validate, batch + cancel without corrupt finals. Sync: dry-run plan before writes (`unchanged/new/changed/duplicate/conflicts/deletions`); normal sync no delete; explicit deletion separate; staging + atomic rename; resume/consistent on interrupt. Persistent index SQLite for libraries/targets/fingerprints/deployments/profile+tool versions/job history; never commit user paths. Stack: Tauri 2 + Rust + React TS + SQLite + serde versioned profiles + SHA-256 + FFmpeg adapter + maintained archive libs (ZIP/7z/RAR); filesystem portable, Windows first.
+
+**Reason:** Declarative profiles allow full TreeFrogUI coverage (120+ folder aliases from cores.md) without forking app per handheld; evidence over stale notes (live upstream verify shows `roms/music`, `roms/videos`, `roms/images`, `roms/Ebook`, `cubegm/bios`, standalone `ebook/video_player/image_viewer/rockbox/pico286/pcsx4all/lgpt` mapping). Bounded archive + safety prevents traversal/symlink hazards and expansion bombs; duplicate semantics prevents data loss from filename collisions. Global manager preserves LGPT Bacon golden (`sd_root` unchanged for manager-only changes).
+
+**Consequences:** `profiles/treefrogui/*.json` are canonical; UI/backend must load via profile loader (`serde` Rust + Python mirror). Scanner/classification/archive/duplicate/planner must follow profile + safety invariants; first milestone is read-only preview (no SD writes). Future BIOS/video/LGPT features must use same profiles. Manager bootstrap is CLASS B (host tooling) until it touches runtime/deployment; `git diff -- sd_root` must stay NO for pure manager work.
+
+**Evidence:** `profiles/treefrogui/manifest.json` + `systems.json` (100+ aliases from cores.md), `media.json`, `bios.json`, `lgpt.json` (verified `sd_root/lgpt/samples` + `lgpt/projects` with .keep; latest Bacon payload `faf7a230` 57 files), `video_presets.json` (PROVISIONAL_UNVALIDATED conservative preset), `sd_markers.json` (cubegm/ + roms/ heuristic), `docs/PLAN.md` phases 0-7, `CONTEXT_MAP.md` router added, live upstream inspection 2026-08-28 (`~/treefrog-ui` cores.md + README + docs/standalone-apps.md) and `wsl ls ~/treefrog-ui/sdcard`.
+
+**Related:** `profiles/treefrogui/`, `treefrog-manager/`, `docs/PLAN.md`, `CONTEXT_MAP.md`, `AGENTS.md §3-6`, `docs/ai/VALIDATION.md`, `sd_root/lgpt/*`, `https://github.com/tzubertowski/treefrog-ui`, `https://github.com/tzubertowski/mini-scraper-cfw/releases`
 
 ---
 

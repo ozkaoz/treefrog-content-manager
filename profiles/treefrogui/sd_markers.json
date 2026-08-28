@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "description": "SD detection/markers and optional capability/validation checks. Device-specific logic limited to SD detection/markers, optional capability validation, and evidenced release differences.",
+  "detection": {
+    "strategy": "global TreeFrogUI markers — device-independent content, device-specific detection only where evidenced",
+    "markers": [
+      {
+        "path": "cubegm/",
+        "kind": "directory",
+        "required": true,
+        "notes": "Firmware + settings + game lists — present on all TreeFrogUI cards"
+      },
+      {
+        "path": "roms/",
+        "kind": "directory",
+        "required": true,
+        "notes": "Top-level ROMs folder — TreeFrogUI invariant"
+      },
+      {
+        "path": "cubegm/cores/",
+        "kind": "directory",
+        "required": true,
+        "notes": "Emulator cores"
+      },
+      {
+        "path": "cubegm/bios/",
+        "kind": "directory",
+        "required": false,
+        "notes": "BIOS folder — may not exist on fresh card, but manager creates on import"
+      },
+      {
+        "path": "frogui/",
+        "kind": "directory",
+        "required": false,
+        "notes": "Theme/fonts/wallpapers — present after TreeFrogUI install"
+      },
+      {
+        "path": "lgpt/",
+        "kind": "directory",
+        "required": false,
+        "notes": "LGPT port assets — present when Bacon LGPT deployed"
+      }
+    ],
+    "heuristics": [
+      "At least cubegm/ + roms/ must exist to consider a volume a TreeFrogUI SD",
+      "Check for frogui/settings.txt or cubegm/xgame-logo.bmp as strong additional marker",
+      "Allow empty roms/ subfolders (user may not have added games yet)",
+      "Do NOT rely on Windows drive label alone"
+    ]
+  },
+  "filesystem": {
+    "supported_fs": ["FAT32", "exFAT"],
+    "health_checks": [
+      "mounted && healthy && writable && not read-only",
+      "probe via mount options + write probe (temp unique file then remove) only when explicitly requested",
+      "never auto-run fs repair — requires explicit user authorization (dirty exFAT caused false USB/bootstrap failures)"
+    ],
+    "notes": "SD health: before blaming manager, verify mount healthy/writable/not read-only. TreeFrogUI + LGPT OTG modules include exFAT specifics."
+  },
+  "device_specific": {
+    "allowed_differences": [
+      "SD detection/markers",
+      "optional capability/validation checks",
+      "installation or release differences that are actually evidenced (e.g., install_first/<device>/ folder, boot logo, dtb/kernel for clones)"
+    ],
+    "not_allowed": [
+      "Fork the application into R36SX/SF3000/R36HD-specific ROM managers",
+      "Hardcode folder mappings per device in UI code — must live in declarative profiles"
+    ]
+  },
+  "sd_layout_reference": {
+    "treefrogui_version": "main (tzubertowski/treefrog-ui)",
+    "hijack": "install_first/<device>/ (r36sx, r36hd, sf3000, sf3500, sf3000hd, sf3100, gb350) — per-device autorun hijack; shared payload at cubegm/frogui/roms/MD",
+    "universal_payload": ["cubegm/", "frogui/", "roms/", "MD/"],
+    "install_contract": "Stock OS + TreeFrogUI + payload to SD root = functional TreeFrogUI; log.txt enables logging"
+  }
+}

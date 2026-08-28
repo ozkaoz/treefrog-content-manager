@@ -34,3 +34,13 @@ tests/*.out
 
 # Windows Visual Studio build artifacts inside the synced source tree
 source/build/
+
+# TreeFrog Content Manager — Tauri/Rust/React artifacts (never commit built binaries or user paths)
+treefrog-manager/dist/
+treefrog-manager/src-tauri/target/
+treefrog-manager/node_modules/
+*.db
+*.sqlite
+*.sqlite3
+treefrog-manager/tests/fixtures/tmp/
+build/

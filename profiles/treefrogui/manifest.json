@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "description": "Global TreeFrogUI content manager profile manifest — declarative, versioned, device-independent",
+  "treefrogui_compatibility": {
+    "min_version": "v1.0.14_a",
+    "validated_version": "v1.0.15_a",
+    "source": "https://github.com/tzubertowski/treefrog-ui",
+    "last_verified": "2026-08-28",
+    "evidence": "README.md ROM folder setup table (tzubertowski/treefrog-ui main), docs/standalone-apps.md, cores.md, sdcard/cubegm/frogui/settings.txt, lgpt-r36sx-port sd_root verification"
+  },
+  "files": [
+    "profile.json",
+    "systems.json",
+    "media.json",
+    "bios.json",
+    "lgpt.json",
+    "video_presets.json",
+    "sd_markers.json"
+  ],
+  "notes": "Folder mappings, media destinations and BIOS rules must live in declarative profiles — never hardcoded in UI code (device-independence invariant). Profiles are loaded via serde in Rust backend and mirrored in Python domain for tests."
+}

@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "description": "Video handling presets — declarative. App must probe via ffprobe and auto-convert via FFmpeg when incompatible; keep original untouched, stage temp, re-probe, validate before deploy, batch + cancel without corrupt final files.",
+  "presets": [
+    {
+      "id": "treefrog_conservative_default",
+      "status": "PROVISIONAL_UNVALIDATED",
+      "description": "Conservative default TreeFrogUI video preset — DO NOT claim hardware compatibility from source assumptions alone; requires physical R36SX/SF3000 family validation",
+      "validated_on_device": false,
+      "requires_physical_validation": true,
+      "target": "roms/videos",
+      "probe_fields": ["container", "video_codec", "codec_profile/level", "pixel_format/bit_depth", "dimensions", "frame_rate", "audio_codec/sample", "stream_count"],
+      "compatibility_hints": {
+        "notes": "Do NOT assume .mp4/.mkv compatible merely because extension appears in docs. Firmware uses libffplayer hardware decoder; actual supported codecs determined by firmware media plane, not libretro cores.",
+        "accepted_containers": [".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts", ".webm"],
+        "preferred_codecs": {
+          "video": ["h264 (avc, baseline/main/high within 640x480 or 854x480 safe)", "mpeg4"],
+          "audio": ["aac", "mp3", "pcm"],
+          "pixel_format": "yuv420p 8-bit",
+          "max_dimensions": "640x480 (R36SX/GB350 4:3) or 854x480 (SF3000 family 16:9) — panel-native is safest",
+          "frame_rate": "30fps max suggested (conservative)",
+          "avoid": ["h265/hevc (likely unsupported on firmware decoder)", "10-bit/12-bit HDR", "4K", "60fps high profile"]
+        }
+      },
+      "ffmpeg": {
+        "command_template": "ffmpeg -i <input> -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p -vf scale='min(640,iw)':-2 -r 30 -c:a aac -ar 48000 -ac 2 -movflags +faststart <output>.mp4",
+        "stage_temp": true,
+        "re_probe": true,
+        "validate_before_deploy": true,
+        "keep_original": true,
+        "progress": true,
+        "batch": true,
+        "cancel_safe": true,
+        "notes": "This template is staged to temp and re-probed; only deployed after validation. User can override via declarative preset editing."
+      }
+    }
+  ],
+  "probe_adapter": {
+    "tool": "ffprobe (or robust equivalent)",
+    "fields_required": ["container", "video codec", "codec profile/level when available", "pixel format / bit depth", "dimensions", "frame rate", "audio codec / sample properties", "stream count where relevant"],
+    "when_compatible": "copy directly",
+    "when_incompatible": "auto-convert via FFmpeg with staging + re-probe + validation"
+  },
+  "warnings": [
+    "PROVISIONAL_UNVALIDATED — do not claim hardware compatibility without physical R36SX/SF3000 family validation",
+    "Firmware hardware decoder support varies per device/firmware; this preset is conservative best-effort until device-tested",
+    "Never leave corrupt final files on cancel/interrupt — atomic rename only after validation"
+  ]
+}

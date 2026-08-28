@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "description": "LGPT R36SX integration profile — global LGPT integration for user's R36SX port. Do NOT hardcode in UI code; verify exact paths against latest Bacon release payload before finalizing.",
+  "verified_against": {
+    "payload": "LGPT_R36SX_Bacon-1.5_SD_ROOT.zip faf7a230 (57 files) + sd_root/",
+    "release": "Bacon-1.5 TreeFrog Apps",
+    "date": "2026-08-28",
+    "sd_root_evidence": "sd_root/lgpt/samples, sd_root/lgpt/projects exist with .keep; latest Bacon release payload validated"
+  },
+  "destinations": {
+    "samples": "lgpt/samples",
+    "projects": "lgpt/projects"
+  },
+  "lgpt_sd_layout": {
+    "samples": "lgpt/samples",
+    "projects": "lgpt/projects",
+    "samples_records": "lgpt/samples/records",
+    "instruments": "lgpt/instruments",
+    "config": "lgpt/config.xml",
+    "config_stock": "lgpt/config.stock.xml",
+    "tmp": "lgpt/tmp",
+    "usbrecs": "lgpt/usbrecs",
+    "otg": "lgpt/otg"
+  },
+  "rules": {
+    "projects_as_groups": true,
+    "projects_group_semantics": "Copy as directories, not flattened — each project is a directory with .lgpt + samples etc. Preserve structure.",
+    "samples_audio_metadata_preview": "where practical — support audio metadata/preview and exact duplicate detection",
+    "samples_duplicate_detection": "SHA-256 exact identity (same as ROM duplicate engine)",
+    "instruments": "lgpt/instruments — optional; do not assume"
+  },
+  "binary": "cubegm/lgpt",
+  "rom_folder": "roms/lgpt",
+  "launch_args": "roms/lgpt/start.lgpt",
+  "standalone_contract": "docs/standalone-apps.md — LGPT is standalone App (cubegm/lgpt) via FrogUI app_defs {\"lgpt\",\"LGPT\",NULL,NULL,LGPT_BIN} -> /tmp/frogui_launch.txt -> picoarch -> cubegm/lgpt",
+  "notes": "Projects should be copied as groups/directories, not flattened. Samples support audio metadata/preview where practical and exact duplicate detection. Verify lgpt/samples and lgpt/projects against latest Bacon release payload before finalizing."
+}

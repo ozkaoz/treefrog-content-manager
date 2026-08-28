@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "description": "Media destinations and formats — music / videos / images / ebooks / rockbox / pico286 etc. Preserve music subfolders because TreeFrogUI treats each folder under roms/music as playlist.",
+  "media": {
+    "music": {
+      "destination": "roms/music",
+      "preserve_subfolders": true,
+      "playlist_semantics": "Each folder under roms/music is a playlist; preserve hierarchy",
+      "formats": [".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus"],
+      "player": "cubegm/video_player (hardware-backed simple player) + rockbox standalone for advanced",
+      "notes": "Copy as-is; do not flatten. Supports ID3 metadata preview where practical."
+    },
+    "videos": {
+      "destination": "roms/videos",
+      "formats": [".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts", ".webm"],
+      "player": "cubegm/video_player (firmware libffplayer hardware decoder)",
+      "compatibility": "Do not assume .mp4/.mkv compatible merely by extension — inspect via ffprobe",
+      "probe_fields": ["container", "video_codec", "codec_profile/level", "pixel_format/bit_depth", "dimensions", "frame_rate", "audio_codec/sample", "stream_count"],
+      "conversion": {
+        "when_incompatible": "auto-convert with FFmpeg",
+        "keep_original_untouched": true,
+        "stage_temp": true,
+        "re_probe_after": true,
+        "only_deploy_after_validation": true,
+        "progress_and_errors": true,
+        "batch_and_cancel": true,
+        "presets_declarative": true,
+        "preset_ref": "video_presets.json"
+      },
+      "notes": "Drop ordinary MP4/MKV/AVI/MOV files; hardware decoder determines actual support."
+    },
+    "images": {
+      "destination": "roms/images",
+      "formats": [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif", ".tga", ".ico"],
+      "viewer": "cubegm/image_viewer (libffplayer native picture decoder + hardware video plane)",
+      "notes": "No conversion required; viewer handles Fit/Fill/rotation."
+    },
+    "ebooks": {
+      "destination": "roms/Ebook",
+      "formats": [".epub", ".mobi", ".pdf", ".cbz", ".fb2", ".xps"],
+      "reader": "cubegm/ebook (MuPDF standalone)",
+      "fonts": ["roms/Ebook/fonts/", "frogui/fonts/", "cubegm/fonts/"],
+      "notes": "Ebook reader saves per-book progress under hidden .positions/ subdirectory — do not sync that."
+    },
+    "rockbox": {
+      "destination": "roms/rockbox",
+      "standalone": "cubegm/rockbox.sh",
+      "formats": [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".opus", ".aac"],
+      "themes": "themes.rockbox.org iPod Video 320x240 themes go to roms/rockbox/.rockbox/",
+      "notes": "Separate from simple music player; keep distinct."
+    },
+    "pico286": {
+      "destination": "roms/pico286",
+      "formats": [".img", ".ima", ".vfd"],
+      "standalone": "cubegm/pico286",
+      "group_semantics": "Each game folder contains floppy .img set; hard-disk games packed to .img with RUN.BAT via make_dos_img.sh",
+      "notes": "FreeDOS x86BOOT.img lives in cubegm/bios/x86BOOT.img"
+    },
+    "ports": {
+      "prboom": {
+        "destination": "roms/prboom",
+        "formats": [".wad"],
+        "notes": "Supply legally obtained IWAD (doom1.wad, heretic1.wad, hexen.wad...) — do not bundle"
+      },
+      "quake": {
+        "destination": "roms/Quake",
+        "formats": [".pak"],
+        "core": "tyrquake_libretro.so"
+      },
+      "quake2": {
+        "destination": "roms/quake2",
+        "formats": [".pak"],
+        "notes": "Game data must be in baseq2/ subfolder",
+        "group_semantics": "baseq2 directory"
+      },
+      "wolf3d": {
+        "destination": "roms/wolf3d",
+        "formats": [".wl6", ".sod", ".n3d"],
+        "needs": "ecwolf.pk3",
+        "notes": "Wolf3D needs game data + ecwolf.pk3 — see docs/cores/wolf3d.md"
+      },
+      "amiga": {
+        "destination": "roms/amiga",
+        "formats": [".adf", ".adz"],
+        "notes": "Kickstart ROM required, see bios.json"
+      }
+    },
+    "standalone_apps": {
+      "ebook": "cubegm/ebook",
+      "video_player": "cubegm/video_player",
+      "image_viewer": "cubegm/image_viewer",
+      "rockbox": "cubegm/rockbox.sh",
+      "pico286": "cubegm/pico286",
+      "pcsx4all": "cubegm/pcsx4all",
+      "lgpt": "cubegm/lgpt"
+    }
+  }
+}

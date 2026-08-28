@@ -1,0 +1,68 @@
+{
+  "schema_version": "1.0.0",
+  "profile_version": "1.0.0",
+  "id": "treefrogui-global",
+  "description": "Global TreeFrogUI content profile — one schema for all handhelds (R36SX/SF3000/SF3500/GB350 etc). Device-specific logic limited to SD detection/markers and optional capability checks.",
+  "supported_devices": ["R36SX", "R36SXv2.7", "R36HD", "SF3000", "SF3000HD", "SF3100", "SF3500", "GB350"],
+  "sd_root_layout": {
+    "roms_root": "roms",
+    "bios_root": "cubegm/bios",
+    "frogui_root": "frogui",
+    "cubegm_root": "cubegm"
+  },
+  "artwork": {
+    "strategy": "external",
+    "tool": "Mini Scraper",
+    "url": "https://github.com/tzubertowski/mini-scraper-cfw/releases",
+    "integration": "launch_button",
+    "verification": "optional .res folder check after scrape",
+    "notes": "Do NOT implement another scraper. App may provide open action and verify .res artwork, but must not build second artwork backend."
+  },
+  "archive_policy": {
+    "supported_extensions": [".zip", ".7z", ".rar"],
+    "inspection": "inspect entries before copy",
+    "copy_intact_when": "profile says archive itself is valid runtime payload for target system",
+    "otherwise": "extract supported contents into canonical TreeFrogUI destination",
+    "nested_archives": {
+      "policy": "bounded",
+      "max_depth": 1,
+      "max_entries_per_archive": 1024,
+      "max_expansion_bytes": 1073741824,
+      "max_total_files_per_job": 10000,
+      "notes": "Handle nested archives only within bounded explicit policy"
+    },
+    "safety": {
+      "prevent_traversal": true,
+      "prevent_absolute_paths": true,
+      "handle_symlink_hazards": true,
+      "detect_name_collisions": true,
+      "never_overwrite_silently": true,
+      "enforce_extraction_count_and_size_limits": true
+    }
+  },
+  "duplicate_handling": {
+    "definition": "same content, not merely same filename",
+    "algorithm": [
+      "compare cheap metadata first (size, mtime if available)",
+      "use SHA-256 when exact identity decision required",
+      "classify: same path + same hash -> unchanged; different path + same hash -> duplicate content default skip; same path + different hash -> conflict; new path + new hash -> copy"
+    ],
+    "never_delete_source": true,
+    "default_action_duplicate_content": "skip",
+    "hash": "SHA-256"
+  },
+  "sync_policy": {
+    "dry_run_required": true,
+    "show_plan_before_writes": true,
+    "example_plan": "2,331 unchanged, 34 new, 12 changed, 7 duplicate content, 3 conflicts, 0 deletions",
+    "normal_sync_deletes": false,
+    "deletion_is_explicit": true,
+    "staging_atomic_rename_where_supported": true,
+    "resume_or_consistent_on_interrupt": true
+  },
+  "persistent_index": {
+    "store": "SQLite",
+    "tables": ["source_libraries", "known_sd_targets", "content_fingerprints", "previous_deployments", "profile_version", "tool_version", "job_history"],
+    "never_commit_user_paths": true
+  }
+}
