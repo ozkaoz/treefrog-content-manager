@@ -2,7 +2,7 @@
 
 **Version:** 1.1.0  
 **Date:** 2026-08-28  
-**Scope:** Phase BIOS-A formal BIOS profile and validation + Phase 2C video/desktop (global TreeFrogUI, no SD writes)
+**Scope:** Phase BIOS-B BIOS Manager UI + planner integration (global TreeFrogUI, no SD writes) + Phase 2C video/desktop
 
 ---
 

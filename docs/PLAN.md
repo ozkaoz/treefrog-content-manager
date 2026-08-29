@@ -84,12 +84,20 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 - **Tests:** `test_phase2c_video_conversion.py` 11 tests covering ffprobe parsing, compatible, incompatible, unsupported, inspection failure, command generation, deterministic, temp output, validation success/failure, FFmpeg failure, source preservation, planner action, metadata, missing diagnostics — **pytest 77 PASS (66+11)**
 - **Gate:** `pytest 77 PASS`, `context-contract PASS`, `preflight PASS`, `Windows x64 exe` + `self-check PASS`, `git diff -- sd_root` empty
 
-### Phase BIOS-A — Formal BIOS profile and validation model (current)
+### Phase BIOS-A — Formal BIOS profile and validation model (done)
 
 - Extend `profiles/treefrogui/bios.json` to 1.1.0 formal with `bios_definitions` (system/Bios identity, human-readable name, required/conditional semantics, `mandatory_when`, accepted filenames/patterns/aliases, destinations profile-driven, expected size, SHA-256 authoritative only, variants any one satisfies, archive payload/container via existing archive/hash, verification states `missing`/`found_valid`/`found_invalid`/`found_unknown`/`duplicate`/`conflict`/`not_required`, planner-compatible)
 - Validation states explicit, matching order: exact filename+hash, alias+hash, size fallback, wrong content→`found_invalid`, unknown→`found_unknown`; multiple variants; conditional `psx_content_present` etc.; destinations profile-driven; reuse `archive`/`hash` infrastructure; `get_valid_destinations()`; no invented hashes (only GBA `a860a8...` and O2ROM MD5)
 - **Tests:** `test_bios_validation.py` 17 tests covering valid by filename+hash, alias+hash, invalid wrong hash, size-only, unknown, missing, duplicate identical, conflict same filename diff content, multiple variants, conditional triggered/not required, archive payload/container/unsupported, deterministic, schema, no invented hashes — **pytest 94 PASS (77+17)**
 - **Gate:** `pytest 94 PASS`, `cargo check` PASS (with `bios.rs` + `regex`), `context-contract PASS`, `preflight PASS`, `git diff -- sd_root` empty, no SD writes, desktop still buildable
+
+### Phase BIOS-B — BIOS Manager UI + planner integration (current)
+
+- BIOS tab in main navigation (`Overview` ↔ `BIOS`) with TreeFrogUI-global profile-driven BIOS, user-friendly labels (`Verified`/`Missing`/`Needs verification`/`Invalid`/`Duplicate`/`Conflict`)
+- `BiosManager.tsx`: BIOS source directory picker (`C:\BIOS`), runs existing `scanner` → `archive inspector` → `hash` → `bios validator` recursively, safely inspects archives in temp workspace, hashes where needed, matches filenames/patterns/aliases, validates hashes/size, identifies duplicates/conflicts/unknown, preserves multiple variants (any one valid variant satisfies, UI shows `Variant: scph5501.bin`), conditional `psx_content_present` → “Required because PlayStation content was detected”, detail panel (system, logical BIOS name, requirement status, accepted filenames, selected variant, source path, expected destination `cubegm/bios`, expected size, SHA-256 known/actual, reason), read-only actions (`import/copy`, `skip`, `replace`, `conflict`, `duplicate`, `manual review` via existing `apply_resolutions`)
+- Global `DeploymentPlan` integration: BIOS appears in `DryRunPreview` as `BIOS: source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy reason required PS1 BIOS is valid` (or `manual_review` if missing/invalid), `DryRunPreview` BIOS filtering (`all`/`bios`/`video`/`rom`), `App.tsx` health summary (`TreeFrogUI Health: ... BIOS ⚠ 2 required BIOS missing`), no BIOS downloads
+- **Tests:** `test_bios_manager.py` 13 tests covering BIOS source scan, valid shown, missing conditional, invalid, duplicate, conflict, multiple variants, requirement activation/inactive, deployment plan entry, DryRunPreview filtering, zero SD writes, smoke dataset (valid, wrong-hash, duplicate, unknown, missing, multi-variant) — **pytest 107 PASS (94+13)**
+- **Gate:** `pytest 107 PASS`, `cargo check` PASS, `npm run build` PASS, `context-contract PASS`, `preflight PASS`, `git diff -- sd_root` empty, `Windows exe 12.21 MB` + `self-check PASS`, no SD writes
 
 ### Phase 3 — Music / Images / Ebooks (next, after BIOS-A)
 
@@ -164,9 +172,9 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ## Next Exact Action (2026-08-28)
 
-- Phase BIOS-A complete: formal BIOS profile and validation model — next is Phase BIOS-B UI or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (94 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` to verify.
+- Phase BIOS-B complete: BIOS Manager UI + planner integration — next is Phase BIOS-C or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (107 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` + `npm run build` to verify.
 
-## Unresolved for real-device validation
+## Unresolved for real-device validation (updated for BIOS-B)
 
 - Arcade payload `.zip` handling (cps1/neogeo/m2k) is profile-driven as `payload` per `archive_policy.json` but has not been physically validated on R36SX/SF3000 hardware that those cores require the zip to stay compressed. The same for 7z payload when handler becomes available.
 - Video preset remains `PROVISIONAL_UNVALIDATED`; no claim of hardware decoder support without device probe.

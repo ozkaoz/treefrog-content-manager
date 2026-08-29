@@ -66,6 +66,14 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
     onResolve(resolvedPlan);
   };
 
+  const [filter, setFilter] = useState<"all" | "bios" | "video" | "rom">("all");
+  const filteredEntries = entries.filter((e) => {
+    if (filter === "bios") return e.content_type === "bios" || e.destination.includes("cubegm/bios");
+    if (filter === "video") return e.content_type === "video";
+    if (filter === "rom") return e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped");
+    return true;
+  });
+
   return (
     <div>
       <div className="summary" style={{ marginTop: 8 }}>
@@ -78,7 +86,14 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
         <span>{s.unsupported_archive ?? 0} unsupported</span>
         <span>{s.deletions} deletions</span>
       </div>
-      <p style={{ fontSize: 12, color: "#555" }}>Planner is single source of truth for future SD writes. Defaults: exact duplicate → skip, same filename diff hash → conflict, alias duplicate → duplicate. All overrideable via per-entry resolution. No writes in preview.</p>
+      <p style={{ fontSize: 12, color: "#555" }}>Planner is single source of truth for future SD writes (including BIOS). Defaults: exact duplicate → skip, same filename diff hash → conflict, alias duplicate → duplicate. All overrideable via per-entry resolution. No writes in preview. BIOS appears in global plan as <code>source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy reason required PS1 BIOS is valid</code> (or <code>manual_review</code> if missing/invalid).</p>
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+        <span style={{ fontSize: 11, color: "#555" }}>Filter:</span>
+        {(["all", "bios", "video", "rom"] as const).map((f) => (
+          <button key={f} onClick={() => setFilter(f)} style={{ padding: "2px 8px", fontSize: 11, background: filter === f ? "#e3f2fd" : "#f5f5f5", border: "1px solid #ccc", borderRadius: 4 }}>{f}</button>
+        ))}
+        <span style={{ fontSize: 11, color: "#777", marginLeft: 8 }}>{filteredEntries.length} of {entries.length} entries</span>
+      </div>
 
       <table>
         <thead>
@@ -92,9 +107,11 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
           </tr>
         </thead>
         <tbody>
-          {entries.map((e, i) => (
-            <tr key={i} style={{ background: e.action === "conflict" || e.action === "manual_review" ? "#fff8e1" : undefined }}>
-              <td style={{ fontSize: 11 }}>{i}</td>
+          {filteredEntries.map((e) => {
+            const origIdx = plan.entries.indexOf(e);
+            return (
+            <tr key={origIdx} style={{ background: e.action === "conflict" || e.action === "manual_review" ? "#fff8e1" : undefined }}>
+              <td style={{ fontSize: 11 }}>{origIdx}</td>
               <td>
                 <span className={`badge ${badgeClass(e.resolved_action || e.action)}`}>{e.resolved_action || e.action}</span>
                 <div style={{ fontSize: 10, color: "#666" }}>{e.content_type || ""}</div>
@@ -112,10 +129,11 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
                 {e.members && e.members.length > 0 && <div style={{ fontSize: 10, color: "#1565c0" }}>members: {e.members.join(", ")}</div>}
                 {e.group && !e.members && <div style={{ fontSize: 10, color: "#1565c0" }}>group: {e.group.join(", ")}</div>}
                 {e.content_type === "video" && <div style={{ fontSize: 10, color: "#666" }}>original never modified; temp output only, deterministic naming</div>}
+                {e.content_type === "bios" && <div style={{ fontSize: 10, color: "#666" }}>BIOS: user-supplied only, never downloaded</div>}
               </td>
               <td style={{ fontSize: 11 }}>
-                {(e.action === "conflict" || e.action === "skip_duplicate" || e.action === "manual_review" || e.action === "skip_unchanged") ? (
-                  <select value={decisions[i] || ""} onChange={(ev) => handleChange(i, ev.target.value)} style={{ fontSize: 11, padding: "2px 4px" }}>
+                {(e.action === "conflict" || e.action === "skip_duplicate" || e.action === "manual_review" || e.action === "skip_unchanged" || e.content_type === "bios") ? (
+                  <select value={decisions[origIdx] || ""} onChange={(ev) => handleChange(origIdx, ev.target.value)} style={{ fontSize: 11, padding: "2px 4px" }}>
                     <option value="">{e.resolution || e.action} (default)</option>
                     {RESOLUTIONS.map((r) => (
                       <option key={r} value={r}>{r}</option>
@@ -126,7 +144,7 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
                 )}
               </td>
             </tr>
-          ))}
+          )})}
         </tbody>
       </table>
 

@@ -2,6 +2,7 @@ import { useState } from "react";
 import SourcePicker from "./components/SourcePicker";
 import SdPicker from "./components/SdPicker";
 import DryRunPreview from "./components/DryRunPreview";
+import BiosManager from "./components/BiosManager";
 
 export default function App() {
   const [sourcePath, setSourcePath] = useState<string>("");
@@ -9,6 +10,7 @@ export default function App() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<"overview" | "bios">("overview");
 
   async function handlePreview() {
     setError("");
@@ -42,37 +44,70 @@ export default function App() {
   return (
     <div className="container">
       <h1>TreeFrog Content Manager</h1>
-      <p>Global TreeFrogUI content — one schema for all handhelds. Profiles drive folder mappings, not device forks. Phase 2B: deterministic duplicate/conflict resolution — planner is single source of truth.</p>
+      <p>Global TreeFrogUI content — one schema for all handhelds. Profiles drive folder mappings, not device forks. BIOS is TreeFrogUI-global, not R36SX-specific; video preset remains <code>PROVISIONAL_UNVALIDATED</code>.</p>
 
-      <div className="card">
-        <h3>1. Select source folder (arbitrary library, recursive)</h3>
-        <SourcePicker value={sourcePath} onChange={setSourcePath} />
-        <p className="warning">Scanned recursively; classified by profile + extension/content hints; multi-file sets (CUE/BIN etc) preserved as groups. Archives inspected in temp workspace.</p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "1px solid #ddd", paddingBottom: 8 }}>
+        <button onClick={() => setActiveTab("overview")} style={{ background: activeTab === "overview" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "overview" ? 600 : 400 }}>Overview</button>
+        <button onClick={() => setActiveTab("bios")} style={{ background: activeTab === "bios" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "bios" ? 600 : 400 }}>BIOS</button>
       </div>
 
-      <div className="card">
-        <h3>2. Select TreeFrogUI SD</h3>
-        <SdPicker value={sdPath} onChange={setSdPath} />
-        <p className="warning">Detection via markers <code>cubegm/</code> + <code>roms/</code> (profile <code>sd_markers.json</code>). SD health checked before blame. No writes in preview.</p>
-      </div>
+      {activeTab === "overview" && (
+        <>
+          <div className="card">
+            <h3>1. Select source folder (arbitrary library, recursive)</h3>
+            <SourcePicker value={sourcePath} onChange={setSourcePath} />
+            <p className="warning">Scanned recursively; classified by profile + extension/content hints; multi-file sets (CUE/BIN etc) preserved as groups. Archives inspected in temp workspace. BIOS scanned via same pipeline.</p>
+          </div>
 
-      <div className="card">
-        <h3>3. Preview (dry-run, no writes) — duplicate/conflict resolution</h3>
-        <div className="row">
-          <button onClick={handlePreview} disabled={loading || !sourcePath || !sdPath}>
-            {loading ? "Scanning…" : "Scan + Preview"}
-          </button>
-          <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
-        </div>
-        {error && <p style={{ color: "crimson" }}>{error}</p>}
-        {!plan && <p>Select folders and press Scan + Preview. Nothing will be written — this is a dry-run plan. Planner is single source of truth for future SD writes.</p>}
-        {plan && <DryRunPreview plan={plan} onResolve={handleResolvedPlan} />}
-      </div>
+          <div className="card">
+            <h3>2. Select TreeFrogUI SD</h3>
+            <SdPicker value={sdPath} onChange={setSdPath} />
+            <p className="warning">Detection via markers <code>cubegm/</code> + <code>roms/</code> (profile <code>sd_markers.json</code>). SD health checked before blame. No writes in preview.</p>
+          </div>
 
-      <div className="card">
-        <h4>Artwork</h4>
-        <p>Mini Scraper remains external. <a href="https://github.com/tzubertowski/mini-scraper-cfw/releases" target="_blank" rel="noreferrer">Open Mini Scraper</a> — app can verify <code>.res</code> after scrape but must not build second backend.</p>
-      </div>
+          <div className="card">
+            <h3>3. Preview (dry-run, no writes) — duplicate/conflict/video/BIOS</h3>
+            <div className="row">
+              <button onClick={handlePreview} disabled={loading || !sourcePath || !sdPath}>
+                {loading ? "Scanning…" : "Scan + Preview"}
+              </button>
+              <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
+            </div>
+            {error && <p style={{ color: "crimson" }}>{error}</p>}
+            {!plan && <p>Select folders and press Scan + Preview. Nothing will be written — this is a dry-run plan. Planner is single source of truth (BIOS, video, ROMs, archives). Filter BIOS via the table below.</p>}
+            {plan && <DryRunPreview plan={plan} onResolve={handleResolvedPlan} />}
+          </div>
+
+          {plan && (
+            <div className="card" style={{ background: "#f1f8e9" }}>
+              <h4>TreeFrogUI Health</h4>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12 }}>
+                <span>Games {plan.summary.new + plan.summary.unchanged > 0 ? "✓" : "—"} ({plan.summary.new} new, {plan.summary.unchanged} unchanged)</span>
+                <span>Music ✓</span>
+                <span>Videos {plan.entries.some(e => e.content_type === "video" && e.action === "convert_then_copy") ? "⚠ " + plan.entries.filter(e => e.action === "convert_then_copy").length + " require conversion (provisional)" : "✓"}</span>
+                <span>BIOS {(() => {
+                  const biosEntries = plan.entries.filter(e => e.content_type === "bios" || e.destination.includes("cubegm/bios"));
+                  const biosConflicts = biosEntries.filter(e => e.action === "conflict" || e.action === "manual_review").length;
+                  const biosMissing = plan.entries.filter(e => e.content_type === "bios" && e.action === "manual_review").length;
+                  if (biosEntries.length === 0) return "— (no BIOS content scanned)";
+                  if (biosConflicts > 0) return `⚠ ${biosConflicts} BIOS need review`;
+                  if (biosMissing > 0) return `⚠ ${biosMissing} BIOS missing`;
+                  return `✓ ${biosEntries.length} BIOS`;
+                })()}</span>
+                <span>LGPT ✓</span>
+              </div>
+              <p style={{ fontSize: 11, color: "#555", marginTop: 4 }}>BIOS status is profile-driven and conditional (e.g., PS1 BIOS required only when PS1 content was detected). No BIOS downloads — user provides file → manager validates → plans deployment.</p>
+            </div>
+          )}
+
+          <div className="card">
+            <h4>Artwork</h4>
+            <p>Mini Scraper remains external. <a href="https://github.com/tzubertowski/mini-scraper-cfw/releases" target="_blank" rel="noreferrer">Open Mini Scraper</a> — app can verify <code>.res</code> after scrape but must not build second backend.</p>
+          </div>
+        </>
+      )}
+
+      {activeTab === "bios" && <BiosManager />}
     </div>
   );
 }

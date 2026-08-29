@@ -46,10 +46,10 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **TreeFrog Content Manager — Phase BIOS-A (formal BIOS profile and validation):** Global TreeFrogUI BIOS definitions (`bios.json` 1.1.0) with system/Bios identity, human-readable name, required/conditional semantics (`mandatory_when` e.g. `psx_content_present`), accepted filenames/patterns/aliases, destinations profile-driven (not `cubegm/bios` hardcoded), expected size, SHA-256 authoritative only (no invented), variants (any one satisfies), archive payload/container via existing archive/hash infrastructure, verification states (`missing`, `found_valid`, `found_invalid`, `found_unknown`, `duplicate`, `conflict`, `not_required`), planner-compatible (single source, no duplication), zero SD writes.
-- **TreeFrog Content Manager — Phase 2C (video + desktop) preserved:** Video `ffprobe`/`ffmpeg` pipeline with `PROVISIONAL_UNVALIDATED` preset, Windows x64 exe 12.21 MB + MSI/NSIS, `--self-check` PASS.
+- **TreeFrog Content Manager — Phase BIOS-B (BIOS Manager UI + planner integration):** BIOS tab in main navigation (Overview/Scan/Requirements/Details) with TreeFrogUI-global profile-driven BIOS, user-friendly labels (`Verified`/`Missing`/`Needs verification`/`Invalid`/`Duplicate`/`Conflict`), scanner via existing `scanner→archive→hash→validator` (recursive, temp workspace, hash where needed, alias/pattern/size/hash validation, duplicate/conflict/unknown detection), multiple variants (any one `scph5501.bin` satisfies `ps1_bios`), conditional `psx_content_present` → “Required because PlayStation content was detected”, detail panel (system, logical name, requirement, accepted filenames, selected variant, source path, expected destination `cubegm/bios`, expected size, SHA-256 known/actual, reason), read-only actions (`import/copy`, `skip`, `replace`, `conflict`, `duplicate`, `manual_review` via existing `apply_resolutions`), global `DeploymentPlan` integration (`BIOS: source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy`), `DryRunPreview` BIOS filtering, system-health summary (`BIOS ⚠ 2 required BIOS missing`), no BIOS downloads, zero SD writes, `cargo check` and `npm run build` still pass, Windows exe remains buildable.
+- **TreeFrog Content Manager — Phase BIOS-A preserved:** Formal `bios.json` 1.1.0 with `bios_definitions`, 7 states, no invented hashes.
 - **Release golden preserved:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation in this phase; verify `git diff -- sd_root` = NO).
-- **Idle baseline:** No active LGPT runtime task beyond content-manager BIOS-A — Await explicit user-approved objective for next milestone — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
+- **Idle baseline:** No active LGPT runtime task beyond content-manager BIOS-B — Await explicit user-approved objective for next milestone — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
 
 ## Last Relevant Validation
 
@@ -57,8 +57,8 @@ Do not trust hardcoded historical state.
 - `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
 - `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
 - `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
-- `MANAGER Phase BIOS-A`: `bios.json 1.1.0 PASS` + `bios validation PASS` (17 tests) + `94 tests PASS` (77+17) + `Windows x64 exe still buildable PASS` + `context-contract PASS` + `preflight PASS` + `sd_root clean` + `no invented hashes`
-- `MANAGER Phase 2C` preserved: `video presets PROVISIONAL_UNVALIDATED PASS` + `Windows exe 12.21 MB` + `self-check PASS`
+- `MANAGER Phase BIOS-B`: `bios.json 1.1.0 PASS` + `bios validation + UI PASS` (17+13 tests) + `107 tests PASS` (94+13) + `Windows exe 12.21 MB still buildable PASS` ( `cargo check` + `npm run build` PASS) + `BiosManager` + `DryRunPreview` BIOS filtering + `DeploymentPlan` BIOS integration + `context-contract PASS` + `preflight PASS` + `sd_root clean` + `no invented hashes` + `smoke dataset` (valid, wrong-hash, duplicate, unknown, missing, multi-variant) `PASS` + `zero SD writes`
+- `MANAGER Phase BIOS-A/2C` preserved: `video presets PROVISIONAL_UNVALIDATED` + `Windows exe` + `self-check`
 
 ## Known Issues / Risks
 
@@ -68,11 +68,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- Content Manager BIOS-A: awaiting review — then Phase BIOS-B UI (not in this task). No SD writes.
+- Content Manager BIOS-B: awaiting review — then Phase BIOS-C or Phase 2D SD writes (not in this task). No SD writes, no BIOS UI beyond read-only planning.
 
 ## Next Exact Action
 
-- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (94 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify `cargo check` still passes for desktop.
+- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (107 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify `cargo check` + `npm run build` + `npx tauri build` still produce Windows exe, verify `treefrog-manager.exe --self-check` and BIOS UI smoke test.
 
 ## Stop Conditions
 

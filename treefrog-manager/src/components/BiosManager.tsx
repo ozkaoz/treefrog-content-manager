@@ -1,0 +1,273 @@
+import { useState } from "react";
+
+type BiosVariant = {
+  id: string;
+  filenames: string[];
+  aliases: string[];
+  expected_size: number | null;
+  hashes_sha256: string[];
+};
+
+type BiosDefinition = {
+  id: string;
+  system_id: string;
+  system_name: string;
+  name: string;
+  description: string;
+  required: string;
+  requirement: { scope: string; mandatory_when: string; condition?: string };
+  variants: BiosVariant[];
+  accepted_filenames: string[];
+  accepted_patterns?: string[];
+  destinations: string[];
+  primary_destination: string;
+  expected_size: number | null;
+  hashes_sha256: string[];
+  aliases: string[];
+};
+
+type BiosValidation = {
+  bios_id: string;
+  system_id?: string;
+  state: string;
+  reason: string;
+  required: boolean;
+  file?: string | null;
+  hash?: string | null;
+  size?: number | null;
+  variant?: string | null;
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  missing: "Missing",
+  found_valid: "Verified",
+  found_invalid: "Invalid",
+  found_unknown: "Needs verification",
+  duplicate: "Duplicate",
+  conflict: "Conflict",
+  not_required: "Not Required",
+  found_valid_variant: "Verified",
+};
+
+const STATUS_COLOR: Record<string, string> = {
+  missing: "#c62828",
+  found_valid: "#2e7d32",
+  found_invalid: "#c62828",
+  found_unknown: "#ef6c00",
+  duplicate: "#1565c0",
+  conflict: "#c62828",
+  not_required: "#757575",
+};
+
+export default function BiosManager() {
+  const [biosSource, setBiosSource] = useState<string>("");
+  const [results, setResults] = useState<BiosValidation[] | null>(null);
+  const [selected, setSelected] = useState<BiosValidation | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string>("");
+  const [definitions, setDefinitions] = useState<BiosDefinition[]>([]);
+
+  async function loadDefinitions() {
+    try {
+      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
+      if (tauri) {
+        const res = (await tauri.invoke("bios_profile")) as { definitions: BiosDefinition[] };
+        setDefinitions(res.definitions || []);
+      } else {
+        // Fallback: fetch via profile (mock)
+        const mock: BiosDefinition[] = [
+          {
+            id: "ps1_bios",
+            system_id: "psx",
+            system_name: "PlayStation 1",
+            name: "PlayStation BIOS (SCPH)",
+            description: "Any 512 KiB PS1 BIOS",
+            required: "conditional",
+            requirement: { scope: "conditional", mandatory_when: "psx_content_present" },
+            variants: [
+              { id: "ps1_scph1001", filenames: ["scph1001.bin"], aliases: ["SCPH1001.BIN"], expected_size: 524288, hashes_sha256: [] },
+              { id: "ps1_scph5501", filenames: ["scph5501.bin"], aliases: ["SCPH5501.BIN"], expected_size: 524288, hashes_sha256: [] },
+            ],
+            accepted_filenames: ["scph1001.bin", "scph5501.bin", "scph*.bin"],
+            destinations: ["cubegm/bios"],
+            primary_destination: "cubegm/bios",
+            expected_size: 524288,
+            hashes_sha256: [],
+            aliases: ["SCPH1001.BIN"],
+          },
+          {
+            id: "gba_bios",
+            system_id: "gba",
+            system_name: "Game Boy Advance",
+            name: "GBA BIOS",
+            description: "Official Nintendo GBA BIOS",
+            required: "conditional",
+            requirement: { scope: "conditional", mandatory_when: "gba_content_present" },
+            variants: [{ id: "gba_bios_single", filenames: ["gba_bios.bin"], aliases: ["GBA_BIOS.BIN"], expected_size: 16384, hashes_sha256: ["a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436"] }],
+            accepted_filenames: ["gba_bios.bin"],
+            destinations: ["cubegm/bios"],
+            primary_destination: "cubegm/bios",
+            expected_size: 16384,
+            hashes_sha256: ["a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436"],
+            aliases: ["GBA_BIOS.BIN"],
+          },
+        ];
+        setDefinitions(mock);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handleScan() {
+    if (!biosSource) {
+      setError("Select a BIOS source directory (e.g., C:\\BIOS)");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    try {
+      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
+      let res: unknown;
+      if (tauri) {
+        res = await tauri.invoke("bios_scan", { biosSource });
+      } else {
+        // Mock for web dev
+        res = mockBiosScan(biosSource);
+      }
+      const data = res as { results: BiosValidation[] };
+      setResults(data.results);
+      if (data.results.length > 0) setSelected(data.results[0]);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Load definitions on mount
+  if (definitions.length === 0) {
+    // Use effect-like pattern without useEffect to keep simple
+    setTimeout(() => loadDefinitions(), 0);
+  }
+
+  return (
+    <div className="card">
+      <h3>BIOS Manager — TreeFrogUI profile-driven, no downloads</h3>
+      <p style={{ fontSize: 12, color: "#555" }}>
+        BIOS files are <strong>user-supplied only</strong> — never downloaded. Workflow: user provides file → manager scans (scanner → archive inspector → hash → validator) → validates → plans deployment. R36SX is a target, not the manager identity; all BIOS logic is TreeFrogUI-global via <code>profiles/treefrogui/bios.json</code>.
+      </p>
+
+      <div className="row" style={{ marginBottom: 12 }}>
+        <input
+          value={biosSource}
+          onChange={(e) => setBiosSource(e.target.value)}
+          placeholder="C:\BIOS or /path/to/bios"
+          style={{ flex: 1, padding: "6px 8px" }}
+        />
+        <button onClick={async () => {
+          const tauri = (window as unknown as { __TAURI__?: { dialog: { open: (opts: unknown) => Promise<string | null> } } }).__TAURI__;
+          if (tauri?.dialog) {
+            // @ts-ignore
+            const sel = await window.__TAURI__.dialog.open({ directory: true, title: "Select BIOS source folder" });
+            if (typeof sel === "string") setBiosSource(sel);
+          } else {
+            const v = prompt("Enter BIOS source path:", biosSource);
+            if (v) setBiosSource(v);
+          }
+        }}>Browse…</button>
+        <button onClick={handleScan} disabled={loading || !biosSource}>{loading ? "Scanning…" : "Scan Source"}</button>
+      </div>
+      {error && <p style={{ color: "crimson", fontSize: 12 }}>{error}</p>}
+
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <h4>Requirements {results && `(${results.length})`}</h4>
+          {!results && <p style={{ fontSize: 12, color: "#777" }}>Select a BIOS source and press Scan. The scan recursively inspects files, safely inspects archives (temp workspace), hashes where needed, matches filenames/patterns/aliases, validates hashes/size, and identifies duplicates/conflicts/unknown.</p>}
+          {results && (
+            <table>
+              <thead>
+                <tr>
+                  <th>System</th>
+                  <th>BIOS</th>
+                  <th>Status</th>
+                  <th>Variant</th>
+                  <th>Source</th>
+                  <th>Destination</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.map((r, idx) => {
+                  const def = definitions.find((d) => d.id === r.bios_id);
+                  const variantId = (r as unknown as Record<string, unknown>).variant as string | undefined || (r.file ? r.file.split(/[\\/]/).pop() : undefined);
+                  const statusLabel = STATUS_LABEL[r.state] || r.state;
+                  const action = r.state === "found_valid" ? "copy" : r.state === "missing" ? "manual_review" : r.state === "found_invalid" ? "conflict" : r.state === "duplicate" ? "skip" : "manual_review";
+                  return (
+                    <tr key={idx} onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.bios_id === r.bios_id ? "#e3f2fd" : undefined }}>
+                      <td style={{ fontSize: 11 }}>{def?.system_name || r.system_id || r.bios_id}</td>
+                      <td style={{ fontSize: 11 }}>{def?.name || r.bios_id}</td>
+                      <td><span className="badge" style={{ background: STATUS_COLOR[r.state] || "#757575", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{statusLabel}</span></td>
+                      <td style={{ fontSize: 11 }}>{variantId || (def?.variants[0]?.filenames[0] || "-")}</td>
+                      <td style={{ fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.file || ""}>{r.file ? r.file.split(/[\\/]/).pop() : "-"}</td>
+                      <td style={{ fontSize: 10 }}>{def?.primary_destination || def?.destinations[0] || "-"}</td>
+                      <td style={{ fontSize: 10 }}><span className={`badge badge-${action === "copy" ? "copy" : action === "skip" ? "skip" : "conflict"}`}>{action}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+          {results && (
+            <p style={{ fontSize: 11, color: "#2e7d32", marginTop: 8 }}>
+              Any one valid variant satisfies the logical requirement (e.g., PS1: scph1001.bin <em>or</em> scph5501.bin). Conditional requirements: PS1 BIOS shows <em>Missing</em> only when PS1 content was detected; otherwise <em>Not Required</em> — “Required because PlayStation content was detected.”
+            </p>
+          )}
+        </div>
+
+        <div style={{ flex: 1, minWidth: 280, border: "1px solid #ddd", borderRadius: 6, padding: 12, background: "#fafafa" }}>
+          <h4>Details {selected ? `— ${selected.bios_id}` : ""}</h4>
+          {!selected && <p style={{ fontSize: 12, color: "#777" }}>Select a BIOS requirement to see system, logical name, requirement status, accepted filenames, selected variant, source path, expected destination, expected size, SHA-256 when known, actual SHA-256, and validation reason. Hashes abbreviated in tables; full hash available here.</p>}
+          {selected && (() => {
+            const def = definitions.find((d) => d.id === selected.bios_id);
+            return (
+              <div style={{ fontSize: 12 }}>
+                <div><strong>System:</strong> {def?.system_name || selected.system_id} ({def?.system_id || selected.system_id})</div>
+                <div><strong>Logical BIOS:</strong> {def?.name || selected.bios_id}</div>
+                <div><strong>Status:</strong> <span style={{ color: STATUS_COLOR[selected.state] || "#000", fontWeight: 600 }}>{STATUS_LABEL[selected.state] || selected.state}</span> — {selected.reason}</div>
+                <div><strong>Required:</strong> {selected.required ? "Yes" : "No"} {def?.requirement?.mandatory_when ? `(${def.requirement.mandatory_when})` : ""}</div>
+                <div><strong>Accepted filenames:</strong> {(def?.accepted_filenames || []).join(", ")}</div>
+                <div><strong>Aliases/patterns:</strong> {[...(def?.aliases || []), ...(def?.accepted_patterns || [])].join(", ")}</div>
+                <div><strong>Selected variant:</strong> {(selected as unknown as Record<string, unknown>).variant as string || (selected.file ? selected.file.split(/[\\/]/).pop() : "-")}</div>
+                <div><strong>Source path:</strong> <span style={{ wordBreak: "break-all" }}>{selected.file || "-"}</span></div>
+                <div><strong>Expected destination:</strong> {def?.primary_destination || def?.destinations[0] || "-"}</div>
+                <div><strong>Valid destinations:</strong> {(def?.destinations || []).join(", ")}</div>
+                <div><strong>Expected size:</strong> {def?.expected_size ? `${def.expected_size} bytes` : "any"} {selected.size ? `(actual: ${selected.size})` : ""}</div>
+                <div><strong>SHA-256 when known:</strong> <span style={{ wordBreak: "break-all", fontSize: 11 }}>{(def?.hashes_sha256?.[0] || def?.variants[0]?.hashes_sha256?.[0] || "none (size-only or unknown)")}</span></div>
+                <div><strong>Actual SHA-256:</strong> <span style={{ wordBreak: "break-all", fontSize: 11 }}>{selected.hash ? `${selected.hash.slice(0, 16)}… (${selected.hash})` : "-"}</span></div>
+                <div><strong>Validation reason:</strong> {selected.reason}</div>
+                <div style={{ marginTop: 8, fontSize: 11, color: "#555" }}>
+                  <strong>Actions (read-only planning):</strong> import/copy, skip, replace, conflict, duplicate, manual review — via existing <code>apply_resolutions</code> framework, not a BIOS-specific engine. No writes in this phase.
+                </div>
+                <div style={{ marginTop: 8, fontSize: 11, color: "#2e7d32" }}>
+                  <strong>Deployment plan:</strong> BIOS appears in global Dry Run as <code>BIOS: source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy reason required PS1 BIOS is valid</code> (or <code>manual_review</code> if missing).
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function mockBiosScan(_source: string) {
+  // Mock for web dev without Tauri
+  return {
+    results: [
+      { bios_id: "ps1_bios", system_id: "psx", state: "found_valid", reason: "exact filename + known hash", required: true, file: "C:\\BIOS\\scph5501.bin", hash: "abc123...", size: 524288, variant: "scph5501.bin" },
+      { bios_id: "gba_bios", system_id: "gba", state: "found_valid", reason: "exact filename + known hash", required: true, file: "C:\\BIOS\\gba_bios.bin", hash: "a860a8...", size: 16384, variant: "gba_bios.bin" },
+      { bios_id: "o2em_bios", system_id: "o2em", state: "missing", reason: "BIOS o2em_bios missing but required when o2em_content_present", required: true, file: null, hash: null, size: null },
+    ],
+  };
+}

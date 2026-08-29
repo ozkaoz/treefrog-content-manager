@@ -318,6 +318,26 @@
 
 ---
 
+## DEC-2026-08-28-05 — BIOS-B desktop BIOS Manager UI + planner integration
+
+**Date:** 2026-08-28
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / BIOS / UI / planner / desktop
+
+**Context:** BIOS-A established formal `bios.json` 1.1.0 and validation layer (7 states, conditional, multiple variants, no invented hashes, archive reuse, zero SD writes) but no UI. Need BIOS Manager desktop UI, BIOS source scanning via existing scanner/archive/hash/validator, validation display, import planning, integration into global DeploymentPlan/Dry Run, Windows build/smoke test, without SD writes, without 7z/RAR, without BIOS downloads, without second architecture.
+
+**Decision:** Add BIOS to main navigation (`Overview` ↔ `BiosManager`) with TreeFrogUI-global, profile-driven BIOS, user-friendly status labels (`Verified` for `found_valid`, `Missing` for `missing`, `Needs verification` for `found_unknown`, `Invalid` for `found_invalid`, `Duplicate` for `duplicate`, `Conflict` for `conflict`). `BiosManager.tsx` allows selecting BIOS source directory (`C:\BIOS`), runs existing `scanner` → `archive inspector` → `hash` → `bios validator` recursively, safely inspects archives in temp workspace, hashes where needed, matches filenames/patterns/aliases, validates hashes/size, identifies duplicates/conflicts/unknown, and preserves multiple variants (any one valid variant satisfies, UI shows `Variant: scph5501.bin`). Conditional requirements preserved: `ps1_bios` shows `Missing` only when PS1 content detected, otherwise `Not Required` with reason “Required because PlayStation content was detected.” Detail panel shows system, logical BIOS name, requirement status, accepted filenames, selected variant, source path, expected destination (`cubegm/bios` primary), expected size, SHA-256 known/actual (abbreviated in table, full in detail), validation reason. Actions are read-only planning (`import/copy`, `skip`, `replace`, `conflict`, `duplicate`, `manual review`) via existing `apply_resolutions` framework, no BIOS-specific engine. BIOS appears in global `DeploymentPlan` (`BIOS: source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy reason required PS1 BIOS is valid`; missing → `manual_review`/`missing`; invalid → `conflict`/`manual_review`). `DryRunPreview` extended with BIOS filtering (`all`/`bios`/`video`/`rom`) and BIOS-aware columns; `App.tsx` adds health summary (`TreeFrogUI Health: Games ✓, Videos ⚠ 4 require conversion, BIOS ⚠ 2 required BIOS missing`). Never download BIOS (documented). No writes in this phase.
+
+**Reason:** Reuses existing scanner/archive/hash/planner services, keeps BIOS TreeFrogUI-global (not R36SX-specific), device-specific behavior remains profile/override driven, planner remains single source, UI is read-only and explains *why* a BIOS is required.
+
+**Consequences:** `treefrog-manager/src/components/BiosManager.tsx` (new), `src/App.tsx` (BIOS tab + health), `src/components/DryRunPreview.tsx` (BIOS filtering, bios badge), `src-tauri/src/lib.rs` (`bios_profile`, `bios_scan` Tauri commands, `bios` module), `python/treefrog/bios.py` already provides `validate_all_bios` used by `bios_scan`. Desktop remains buildable (`cargo check` PASS, `npm run build` PASS, previous Windows exe 12.21 MB + MSI/NSIS, `--self-check` verifies profile 1.1.0/75, video provisional, ffmpeg, dry-run). Tests cover 13 new BIOS-B cases (source scan, valid shown, missing conditional, invalid, duplicate, conflict, multiple variants, requirement activation/inactive, deployment plan entry, DryRunPreview filtering, zero SD writes) — `pytest 107 PASS` (94+13).
+
+**Evidence:** `treefrog-manager/src/components/BiosManager.tsx` (Overview/Scan/Requirements/Details, verified/missing/invalid labels, variant preservation, conditional), `treefrog-manager/src/App.tsx` (BIOS tab, health), `treefrog-manager/src/components/DryRunPreview.tsx` (BIOS filter), `treefrog-manager/src-tauri/src/lib.rs` (bios_profile/bios_scan), `treefrog-manager/src-tauri/src/bios.rs` (already), `treefrog-manager/tests/test_bios_manager.py` 13 PASS, `pytest 107 PASS`, `cargo check` PASS, `npm run build` PASS, `git diff -- sd_root` empty, no SD writes, no downloads, no 7z/RAR.
+
+**Related:** `profiles/treefrogui/bios.json`, `treefrog-manager/src/components/BiosManager.tsx`, `treefrog-manager/src/App.tsx`, `treefrog-manager/src-tauri/src/bios.rs`, `treefrog-manager/python/treefrog/bios.py`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`, `DEC-2026-08-28-04`
+
+---
+
 ### Removed / migrated (not durable — history stays in Git)
 
 - Operational pushes `999A2B27`, `3423e35`, `bdbda77`, `f3273f6`, `588270c`, `c74bd86`, `21bee8d`, `8cc0a47`, `10C9B608`, `38F8CF02`, `E9B23E36`, `DBAD57A7` etc. (DEC-2026-08-21-13..27, DEC-2026-08-21-29) — Git log is authority.
