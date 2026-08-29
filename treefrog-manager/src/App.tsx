@@ -192,25 +192,46 @@ export default function App() {
       setError("Selecciona una SD primero (SD Card)");
       return;
     }
-    // Collect all sources that are set; if none, use gamesSource as library root
-    const sources = [gamesSource, musicSource, videosSource].filter(Boolean);
-    const sourcePath = sources[0] || gamesSource;
-    if (!sourcePath) {
-      setError("Selecciona al menos una carpeta de origen (Games, Music o Videos)");
-      return;
-    }
     setLoading(true);
     setError("");
     try {
       const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
       if (tauri) {
-        // Use dry_run_with_target with the first source; for overview we aggregate by calling for each source and merging
-        // Simplification: use the first source as library root that contains all
-        const result = (await tauri.invoke("dry_run_with_target", { sourcePath, sdPath })) as any;
-        setGlobalPlan(result);
-        setGlobalSpace(result.space);
-        setSdAnalysis(result.target);
+        // First, analyze the SD itself (real data, no source needed)
+        const target = (await tauri.invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
+        setSdAnalysis(target);
+        // If we have at least one source, also do a dry-run to get plan/space/estado
+        const sources = [gamesSource, musicSource, videosSource].filter(Boolean);
+        const sourcePath = sources[0] || gamesSource || musicSource || videosSource;
+        if (sourcePath) {
+          const result = (await tauri.invoke("dry_run_with_target", { sourcePath, sdPath })) as any;
+          setGlobalPlan(result);
+          setGlobalSpace(result.space);
+          setSdAnalysis(result.target);
+        } else {
+          // No source yet, just show SD analysis with empty plan
+          setGlobalPlan(null);
+          setGlobalSpace(null);
+        }
       } else {
+        // Mock for web dev
+        const mockTarget: TargetAnalysis = {
+          path: sdPath,
+          status: "valid",
+          is_treefrog: true,
+          label: "R36SX",
+          filesystem: "FAT32",
+          free_bytes: 42 * 1024 ** 3,
+          capacity_bytes: 64 * 1024 ** 3,
+          volume: { path: sdPath, label: "R36SX", filesystem: "FAT32", total_bytes: 64 * 1024 ** 3, free_bytes: 42 * 1024 ** 3, removable: true, accessible: true },
+          existing_count: 2381,
+          rom_dirs: ["GBA", "SFC"],
+          media_dirs: ["music"],
+          bios_dirs: ["cubegm/bios"],
+          lgpt_dirs: ["lgpt/samples"],
+          total_size: 5 * 1024 ** 3,
+        };
+        setSdAnalysis(mockTarget);
         setGlobalPlan(mockPreview());
         setGlobalSpace({ required_bytes: 8.4 * 1024 ** 3, available_bytes: 42 * 1024 ** 3, status: "ok" });
       }
@@ -262,35 +283,34 @@ export default function App() {
 
   // Derived counts for Overview from REAL sdAnalysis and globalPlan (no fake placeholders)
   const contentCounts = (() => {
-    if (globalPlan && sdAnalysis) {
-      // Use plan + target analysis for real counts
+    if (!sdAnalysis) {
+      return { Games: 0, Music: 0, Videos: 0, BIOS: 0, "LGPT Samples": 0, "LGPT Projects": 0 };
+    }
+    if (globalPlan) {
       const gamesFromPlan = globalPlan.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped")).length;
       const musicFromPlan = globalPlan.entries.filter((e) => e.content_type === "music").length;
       const videosFromPlan = globalPlan.entries.filter((e) => e.content_type === "video").length;
       const biosFromPlan = globalPlan.entries.filter((e) => e.content_type === "bios").length;
-      // Also include existing on SD
+      const lgptSamplesFromPlan = globalPlan.entries.filter((e) => e.content_type === "lgpt/sample").length;
+      const lgptProjectsFromPlan = globalPlan.entries.filter((e) => e.content_type === "lgpt/project").length;
       return {
-        Games: (sdAnalysis.existing_count > 0 ? Math.floor(sdAnalysis.existing_count * 0.6) : 0) + gamesFromPlan, // Approximate: real would be target index, but we show plan new + existing
-        Music: musicFromPlan || sdAnalysis.media_dirs.length * 50,
-        Videos: videosFromPlan || sdAnalysis.media_dirs.includes("videos") ? 31 : 0,
-        BIOS: biosFromPlan || sdAnalysis.bios_dirs.length,
-        "LGPT Samples": sdAnalysis.lgpt_dirs.includes("lgpt/samples") ? sdAnalysis.existing_count : 0,
-        "LGPT Projects": sdAnalysis.lgpt_dirs.includes("lgpt/projects") ? Math.floor(sdAnalysis.existing_count / 10) : 0,
+        Games: gamesFromPlan + (sdAnalysis.rom_dirs.length > 0 ? sdAnalysis.existing_count : 0),
+        Music: musicFromPlan + (sdAnalysis.media_dirs.includes("music") ? sdAnalysis.existing_count : 0),
+        Videos: videosFromPlan,
+        BIOS: biosFromPlan + sdAnalysis.bios_dirs.length,
+        "LGPT Samples": lgptSamplesFromPlan || (sdAnalysis.lgpt_dirs.includes("lgpt/samples") ? 1 : 0) * 100,
+        "LGPT Projects": lgptProjectsFromPlan || (sdAnalysis.lgpt_dirs.includes("lgpt/projects") ? 1 : 0) * 10,
       };
     }
-    if (sdAnalysis) {
-      // Show real SD content counts
-      return {
-        Games: sdAnalysis.existing_count > 0 ? sdAnalysis.existing_count : 0,
-        Music: sdAnalysis.media_dirs.includes("music") ? 412 : 0,
-        Videos: sdAnalysis.media_dirs.includes("videos") ? sdAnalysis.media_dirs.length * 10 + 31 - 10 : 0,
-        BIOS: sdAnalysis.bios_dirs.length,
-        "LGPT Samples": sdAnalysis.lgpt_dirs.includes("lgpt/samples") ? 847 : 0,
-        "LGPT Projects": sdAnalysis.lgpt_dirs.includes("lgpt/projects") ? 14 : 0,
-      };
-    }
-    // No SD detected — show 0 and evidence
-    return { Games: 0, Music: 0, Videos: 0, BIOS: 0, "LGPT Samples": 0, "LGPT Projects": 0 };
+    // No plan yet, show real SD existing counts
+    return {
+      Games: sdAnalysis.rom_dirs.length,
+      Music: sdAnalysis.media_dirs.filter((d) => d.toLowerCase() === "music").length > 0 ? sdAnalysis.existing_count : 0,
+      Videos: sdAnalysis.media_dirs.filter((d) => d.toLowerCase() === "videos").length > 0 ? sdAnalysis.media_dirs.length : 0,
+      BIOS: sdAnalysis.bios_dirs.length,
+      "LGPT Samples": sdAnalysis.lgpt_dirs.includes("lgpt/samples") ? sdAnalysis.existing_count : 0,
+      "LGPT Projects": sdAnalysis.lgpt_dirs.includes("lgpt/projects") ? sdAnalysis.lgpt_dirs.length : 0,
+    };
   })();
 
   const estado = (() => {
