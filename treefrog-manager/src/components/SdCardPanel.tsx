@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { pickFolder } from "../services/dialog";
+
 import EmptyState from "./EmptyState";
 import MiniScraper from "./MiniScraper";
 
@@ -81,7 +81,9 @@ export default function SdCardPanel({
   const [error, setError] = useState("");
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
-  const volumes = propVolumes !== undefined ? propVolumes : volumesState;
+  const _volumes = propVolumes !== undefined ? propVolumes : volumesState;
+  void _volumes;
+  void onChange;
 
   useEffect(() => {
     if (propVolumes !== undefined) return;
@@ -94,18 +96,9 @@ export default function SdCardPanel({
     loadVolumes();
   }, [propVolumes]);
 
-  async function handlePick() {
-    try {
-      const sel = await pickFolder({ title: "Select TreeFrogUI SD target (e.g., E:\\ or /mnt/sdcard)" });
-      if (sel) {
-        onChange(sel);
-        // auto-analyze after pick
-        await handleAnalyze(sel);
-      }
-    } catch (e) {
-      setError(String(e));
-    }
-  }
+  useEffect(() => {
+    if (sdPath) void handleAnalyze(sdPath);
+  }, [sdPath]);
 
   async function handleAnalyze(p?: string) {
     const target = p ?? sdPath;
@@ -124,7 +117,6 @@ export default function SdCardPanel({
       setLoading(false);
     }
   }
-
 
 
   return (
@@ -155,32 +147,10 @@ export default function SdCardPanel({
         >
           {sdPath ? `${sdPath} — ${analysis?.label || "TreeFrogUI"} ✓` : "No hay SD seleccionada — ve a Overview para detección automática"}
         </div>
-        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-          <button onClick={handlePick} style={{ fontSize: 12 }}>Cambiar SD…</button>
-          <button onClick={() => handleAnalyze()} disabled={!sdPath || loading} style={{ fontSize: 12 }}>
-            {loading ? "Analizando…" : "Re-analizar"}
-          </button>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>Analiza recursivamente subcarpetas, no crea nada.</span>
-        </div>
+
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          La SD se detecta automáticamente al iniciar y se selecciona globalmente. Si no es la correcta, usa <strong>Cambiar SD…</strong> (explorador nativo) o elige abajo entre todas las conectadas.
+          La SD seleccionada en Overview se muestra aquí. El análisis ya se realizó. Solo puedes ejecutar la sincronización.
         </div>
-        {volumes.length > 0 && (
-          <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 8, background: "var(--surface)", maxHeight: 180, overflowY: "auto" }}>
-            <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, color: "var(--text-muted)" }}>Unidades detectadas ({volumes.length}) — selecciona a cuál aplicar:</div>
-            {volumes.map((v) => (
-              <label key={v.path} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 6px", borderRadius: 4, background: sdPath === v.path ? "var(--surface-elevated)" : "transparent", border: sdPath === v.path ? "1px solid var(--accent)" : "1px solid transparent", cursor: "pointer", marginBottom: 4 }}>
-                <input type="radio" name="sd-select" checked={sdPath === v.path} onChange={() => { onChange(v.path); handleAnalyze(v.path); }} />
-                <span style={{ fontSize: 12, flex: 1 }}>
-                  <strong>{v.path}</strong> {v.label ? `— ${v.label}` : ""} <span style={{ color: "var(--text-muted)" }}>{v.filesystem || ""} {v.total_bytes ? `• ${fmtBytes(v.total_bytes)}` : ""} {v.free_bytes ? `• ${fmtBytes(v.free_bytes)} libre` : ""}</span>
-                  {v.removable ? <span style={{ marginLeft: 6, fontSize: 10, background: "var(--success)", color: "white", padding: "1px 4px", borderRadius: 3 }}>Removible</span> : null}
-                  {!v.accessible && <span style={{ marginLeft: 6, fontSize: 10, background: "var(--danger)", color: "white", padding: "1px 4px", borderRadius: 3 }}>No accesible</span>}
-                </span>
-              </label>
-            ))}
-            {volumes.length === 0 && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No se detectaron unidades. Conecta una SD y pulsa ↻.</div>}
-          </div>
-        )}
 
       </div>
 

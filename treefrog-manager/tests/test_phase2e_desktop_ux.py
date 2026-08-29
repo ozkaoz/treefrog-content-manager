@@ -149,7 +149,8 @@ def test_working_modules_preserved():
 
 def test_source_picker_consistent_across_modules():
     # Content modules should share same dialog abstraction (Settings is info-only)
-    for comp in ["BiosManager.tsx", "LgptManager.tsx", "GamesPanel.tsx", "MusicPanel.tsx", "VideosPanel.tsx", "SdCardPanel.tsx"]:
+    # SdCardPanel is now read-only overview-driven (selector moved to Overview), so it no longer needs pickFolder
+    for comp in ["BiosManager.tsx", "LgptManager.tsx", "GamesPanel.tsx", "MusicPanel.tsx", "VideosPanel.tsx"]:
         p = SRC / "components" / comp
         if p.exists():
             t = p.read_text(encoding="utf-8")

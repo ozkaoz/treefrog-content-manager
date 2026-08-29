@@ -291,18 +291,22 @@ pub fn list_volumes_findfirst() -> Vec<Volume> {
         // Try to get physical device info via IOCTL (best effort, no admin)
         let physical = get_physical_device_for_volume(&guid);
 
-        volumes.push(Volume {
-            guid: guid.clone(),
-            mount_points: mount_points.clone(),
-            label: label.clone(),
-            filesystem: filesystem.clone(),
-            serial: serial_opt,
-            total_bytes: total,
-            free_bytes: free,
-            removable,
-            drive_type,
-            accessible,
-        });
+        // Solo incluir dispositivos removibles (SD cards, USB drives)
+        // DRIVE_REMOVABLE = 2, excluye discos fijos (DRIVE_FIXED = 3)
+        if removable {
+            volumes.push(Volume {
+                guid: guid.clone(),
+                mount_points: mount_points.clone(),
+                label: label.clone(),
+                filesystem: filesystem.clone(),
+                serial: serial_opt,
+                total_bytes: total,
+                free_bytes: free,
+                removable,
+                drive_type,
+                accessible,
+            });
+        }
 
         // Next volume
         let mut next_buf = [0u16; MAX_PATH as usize + 1];
@@ -343,7 +347,8 @@ fn list_volumes_fallback() -> Vec<Volume> {
         use windows::Win32::Storage::FileSystem::GetDriveTypeW;
         let w: Vec<u16> = OsStr::new(&drive).encode_wide().chain(std::iter::once(0)).collect();
         let dt = unsafe { GetDriveTypeW(windows::core::PCWSTR(w.as_ptr())) };
-        if dt == 0 || dt == 1 {
+        // Solo incluir DRIVE_REMOVABLE (2), excluir DRIVE_FIXED (3), DRIVE_REMOTE (4), etc.
+        if dt != 2 {
             continue;
         }
         let info = get_volume_info(&drive);

@@ -347,6 +347,60 @@ export default function App() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               <div>
                 <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>SD CARD</h4>
+                {volumes.length > 1 && (
+                  <div style={{ marginBottom: 8, padding: 8, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", maxHeight: 120, overflowY: "auto" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, color: "var(--text-muted)" }}>
+                      Dispositivos removibles detectados ({volumes.length}):
+                    </div>
+                    {volumes.map((v) => (
+                      <label
+                        key={v.path}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "4px 6px",
+                          borderRadius: 4,
+                          background: sdPath === v.path ? "var(--surface-elevated)" : "transparent",
+                          border: sdPath === v.path ? "1px solid var(--accent)" : "1px solid transparent",
+                          cursor: "pointer",
+                          marginBottom: 4,
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="sd-select"
+                          checked={sdPath === v.path}
+                          onChange={() => {
+                            setSdPath(v.path);
+                            // Trigger re-analysis
+                            setTimeout(() => handleAnalyze(), 100);
+                          }}
+                        />
+                        <span style={{ fontSize: 12, flex: 1 }}>
+                          <strong>{v.path}</strong>
+                          {v.label ? ` — ${v.label}` : ""}
+                          <span style={{ color: "var(--text-muted)" }}>
+                            {v.filesystem || ""}
+                            {v.total_bytes ? ` • ${fmtBytes(v.total_bytes)}` : ""}
+                            {v.free_bytes ? ` • ${fmtBytes(v.free_bytes)} libre` : ""}
+                          </span>
+                          {v.removable ? (
+                            <span style={{ marginLeft: 6, fontSize: 10, background: "var(--success)", color: "white", padding: "1px 4px", borderRadius: 3 }}>
+                              Removible
+                            </span>
+                          ) : null}
+                          {!v.accessible && (
+                            <span style={{ marginLeft: 6, fontSize: 10, background: "var(--danger)", color: "white", padding: "1px 4px", borderRadius: 3 }}>
+                              No accesible
+                            </span>
+                          )}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                
                 {sdAnalysis ? (
                   <>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{sdAnalysis.label || "R36SX"} — {sdPath}</div>
@@ -355,14 +409,11 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 13, color: "var(--success)" }}>✓ {fmtBytes(sdAnalysis.free_bytes)} disponibles</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                      {sdAnalysis.filesystem || "—"} • {fmtBytes(sdAnalysis.capacity_bytes)} total • {sdAnalysis.volume.removable ? "Removible" : "Fijo"}
+                      {sdAnalysis.filesystem || "—"} • {fmtBytes(sdAnalysis.capacity_bytes)} total • Removible
                     </div>
                   </>
                 ) : (
-                  <EmptyState kind="empty" title="No SD detectada" description="Conecta una SD y ve a SD Card para seleccionarla. Detección automática en curso." />
-                )}
-                {volumes.length > 0 && !sdAnalysis?.is_treefrog && (
-                  <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Volúmenes detectados: {volumes.map((v) => `${v.path} ${v.label || ""}`).join(", ")}</div>
+                  <EmptyState kind="empty" title="No SD detectada" description="Conecta una tarjeta SD o memoria USB. Solo se muestran dispositivos removibles." />
                 )}
               </div>
               <div>
