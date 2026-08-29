@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 import MiniScraper from "./MiniScraper";
@@ -58,26 +59,36 @@ function fmtBytes(n?: number | null): string {
   return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
 }
 
-export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes }: { sdPath: string; onChange: (v: string) => void; volumes?: VolumeInfo[] }) {
+export default function SdCardPanel({ 
+  sdPath, 
+  onChange, 
+  volumes: propVolumes,
+  globalPlan,
+  globalSpace,
+  onSync
+}: { 
+  sdPath: string; 
+  onChange: (v: string) => void; 
+  volumes?: VolumeInfo[];
+  globalPlan?: any;
+  globalSpace?: any;
+  onSync?: () => Promise<void>;
+}) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
-  const [space, setSpace] = useState<SpaceInfo | null>(null);
-  const [plan, setPlan] = useState<any | null>(null);
+  const [space] = useState<SpaceInfo | null>(null);
+  const [plan] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [sourcePath, setSourcePath] = useState("");
+
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
   const volumes = propVolumes !== undefined ? propVolumes : volumesState;
 
-  // Load volumes if not provided via props (for standalone use)
   useEffect(() => {
     if (propVolumes !== undefined) return;
     async function loadVolumes() {
       try {
-        const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-        if (tauri) {
-          const vols = (await tauri.invoke("list_volumes")) as VolumeInfo[];
-          setVolumesState(vols);
-        }
+        const vols = (await invoke("list_volumes")) as VolumeInfo[];
+        setVolumesState(vols);
       } catch {}
     }
     loadVolumes();
@@ -105,34 +116,8 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes }: 
     setLoading(true);
     setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        const res = (await tauri.invoke("analyze_target", { path: target })) as TargetAnalysis;
-        setAnalysis(res);
-      } else {
-        // Mock for web dev
-        setAnalysis({
-          path: target,
-          volume: { path: target, label: "TREEFROG", filesystem: "exFAT", total_bytes: 64 * 1024 ** 3, free_bytes: 42 * 1024 ** 3, removable: true, accessible: true, error: null },
-          status: "valid",
-          is_treefrog: true,
-          is_incomplete: false,
-          markers_found: ["cubegm", "roms", "lgpt"],
-          markers_missing: [],
-          lgpt_detected: true,
-          rom_dirs: ["GBA", "SFC", "PS"],
-          media_dirs: ["music", "videos"],
-          bios_dirs: ["cubegm/bios"],
-          lgpt_dirs: ["lgpt/samples", "lgpt/projects"],
-          existing_count: 1234,
-          total_size: 8 * 1024 ** 3,
-          free_bytes: 42 * 1024 ** 3,
-          capacity_bytes: 64 * 1024 ** 3,
-          filesystem: "exFAT",
-          label: "TREEFROG",
-          errors: [],
-        });
-      }
+      const res = (await invoke("analyze_target", { path: target })) as TargetAnalysis;
+      setAnalysis(res);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -140,34 +125,7 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes }: 
     }
   }
 
-  async function handleDryRun() {
-    if (!sourcePath) {
-      setError("Select a source folder first (Overview → Games source)");
-      return;
-    }
-    if (!sdPath) {
-      setError("Select an SD target first");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        const res = (await tauri.invoke("dry_run_with_target", { sourcePath, sdPath })) as any;
-        setPlan(res);
-        setSpace(res.space);
-        setAnalysis(res.target);
-      } else {
-        setPlan({ summary: { unchanged: 10, new: 5, changed: 1, duplicate_content: 2, conflicts: 1, deletions: 0 }, entries: [] });
-        setSpace({ bytes_to_copy: 100 * 1024 ** 2, bytes_to_extract: 50 * 1024 ** 2, bytes_to_generate: 0, bytes_to_skip: 200 * 1024 ** 2, required_bytes: 150 * 1024 ** 2, available_bytes: 42 * 1024 ** 3, status: "ok" });
-      }
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
+
 
   return (
     <div className="card">
@@ -223,17 +181,7 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes }: 
             {volumes.length === 0 && <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No se detectaron unidades. Conecta una SD y pulsa ↻.</div>}
           </div>
         )}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <input
-            value={sourcePath}
-            onChange={(e) => setSourcePath(e.target.value)}
-            placeholder="Source for dry-run (e.g., C:\My ROM Library) — or set in Overview"
-            style={{ flex: 1, fontSize: 12, opacity: 0.85 }}
-          />
-          <button onClick={handleDryRun} disabled={loading} title="Source + Target → dry-run (read-only)">
-            Dry-run with target
-          </button>
-        </div>
+
       </div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginBottom: 8 }}>{error}</div>}
@@ -297,57 +245,19 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes }: 
       )}
 
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
-            onClick={async () => {
-              if (!sdPath || !sourcePath) {
-                setError("Select source and SD target first, then Analyze and Dry-run");
-                return;
-              }
-              if (!plan || !space) {
-                setError("Run Dry-run with target first to validate space and collisions");
-                return;
-              }
-              if (space.status === "insufficient_space") {
-                setError("Not enough space on target — free more space or reduce source");
-                return;
-              }
-              if (!analysis?.is_treefrog) {
-                setError("Target is not a valid TreeFrogUI SD — check markers");
-                return;
-              }
-              const confirmed = confirm(`Sync ${plan.summary.new} new + ${plan.summary.changed} changed to ${sdPath}?\n\nThis will copy files to the SD card (staging + atomic rename). Continue?`);
-              if (!confirmed) return;
-              setLoading(true);
-              setError("");
-              try {
-                const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-                if (tauri) {
-                  const res = (await tauri.invoke("deploy_to_sd", { sourcePath, sdPath })) as any;
-                  alert(`Sync complete: ${res.deployed} deployed, ${res.skipped} skipped, ${res.failed} failed.\n${res.warnings?.join("\n") || ""}`);
-                  // Re-analyze after sync
-                  await handleAnalyze();
-                } else {
-                  alert("Deploy not available in web preview");
-                }
-              } catch (e) {
-                setError(String(e));
-              } finally {
-                setLoading(false);
-              }
-            }}
-            disabled={loading || !plan || space?.status === "insufficient_space"}
-            className="primary"
-            title={plan ? `Sync ${plan.summary.new} new to ${sdPath}` : "Run Dry-run first"}
-          >
-            {loading ? "Syncing…" : "Sync to SD"}
-          </button>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
-            {plan ? `Ready to sync ${plan.summary.new} new, ${plan.summary.duplicate_content} duplicate skipped` : "Run Dry-run to enable Sync"}
-          </span>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          Progress: {plan ? `${plan.summary.new} new, ${plan.summary.unchanged} unchanged, ${plan.summary.conflicts} conflicts` : "—"} | Staging: copy to <code>.treefrog_staging_*.tmp</code> then atomic <code>rename</code>, resume on interrupt, no silent overwrite. Large libraries (&gt;10k files) are limited per job and will show `manual_review`.
+        <button
+          onClick={onSync}
+          disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading}
+          className="primary"
+          style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
+          title={globalPlan ? `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}` : "Ve a Overview y pulsa ANALIZAR primero"}
+        >
+          {loading ? "Sincronizando…" : "Sync to SD"}
+        </button>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
+          {globalPlan 
+            ? `Listo para sincronizar: ${globalPlan.summary.new} nuevos, ${globalPlan.summary.unchanged} sin cambios.` 
+            : "Ve a Overview y pulsa ANALIZAR para preparar la sincronización."}
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import Header from "./components/Header";
 import EmptyState from "./components/EmptyState";
 import About from "./components/About";
@@ -83,54 +84,58 @@ export default function App() {
 
     async function doDetect() {
       try {
-        const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-        if (!tauri) return;
-        // Use robust FindFirstVolume enumeration (not just A-Z) + fallback
         let vols: VolumeInfo[] = [];
         try {
-          vols = (await tauri.invoke("list_volumes")) as VolumeInfo[];
+          vols = (await invoke("list_volumes")) as VolumeInfo[];
         } catch (e) {
           console.warn("list_volumes failed", e);
         }
-        // Always also probe G:\ and other common removable quickly (covers any SD, not just G:)
-        // But rely primarily on FindFirstVolume which already covers all volumes with GUIDs
+
         if (vols.length === 0) {
-          const candidates = ["G:\\", "E:\\", "F:\\", "D:\\", "H:\\", "I:\\", "J:\\", "K:\\", "L:\\"];
+          const candidates = ["G:\\", "E:\\", "F:\\", "D:\\", "H:\\", "I:\\", "J:\\", "K:\\", "L:"];
           for (const cand of candidates) {
             try {
-              const a = (await tauri.invoke("analyze_target", { path: cand })) as TargetAnalysis;
+              const a = (await invoke("analyze_target", { path: cand })) as TargetAnalysis;
               if (a.status !== "inaccessible") {
-                vols.push({ path: cand, label: a.label || null, filesystem: a.filesystem || null, total_bytes: a.capacity_bytes, free_bytes: a.free_bytes, removable: null, accessible: true });
+                vols.push({ 
+                  path: cand, 
+                  label: a.label || null, 
+                  filesystem: a.filesystem || null, 
+                  total_bytes: a.capacity_bytes, 
+                  free_bytes: a.free_bytes, 
+                  removable: null, 
+                  accessible: true 
+                });
               }
             } catch {}
           }
         }
+
         if (!mounted) return;
-        // Deduplicate by path
+
         const seen = new Set<string>();
         vols = vols.filter((v) => {
           if (seen.has(v.path)) return false;
           seen.add(v.path);
           return true;
         });
-        // Only update if volume list changed (avoid infinite loop)
+
         const volKey = vols.map((v) => `${v.path}:${v.accessible}:${v.label}`).join("|");
         if (volKey !== lastVolumes.join("|")) {
           lastVolumes = vols.map((v) => `${v.path}:${v.accessible}:${v.label}`);
           setVolumes(vols);
         } else {
-          // Still update volumes state if length changed (e.g., new SD inserted)
           if (vols.length !== volumes.length) setVolumes(vols);
         }
-        // Check if current sdPath is still present and accessible; if removed, show disconnected
+
         if (sdPath) {
           const stillPresent = vols.some((v) => v.path === sdPath && v.accessible);
           if (!stillPresent) {
             try {
-              const a = (await tauri.invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
+              const a = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
               if (a.status === "inaccessible" || !a.volume.accessible) {
                 setSdAnalysis({ ...a, status: "inaccessible" } as any);
-                setError(`SD desconectada: ${sdPath} ya no está accesible — selecciona otra en SD Card`);
+                setError(`SD desconectada: ${sdPath} ya no está accesible`);
               }
             } catch {
               setSdAnalysis(null);
@@ -138,37 +143,26 @@ export default function App() {
             }
           }
         }
-        // Auto-select first valid TreeFrogUI if none selected or current is not valid
-        // Use functional state to avoid stale closure
-        setSdPath((currentPath) => {
-          const currentValid = sdAnalysis?.is_treefrog && vols.some((v) => v.path === currentPath);
-          if (!currentPath || !currentValid) {
-            // Try to find valid among current vols
-            // This is async, so we need to handle separately via state update
-            // Instead, we will trigger a separate async check and return current for now
-          }
-          return currentPath;
-        });
-        // Separate async auto-select logic without relying on stale sdPath
+
         let shouldAutoSelect = !sdPath || !sdAnalysis?.is_treefrog || !vols.some((v) => v.path === sdPath && v.accessible);
         if (shouldAutoSelect) {
           for (const v of vols) {
             if (!v.accessible) continue;
             try {
-              const analysis = (await tauri.invoke("analyze_target", { path: v.path })) as TargetAnalysis;
+              const analysis = (await invoke("analyze_target", { path: v.path })) as TargetAnalysis;
               if (analysis.is_treefrog) {
-                // Only auto-select if exactly one valid or if none currently selected
                 const validCount = await (async () => {
                   let c = 0;
                   for (const vv of vols) {
                     if (!vv.accessible) continue;
                     try {
-                      const aa = (await tauri.invoke("analyze_target", { path: vv.path })) as TargetAnalysis;
+                      const aa = (await invoke("analyze_target", { path: vv.path })) as TargetAnalysis;
                       if (aa.is_treefrog) c++;
                     } catch {}
                   }
                   return c;
                 })();
+
                 if (validCount === 1 || !sdPath) {
                   setSdPath(v.path);
                   setSdAnalysis(analysis);
@@ -208,9 +202,7 @@ export default function App() {
     }
     async function analyze() {
       try {
-        const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-        if (!tauri) return;
-        const a = (await tauri.invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
+        const a = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
         setSdAnalysis(a);
       } catch {}
     }
@@ -225,45 +217,20 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        // First, analyze the SD itself (real data, no source needed)
-        const target = (await tauri.invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
-        setSdAnalysis(target);
-        // If we have at least one source, also do a dry-run to get plan/space/estado
-        const sources = [gamesSource, musicSource, videosSource].filter(Boolean);
-        const sourcePath = sources[0] || gamesSource || musicSource || videosSource;
-        if (sourcePath) {
-          const result = (await tauri.invoke("dry_run_with_target", { sourcePath, sdPath })) as any;
-          setGlobalPlan(result);
-          setGlobalSpace(result.space);
-          setSdAnalysis(result.target);
-        } else {
-          // No source yet, just show SD analysis with empty plan
-          setGlobalPlan(null);
-          setGlobalSpace(null);
-        }
+      const target = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
+      setSdAnalysis(target);
+      
+      const sources = [gamesSource, musicSource, videosSource].filter(Boolean);
+      const sourcePath = sources[0] || gamesSource || musicSource || videosSource;
+      
+      if (sourcePath) {
+        const result = (await invoke("dry_run_with_target", { sourcePath, sdPath })) as any;
+        setGlobalPlan(result);
+        setGlobalSpace(result.space);
+        setSdAnalysis(result.target);
       } else {
-        // Mock for web dev
-        const mockTarget: TargetAnalysis = {
-          path: sdPath,
-          status: "valid",
-          is_treefrog: true,
-          label: "R36SX",
-          filesystem: "FAT32",
-          free_bytes: 42 * 1024 ** 3,
-          capacity_bytes: 64 * 1024 ** 3,
-          volume: { path: sdPath, label: "R36SX", filesystem: "FAT32", total_bytes: 64 * 1024 ** 3, free_bytes: 42 * 1024 ** 3, removable: true, accessible: true },
-          existing_count: 2381,
-          rom_dirs: ["GBA", "SFC"],
-          media_dirs: ["music"],
-          bios_dirs: ["cubegm/bios"],
-          lgpt_dirs: ["lgpt/samples"],
-          total_size: 5 * 1024 ** 3,
-        };
-        setSdAnalysis(mockTarget);
-        setGlobalPlan(mockPreview());
-        setGlobalSpace({ required_bytes: 8.4 * 1024 ** 3, available_bytes: 42 * 1024 ** 3, status: "ok" });
+        setGlobalPlan(null);
+        setGlobalSpace(null);
       }
     } catch (e) {
       setError(String(e));
@@ -283,15 +250,13 @@ export default function App() {
     }
     const ok = confirm(`¿Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}?\nLos archivos se copiarán a la carpeta correcta según su extensión (perfil TreeFrogUI).`);
     if (!ok) return;
+    
     setLoading(true);
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        const sourcePath = [gamesSource, musicSource, videosSource].filter(Boolean)[0] || gamesSource;
-        const res = (await tauri.invoke("deploy_to_sd", { sourcePath, sdPath })) as any;
-        alert(`Sincronizado: ${res.deployed} copiados, ${res.skipped} omitidos`);
-        await handleAnalyze();
-      }
+      const sourcePath = [gamesSource, musicSource, videosSource].filter(Boolean)[0] || gamesSource;
+      const res = (await invoke("deploy_to_sd", { sourcePath, sdPath })) as any;
+      alert(`Sincronizado: ${res.deployed} copiados, ${res.skipped} omitidos`);
+      await handleAnalyze();
     } catch (e) {
       setError(String(e));
     } finally {
@@ -474,7 +439,16 @@ export default function App() {
       {activeTab === "videos" && <VideosPanel globalSdPath={sdPath} onSourceChange={setVideosSource} onNext={() => setActiveTab("sdcard")} />}
       {activeTab === "bios" && <BiosManager />}
       {activeTab === "lgpt" && <LgptManager />}
-      {activeTab === "sdcard" && <SdCardPanel sdPath={sdPath} onChange={setSdPath} volumes={volumes} />}
+      {activeTab === "sdcard" && (
+        <SdCardPanel 
+          sdPath={sdPath} 
+          onChange={setSdPath} 
+          volumes={volumes}
+          globalPlan={globalPlan}
+          globalSpace={globalSpace}
+          onSync={handleSync}
+        />
+      )}
       {activeTab === "settings" && <SettingsPanel />}
       {activeTab === "about" && <About />}
     </div>
@@ -520,11 +494,3 @@ export type Plan = {
   warnings: string[];
   resolved_summary?: Record<string, number>;
 };
-
-function mockPreview(): Plan {
-  return {
-    summary: { unchanged: 2100, new: 184, changed: 12, duplicate_content: 7, conflicts: 7, deletions: 0, manual_review: 1, unsupported_archive: 1 },
-    entries: [],
-    warnings: [],
-  };
-}
