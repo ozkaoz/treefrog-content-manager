@@ -143,17 +143,37 @@ See `archive_policy.json:rationale`.
 
 **Branding (Phase 2E.1 corrected):** Canonical is now `logo.png` 1536×1024 high-res desktop upright (frog left, 314×280, no flip) from `tzubertowski/TreeFrogUI` main; `xgame-logo.bmp` 480×854 vertical boot asset is fallback (stored for handheld rotated display → appeared inverted and low-res 87×99 → solid green at 32×32). Pipeline `scripts/generate_branding.py` (deterministic, NEAREST): `logo.png` overall bbox `203,355,1446,635`, x-gap `517–549` → frog `203,355,533,635` → transparent `r<20` → trimmed `314×280` `frog-only.png` → square `314×314` `frog-square.png` (upscaled to 512 for icons). Previous `xgame` path would `FLIP_TOP_BOTTOM` to correct inversion but low-res; now primary is high-res upright. Icons `32x32.png` 1686B, `64x64.png`, `128x128.png`, `256x256.png`, `512x512.png`, `icon.ico` 103442B (6 sizes 16/32/48/64/128/256 via `icon_256.save(sizes=[...])` from 256 source, was 641B placeholder with single 16), `icon.icns` 927k via NEAREST. Header (`Header.tsx`) uses 32×32 frog-square upright (no `rotate(180deg)` workaround — asset itself is correct); window/taskbar/installer use Tauri icons; About/Credits shows full frog+wordmark secondary. Provenance `src/assets/branding/README.md` documents root cause (inversion due to boot asset) and high-res fix, CC BY-NC-SA 4.0.
 
-**Navigation:** `src/App.tsx` 8 tabs `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` via `nav` + `active` class (variables). `Games/Music/Videos/Settings` are `Placeholder` ("Coming in a future release", `not_implemented` empty state). `SD Card` shows future SD target picker (native dialog) but notes read-only milestone. `BIOS` + `LGPT` remain functional, `Overview` functional.
+**Navigation:** `src/App.tsx` 8 tabs `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` via `nav` + `active` class (variables). `Games/Music/Videos/Settings` are `Placeholder` ("Coming in a future release", `not_implemented` empty state). `SD Card` now shows `SdCardPanel.tsx` (native `pickFolder` for SD target, volume info, analysis, dry-run) but still read-only (no Sync). `BIOS` + `LGPT` remain functional, `Overview` functional.
 
-**Source picker:** `src/components/SourcePicker.tsx` (`label`, `value`, `onChange`, `title`, `placeholder`) — path visible/readable (`No folder selected` or actual path) + `[Browse]` opens native dialog; `SdPicker.tsx` same abstraction for legacy SD picker; `BiosManager`/`LgptManager` use `pickFolder()` consistently.
+**Source picker:** `src/components/SourcePicker.tsx` (`label`, `value`, `onChange`, `title`, `placeholder`) — path visible/readable (`No folder selected` or actual path) + `[Browse]` opens native dialog; `SdPicker.tsx` same abstraction for legacy SD picker; `BiosManager`/`LgptManager`/`SdCardPanel` use `pickFolder()` consistently.
 
-**Empty/standard states:** `src/components/EmptyState.tsx` (`empty/loading/success/warning/error/not_implemented`) with icon + title + description + optional action; `Placeholder.tsx` wraps it for future modules; used in Overview (no folder → empty, scanning → loading), BIOS/LGPT (no scan → empty, scanning → loading, no files → empty), DryRunPreview (no scan → empty). Not over-designed.
+**Empty/standard states:** `src/components/EmptyState.tsx` (`empty/loading/success/warning/error/not_implemented`) with icon + title + description + optional action; `Placeholder.tsx` wraps it for future modules; used in Overview (no folder → empty, scanning → loading), BIOS/LGPT (no scan → empty, scanning → loading, no files → empty), DryRunPreview (no scan → empty), `SdCardPanel` (no target → empty, analyzing → loading).
+
+---
+
+## 7. SD target detection + target analysis (Phase 3A, read-only)
+
+**Platform abstraction:** `src-tauri/src/sd_target.rs` (`VolumeInfo {path,label,filesystem,total_bytes,free_bytes,removable,accessible,error}`) + `python/treefrog/sd_target.py` mirror. Windows: `GetLogicalDrives` + `GetDriveTypeW` (`2=REMOVABLE`) to enumerate `A:\`–`Z:\`, `GetVolumeInformationW` for label/filesystem, `GetDiskFreeSpaceExW` for `total/free` (via `windows` crate `0.58`, `cfg(target_os="windows")`, fallback on non-Windows returns empty). No admin, no modify, `read_dir` probe for `accessible`.
+
+**TreeFrogUI validation:** `load_markers()` reads `sd_markers.json` (required `cubegm`, `roms`, optional `frogui`, `lgpt`, `cubegm/cores`, `cubegm/bios`); `analyze_target(path)` returns `TargetAnalysis {status:is_treefrog→valid, is_incomplete→incomplete, unknown, inaccessible}`; `is_treefrog = cubegm && roms`; `is_incomplete = cubegm xor roms`; `lgpt_detected = lgpt/ exists`; TreeFrogUI global, not R36SX identity.
+
+**Target analysis (read-only):** `analyze_target` never creates files; enumerates `roms/` subdirs into `rom_dirs`/`media_dirs` (`music`,`videos`,`images`,`ebook`) /`bios_dirs`/`lgpt_dirs` (`lgpt/samples`,`lgpt/projects`), counts `existing_count` and `total_size` via `walkdir` `follow_links=false` `is_symlink` skip, reads `free_bytes`/`capacity_bytes` from `VolumeInfo`, `filesystem`/`label`.
+
+**Content indexing:** reuses `scanner`/`hash` for target side: `walkdir` + `hash::sha256_file` for duplicate detection (same `sd_hash_map` as planner), logical units preserved (ROM `rom/GBA`, multi-file `grouped/CUE_BBIN`, `archive-payload`, `music`, `video`, `bios`, `lgpt/sample`/`lgpt/project` via `classify.rs`).
+
+**Planner integration:** `planner` remains single source; `dry_run_with_target(source, sd)` does `SOURCE SCAN → TARGET SCAN (analyze_target) → plan(scanned, sd, profile) → safe path validation → case-collision check → space calculation` → returns `{plan, target, space, collisions}` read-only.
+
+**Space calculation:** `calculate_space(plan, free_bytes)` sums `bytes_to_copy` (`copy`), `bytes_to_extract` (`extract`), `bytes_to_generate` (`convert_then_copy`), `bytes_to_skip` (`skip_*`), `required = copy+extract+generate`, `status = insufficient_space if required > available else ok/unknown`; UI shows `Required 8.42 GB / Available 7.91 GB / Not enough space`.
+
+**Safe path handling:** `validate_destination_path(dest)` prevents absolute (`/`, `\`), traversal (`..`), drive injection (`C:`), UNC (`\\\\`), ADS (`:`), reserved (`CON` etc.), trailing dot/space, illegal Windows chars (`<>:"|?*`), backslash, empty component; `check_case_collision(dests)` finds case-insensitive duplicates (`to_lowercase` map); profile remains source of destination mappings.
+
+**Zero-write guarantee:** `analyze_target` + `list_volumes` + `calculate_space` + `planner::plan` all use `walkdir` + `sha256` + `TempDir`, never `create_dir`/`write`/`remove` on `sd_path`; `write_probe` exists but is never called in this milestone; `probe` file `.treefrog_probe_*` is only for explicit health check, not used in analysis.
 
 ---
 
 ## 7. Testing
 
-`treefrog-manager/tests/` 151 tests:
+`treefrog-manager/tests/` 182 tests (165 + 17 Phase 3A):
 
 - 31 original: profile_loader, scanner_classification, archive_inspection, duplicate_engine, dry_run_planner, sd_detection, bios_and_lgpt
 - 22 Phase 2A (`test_phase2a_archive_ingestion.py`): valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS colon, collision, expansion limit, member count limit, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven
@@ -161,8 +181,10 @@ See `archive_policy.json:rationale`.
 - 17 Phase BIOS-A (`test_bios_validation.py`): valid by filename+hash, alias+hash, invalid wrong hash, size-only, unknown, missing, duplicate identical, conflict same filename diff content, multiple variants, conditional triggered/not required, archive payload/container/unsupported, deterministic, schema, no invented hashes
 - 24 Phase LGPT (`test_lgpt_manager.py`): samples (normal, recursive, duplicate, alias, conflict, unchanged, archive, unsafe, deterministic) + projects (logical unit, duplicate, conflict, unchanged, deterministic identity, nested, container) + planner deployment entries + build script
 - 20 Phase 2E (`test_phase2e_desktop_ux.py`): dialog service, no prompt, source-picker, SD picker, theme tokens, theme init, frog-only asset, branding provenance, icons, no duplicated source, navigation entries, working modules, source-picker consistency, empty states, version consistency, Tauri build config, header/about branding, no SD writes
+- 14 Phase 2E.3 (`test_phase2e_branding_fix.py`): frog high-res 314×280, square 512, generation uses logo.png + ROTATE_90 + -45° handling, no placeholder, ICO 7 sizes, provenance, NEAREST, header no rotate, version, portable, installer, release workflow
+- 17 Phase 3A (`test_sd_target.py`): valid/incomplete/unknown/inaccessible targets, removable-volume abstraction, ROM/media/BIOS/LGPT detection, logical units not flattened, hashing via planner, space ok/insufficient, destination validation (absolute/traversal/drive/reserved/illegal/case-collision), integration with planner, deterministic, zero writes, video/BIOS/LGPT space
 
-All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `cubegm/`+`roms/` markers). No test writes to real SD.
+All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `cubegm/`+`roms/` markers). No test writes to real SD. `sd_root` untouched (`git diff -- sd_root` empty) verified after each run.
 
 `test_agent_context_contract.py` and `test_release_audio_bootstrap.py` remain PASS.
 
@@ -182,9 +204,9 @@ All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `c
 
 ## 9. Git discipline and next
 
-- `sd_root/` untouched (`git diff -- sd_root` empty) — confirmed for 2E (also 151 tests)
+- `sd_root/` untouched (`git diff -- sd_root` empty) — confirmed for 3A (182 tests, zero-write via temp fixtures)
 - Content manager repo independent from LGPT runtime payload
-- Phase 2E is Desktop UX foundation (native dialogs, theme, branding, navigation, source picker, empty states) + still no SD writes, no 7z/RAR, no new backend content features. Next is Phase 3 Music/Images/Ebooks or SD writes.
+- Phase 3A is SD target detection + target validation + deployment-plan integration (read-only, no SD writes, no 7z/RAR, no new backend content features). Next is Phase 3B SD deployment engine (staging, atomic rename, resume, actual writes) + Verification/resume + Hardening + Mini Scraper.
 
 ## 10. BIOS is TreeFrogUI-global, not R36SX-specific
 

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Reproducible Windows x64 build for TreeFrog Content Manager (Tauri 2)
@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ManagerDir = Join-Path $RepoRoot "treefrog-manager"
 
-Write-Host "=== TreeFrog Content Manager — Windows x64 Build ===" -ForegroundColor Cyan
+Write-Host "=== TreeFrog Content Manager - Windows x64 Build ===" -ForegroundColor Cyan
 Write-Host "Repo: $RepoRoot"
 Write-Host "Manager: $ManagerDir"
 
@@ -29,11 +29,11 @@ function Test-Command($cmd) {
 }
 
 $missing = @()
-if (-not (Test-Command "cargo")) { $missing += "Rust (cargo) — install via https://rustup.rs (stable)" }
-if (-not (Test-Command "node")) { $missing += "Node.js 18+ — https://nodejs.org" }
+if (-not (Test-Command "cargo")) { $missing += "Rust (cargo) - install via https://rustup.rs (stable)" }
+if (-not (Test-Command "node")) { $missing += "Node.js 18+ - https://nodejs.org" }
 if (-not (Test-Command "npm")) { $missing += "npm (comes with Node.js)" }
-if (-not (Test-Command "ffmpeg")) { Write-Host "WARNING: ffmpeg not found — video pipeline requires ffmpeg/ffprobe at runtime, but build can proceed" -ForegroundColor Yellow }
-if (-not (Test-Command "ffprobe")) { Write-Host "WARNING: ffprobe not found — video inspection requires ffprobe at runtime" -ForegroundColor Yellow }
+if (-not (Test-Command "ffmpeg")) { Write-Host "WARNING: ffmpeg not found - video pipeline requires ffmpeg/ffprobe at runtime, but build can proceed" -ForegroundColor Yellow }
+if (-not (Test-Command "ffprobe")) { Write-Host "WARNING: ffprobe not found - video inspection requires ffprobe at runtime" -ForegroundColor Yellow }
 
 if ($missing.Count -gt 0) {
     Write-Host "Missing prerequisites:" -ForegroundColor Red
@@ -210,3 +210,5 @@ Write-Host "Or launch the GUI: & `"$exe`""
 Write-Host "The app should: load TreeFrogUI profile, allow source selection, generate dry-run without SD writes."
 
 Write-Host "`nBuild complete." -ForegroundColor Green
+
+

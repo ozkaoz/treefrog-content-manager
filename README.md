@@ -86,7 +86,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 # Manual QA: docs/MANUAL_QA_2E.md (portable + installed, frog orientation, icons, Light/Dark, BIOS/LGPT)
 ```
 
-Branding: Frog pixel-art from `logo.png` 1536×1024 high-res desktop upright (primary, `logo.png` left 314×280 → `280×314` after 90° CCW, `frog-only.png` 280×314, `frog-square.png` 314×314) — previous `xgame-logo.bmp` vertical boot asset was inverted/sideways and low-res (87×99 → solid green at 32). Pipeline `scripts/generate_branding.py` (NEAREST, `r<20` transparent, x-gap 517–549, 90° CCW) + 6-size ICO `103k` (was 641B). Full frog+wordmark retained only in About/Credits (`src/assets/branding/README.md`). No newly generated logo, no CSS rotation.
+Branding: Frog pixel-art from `logo.png` 1536×1024 high-res desktop upright (primary, `logo.png` left 314×280 → `frog-canonical.png` 314×280, `frog-square.png` 512×512, no rotation, legs DOWN) — previous `xgame-logo.bmp` vertical boot asset was inverted/sideways and low-res (87×99 → solid green at 32). Pipeline `scripts/generate_branding.py` (NEAREST, `r<20` transparent, x-gap 517–549, 25% padding, 7-size ICO 16/24/32/48/64/128/256) + `icon.ico` 48k + `icon.icns` 577k. Full frog+wordmark retained only in About/Credits (`src/assets/branding/README.md`). No newly generated logo, no CSS rotation.
 
 ## Repository layout
 
@@ -99,7 +99,7 @@ Branding: Frog pixel-art from `logo.png` 1536×1024 high-res desktop upright (pr
 - `tests/`: current regression tests.
 - `docs/`: consolidated user and developer documentation. `docs/BUILD_WINDOWS.md` (desktop build), `docs/MANUAL_QA_2E.md` (manual QA).
 - `profiles/treefrogui/`: versioned declarative TreeFrogUI profiles (systems, media, bios, lgpt, video, archive, sd markers).
-- `treefrog-manager/`: Tauri 2 desktop app (Rust + React + TypeScript, `src/services/dialog.ts` native dialogs, `src/services/theme.ts` Windows theme, `src/assets/branding/frog-only.png` frog icon, `src/components/` navigation/source-picker/empty-states).
+ - `treefrog-manager/`: Tauri 2 desktop app (Rust + React + TypeScript, `src/services/dialog.ts` native dialogs, `src/services/theme.ts` Windows theme, `src/assets/branding/frog-canonical.png` 314×280 frog icon, `src/components/` navigation/source-picker/empty-states, `src-tauri/src/sd_target.rs` SD target detection + `src/components/SdCardPanel.tsx` SD analysis UI (read-only, zero-write, profile-driven `sd_markers.json`)).
 
 ## License
 

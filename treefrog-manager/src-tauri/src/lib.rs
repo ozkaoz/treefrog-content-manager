@@ -7,6 +7,7 @@ pub mod planner;
 pub mod profile;
 pub mod scanner;
 pub mod sd;
+pub mod sd_target;
 pub mod video;
 
 use serde::{Deserialize, Serialize};
@@ -65,7 +66,16 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![dry_run_preview, detect_sd, verify_profile, bios_profile, bios_scan])
+        .invoke_handler(tauri::generate_handler![
+            dry_run_preview,
+            detect_sd,
+            verify_profile,
+            bios_profile,
+            bios_scan,
+            list_volumes,
+            analyze_target,
+            dry_run_with_target
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -197,4 +207,42 @@ fn bios_scan(bios_source: String) -> Result<serde_json::Value, String> {
     // Deterministic sort by bios_id
     out.sort_by(|a,b| a.get("bios_id").and_then(|x| x.as_str()).unwrap_or("").cmp(b.get("bios_id").and_then(|x| x.as_str()).unwrap_or("")));
     Ok(serde_json::json!({ "results": out }))
+}
+
+#[tauri::command]
+fn list_volumes() -> Result<serde_json::Value, String> {
+    let vols = sd_target::list_volumes();
+    Ok(serde_json::to_value(vols).unwrap())
+}
+
+#[tauri::command]
+fn analyze_target(path: String) -> Result<serde_json::Value, String> {
+    let analysis = sd_target::analyze_target(&path).map_err(|e| e.to_string())?;
+    // Validate that we haven't written anything (read-only guarantee)
+    Ok(serde_json::to_value(analysis).unwrap())
+}
+
+#[tauri::command]
+async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<serde_json::Value, String> {
+    let profile = profile::load_profile().map_err(|e| e.to_string())?;
+    let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
+    if target.status == "inaccessible" {
+        return Err(format!("Target inaccessible: {}", sd_path));
+    }
+    // Use existing planner (single source of truth) with target path
+    let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
+    let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    // Validate destination paths and check collisions
+    for e in &plan.entries {
+        sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
+    }
+    let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
+    let collisions = sd_target::check_case_collision(&dests);
+    // Calculate space
+    let space = sd_target::calculate_space(&plan, target.free_bytes);
+    let mut out = serde_json::to_value(&plan).unwrap();
+    out["target"] = serde_json::to_value(&target).unwrap();
+    out["space"] = serde_json::to_value(&space).unwrap();
+    out["collisions"] = serde_json::to_value(&collisions).unwrap();
+    Ok(out)
 }

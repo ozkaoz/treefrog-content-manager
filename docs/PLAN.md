@@ -105,41 +105,49 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 - **Tests:** `test_lgpt_manager.py` 24 tests covering samples (normal, recursive, duplicate, alias, conflict, unchanged, archive, unsafe, deterministic) + projects (logical unit, duplicate, conflict, unchanged, deterministic identity, nested, container) + planner (deployment entries, correct destinations, duplicate/conflict actions, dry-run, zero SD writes) + build script (installer discovery, Desktop resolution) — **pytest 131 PASS (107+24)**
 - **Gate:** `pytest 131 PASS`, `context-contract PASS`, `preflight PASS`, `Windows exe` + `Desktop installer` + `self-check PASS`, `git diff -- sd_root` empty
 
-### Phase 2E — Desktop UX foundation: native dialogs, Windows theme, branding, navigation (current)
+### Phase 2E — Desktop UX foundation (done)
 
-- **Native Windows dialogs:** replace `window.prompt()` with Tauri `@tauri-apps/plugin-dialog` `open({directory:true})` / `open({directory:false})` via reusable `src/services/dialog.ts` (`pickFolder()`, `pickFile()`, `pickFiles()`, `pickFolders()`). All source folders (Games, Music, Video, BIOS, LGPT Samples/Projects, future SD target) share same abstraction; path returned cleanly to Rust/frontend state; manual QA verifies native picker in packaged Windows app.
+- **Native Windows dialogs:** replace `window.prompt()` with Tauri `@tauri-apps/plugin-dialog` `open({directory:true})` / `open({directory:false})` via reusable `src/services/dialog.ts` (`pickFolder()`, `pickFile()`, `pickFiles()`, `pickFolders()`). All source folders (Games, Music, Video, BIOS, LGPT Samples/Projects, SD target) share same abstraction; path returned cleanly to Rust/frontend state; manual QA verifies native picker in packaged Windows app.
 - **Windows Light/Dark:** follow `prefers-color-scheme`, dynamic `watchSystemTheme` via `window.matchMedia("(prefers-color-scheme: dark)")`; centralized CSS variable tokens (`--bg`, `--surface`, `--surface-elevated`, `--text`, `--text-muted`, `--border`, `--accent`, `--success`, `--warning`, `--danger`, `--input`, `--focus`) defined in `src/styles.css` for `light` and `dark` via `@media (prefers-color-scheme: dark)` and `[data-theme]`; readable contrast both themes; never make TreeFrogUI device theme.
-- **Branding:** use official `xgame-logo.bmp` (480×854, frog+wordmark, black background) from `tzubertowski/TreeFrogUI` main; frog ONLY as primary mark (no redraw), transparent crop `src/assets/branding/frog-only.png` (87×99) + `frog-square.png` (99×99) via deterministic `scripts/generate_branding.py` (NEAREST, `r<20&&g<20&&b<20` → transparent, split at 10px zero gap y≈349–358); generated icons `src-tauri/icons/32x32.png`, `128x128.png`, `128x128@2x.png`, `256x256.png`, `512x512.png`, `icon.ico` (16/32/48/256), `icon.icns` (512); full frog+wordmark retained only in About/Credits secondary; provenance documented in `src/assets/branding/README.md` (CC BY-NC-SA 4.0, frog from FrogUI); no newly generated logo; no unnecessary duplicated source assets.
-- **Identity:** `TreeFrog Content Manager` with frog icon as primary mark — window icon, desktop/Start Menu icon, installer icon, header branding (32×32 frog + wordmark), About section; restrained professional, not mimicking TreeFrogUI handheld frontend.
-- **Navigation foundation:** `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` (8 tabs) in `src/App.tsx`; not-yet-implemented modules show `Placeholder` with "Coming in a future release" — no fake functionality; BIOS + LGPT remain functional, Overview functional.
-- **Source picker:** revised `src/components/SourcePicker.tsx` — `[Browse]` opens native picker, selected path visible/readable, no manual typing required except hidden debug fallback; consistent behavior across BIOS/LGPT/future Games/Music/Videos/SD.
-- **Empty/standard states:** `src/components/EmptyState.tsx` — consistent visual for `empty/loading/success/warning/error/not_implemented` (e.g., "No folder selected", "Scanning…", "No files found", "Requires attention"); not over-designed.
-- **Tests:** `test_phase2e_desktop_ux.py` 20 tests covering dialog service, prompt removal, source-picker state, theme tokens, theme init, branding assets, provenance, icons, navigation entries, working modules, source-picker consistency, placeholder, empty states, version consistency, header/about branding, no SD writes — **pytest 151 PASS (131+20)**.
-- **Desktop build:** still via `scripts/build_windows.ps1`; verifies installer builds, installer icon is frog, app icon correct, installs, launches, native Browse opens real dialog, light/dark reflected, BIOS/LGPT functional; installer copied to Desktop as `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` + `.sha256`; manual QA documented in `docs/MANUAL_QA_2E.md`.
-- **Gate:** `pytest 151 PASS` + `cargo check PASS` + `npm run build PASS` + `Windows exe` launch PASS + native dialog PASS + light/dark PASS + icons PASS + BIOS/LGPT PASS + `git diff -- sd_root` empty.
+- **Branding:** canonical `logo.png` 1536×1024 frog left 314×280 → `frog-canonical.png` 314×280 + `frog-square.png` 512×512 via `scripts/generate_branding.py` (NEAREST, `r<20` transparent, 25% padding, 7-size ICO 16/24/32/48/64/128/256, `icon.ico` 48k, `icon.icns` 577k); header/window/installer use frog; provenance `src/assets/branding/README.md` (CC BY-NC-SA 4.0); portable `TreeFrog-Content-Manager-0.1.0-Windows-x64.exe` 14.29 MB (profile embedded) + installer `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` 3.49 MB both on Desktop.
+- **Navigation foundation:** `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` (8 tabs) in `src/App.tsx`; placeholders for not-yet-implemented show "Coming in a future release" — no fake functionality; BIOS + LGPT remain functional, Overview functional.
+- **Source picker:** revised `src/components/SourcePicker.tsx` — `[Browse]` opens native picker, selected path visible/readable, no manual typing required except hidden debug fallback; consistent behavior across BIOS/LGPT/Games/Music/Videos/SD.
+- **Empty/standard states:** `src/components/EmptyState.tsx` — consistent visual for `empty/loading/success/warning/error/not_implemented`; not over-designed.
+- **Tests:** `test_phase2e_desktop_ux.py` 20 + `test_phase2e_branding_fix.py` 14 covering dialog, theme, branding, icons (7 sizes, ICO multi-res), navigation, header, version, portable/installer — **pytest 165 PASS (131+34)**.
+- **Desktop build:** via `scripts/build_windows.ps1`; verifies installer + portable, icons, native Browse, light/dark, BIOS/LGPT functional; manual QA `docs/MANUAL_QA_2E.md`.
+- **Gate:** `pytest 165 PASS` + `cargo check PASS` + `npm run build PASS` + `Windows exe` launch PASS + native dialog PASS + light/dark PASS + icons PASS + BIOS/LGPT PASS + `git diff -- sd_root` empty.
 
-### Phase 3 — Music / Images / Ebooks (next)
+### Phase BIOS — Formal BIOS profile and validation model (done: BIOS-A + BIOS-B + Manager UI)
 
-- Music/images/ebooks: use profile media destinations/formats; preserve music subfolders; MuPDF ebook per-book `.positions` ignore
-- **Gate:** fixture tests, no claim without evidence
-
-### Phase 4 — BIOS Manager (done: BIOS-A + BIOS-B)
-
-- BIOS Manager UI + planner integration already done (see above); profile defines system/core, destination, accepted patterns, expected size/hash when known, required/recommended, region variants (profile `bios.json` 1.1.0 formal)
+- BIOS Manager UI + planner integration already done; profile defines system/core, destination, accepted patterns, expected size/hash when known, required/recommended, region variants (profile `bios.json` 1.1.0 formal)
 - **Gate:** BIOS verification + UI tests done
 
-### Phase 6 — Mini Scraper Launcher + Artwork Verification
+### Phase LGPT — Samples + Projects (done)
 
-- External tool launcher button/open action via Tauri opener; optional verification of `.res` artwork after scrape (`.res/<rom>.png`, also `Imgs/`, `images/` compat, title/screen suffixes `-title/-titlescreen/-screenshot/-screen/-preview`)
-- No second scraper/backend
-- **Gate:** launcher opener test (mock), `.res` verification fixture tests
+- LGPT profile `lgpt.json` with `lgpt/samples` + `lgpt/projects` (verified `sd_root/lgpt/*`), profile-driven; reuse scanner/logical-unit/archive/SHA-256/conflict resolver/deployment planner/dry-run UI; Samples/Projects UI with pickers, scanning, counts, dry-run actions, filtering; Windows installer copied to Desktop.
+- **Gate:** `pytest 165 PASS` + `cargo check PASS` + `npm run build PASS` + `Windows exe` + `Desktop installer` + `self-check PASS`, `git diff -- sd_root` empty
 
-### Phase 7 — Hardening, Packaging, Performance, Release QA
+### Phase 3A — SD target detection + target validation + deployment-plan integration (READ-ONLY, current)
 
-- Large-library performance (10k+ files, hash caching, parallel scanning where safe)
-- Packaging: Windows installer (Tauri bundler), portable fs layer, SQLite migrations
-- Release QA: full dry-run + sync + BIOS + LGPT + video matrix with fixtures; never claim hardware/video compatibility without physical evidence; never claim clean release without release gates
-- **Gate:** `BUILD PASS`, `HOST PASS`, `PACKAGING PASS`, performance fixture PASS, `CLEAN-INSTALL PHYSICAL PASS` not inferrable (requires device), so label `PHYSICAL PASS` only with evidence
+- **SD detection:** platform abstraction for removable volumes (Windows: `GetLogicalDrives`, `GetDriveTypeW`, `GetVolumeInformationW`, `GetDiskFreeSpaceExW` via `windows` crate, no admin, no modify); expose drive/root, label, filesystem, total/free, removable, accessible; not assume `E:\`.
+- **TreeFrogUI validation:** profile-driven markers (`roms/`, `cubegm/`, `frogui/`, `lgpt/` from `sd_markers.json` + `profile.json`); classify as `valid`, `incomplete`, `unknown`, `inaccessible`; TreeFrogUI global, not R36SX identity.
+- **Target analysis (read-only):** inspect selected target without creating files; show TreeFrogUI/LGPT detection, ROM/media/BIOS/LGPT directories, existing content count/size, free space; never create dirs/files.
+- **Content indexing:** reuse `scanner`/`hash` engine for target side; build target-side index for `SOURCE PLAN` vs `TARGET CONTENT` without writes; support logical units (ROM, multi-file, archive payload, music, video, BIOS, LGPT sample/project) without flattening.
+- **Planner integration:** existing `planner` remains single source of truth; target analyzer feeds destination-side info into `planner::plan`; flow `SOURCE SCAN → TARGET SCAN → EXISTING PLAN → READ-ONLY DRY RUN`; no writes.
+- **Space calculation:** dry-run calculates bytes to copy/extract/generate/skip, required free space; if insufficient → `insufficient_space` status, UI shows `Required 8.42 GB / Available 7.91 GB / Not enough space`, do not begin writes.
+- **Safe path handling:** validate all destination paths before display; prevent absolute, traversal `../`, drive injection, reserved names (`CON` etc.), illegal Windows chars (`<>:"/\|?*`), case-insensitive collisions; profile remains source of destination mappings.
+- **UI:** complete `SD Card` section: `[ Select SD ]` native dialog → `Selected E:\` `Volume TREEFROG` `Filesystem exFAT` `Capacity 64 GB` `Free 42.8 GB` `TreeFrogUI ✓detected` `LGPT ✓detected` `Status READY` → `[ Analyze ]` → show `New/Changed/Duplicate/Conflict/Conversion/BIOS warnings/Insufficient space`; Sync button disabled/"not implemented".
+- **Zero-write guarantee:** no file/dir creation/deletion/rename/replacement/metadata writes; tests with temp filesystem fixture; `git diff -- sd_root == empty`.
+- **Gate:** `pytest 165+ new` + `cargo check` + `npm run build` + `Windows portable + installer` + `SD Card tab` + `native Select SD` + `read-only` + `git diff -- sd_root` empty.
+
+### Phase 3B — SD deployment engine (next, NOT in this milestone)
+
+- Staging, atomic rename, resume, verification, actual writes; requires explicit user confirmation.
+
+### Phase 4 — Verification/resume + Hardening + Mini Scraper external integration + Release 1.0 (next)
+
+- Verification/resume, hardening, Mini Scraper launcher (`opener`), `.res` verification; no second scraper/backend.
+- **Gate:** launcher opener test, `.res` verification fixture tests; `BUILD/HOST/PACKAGING PASS`, performance fixture PASS, `CLEAN-INSTALL PHYSICAL PASS` only with evidence.
 
 ---
 
@@ -182,9 +190,9 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ---
 
-## Next Exact Action (2026-08-29)
+## Next Exact Action (2026-08-30)
 
-- Phase 2E complete: Desktop UX foundation (native dialogs, Windows theme, TreeFrog branding, navigation, source picker, empty states) + Windows build + manual QA — next is Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (151 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` + `npm run build` + verify `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` on Desktop + manual QA `docs/MANUAL_QA_2E.md`.
+- Phase 3A complete: SD target detection + validation + target analysis + content indexing + planner integration + space calculation + safe path handling + SD Card UI + zero-write guarantee + Windows build + manual validation — next is Phase 3B SD deployment engine (actual writes, staging, atomic rename, resume). Run `pytest treefrog-manager/tests -v` (165+ new) + `python tests/test_agent_context_contract.py` + `python tests/test_release_audio_bootstrap.py` + `bash scripts/agent_preflight.sh --allow-dirty` + `npm run build` + `cargo check` + `git diff -- sd_root` + verify `TreeFrog-Content-Manager-0.1.0-Windows-x64.exe` + `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` on Desktop + SD Card tab native Select SD + read-only Analyze + no writes.
 
 ## Unresolved for real-device validation (updated for LGPT)
 

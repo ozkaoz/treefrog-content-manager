@@ -27,6 +27,7 @@ chrono = "0.4"
 tempfile = "3"
 anyhow = "1"
 regex = "1"
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_WindowsProgramming"] }
 
 # archive extras (feature-gated, keep 7z/rar via tool adapters for now)
 # sevenz-rust and unrar when available — otherwise fallback to external tools

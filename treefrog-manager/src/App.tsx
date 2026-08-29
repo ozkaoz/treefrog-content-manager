@@ -7,6 +7,7 @@ import Header from "./components/Header";
 import Placeholder from "./components/Placeholder";
 import EmptyState from "./components/EmptyState";
 import About from "./components/About";
+import SdCardPanel from "./components/SdCardPanel";
 import { initTheme } from "./services/theme";
 import { pickFolder } from "./services/dialog";
 
@@ -181,14 +182,7 @@ export default function App() {
       {activeTab === "videos" && <Placeholder title="Videos" />}
       {activeTab === "bios" && <BiosManager />}
       {activeTab === "lgpt" && <LgptManager />}
-      {activeTab === "sdcard" && (
-        <div className="card">
-          <h3>SD Card</h3>
-          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Future SD target selection will use the native Windows folder picker (same dialog abstraction as source folders). This milestone is read-only — no physical SD writes.</p>
-          <SourcePicker label="SD target (future)" value={sdPath} onChange={setSdPath} title="Select TreeFrogUI SD target" />
-          <div style={{ marginTop: 12 }}><EmptyState kind="not_implemented" title="Coming in a future release" description="SD deployment (staging, atomic rename, resume) is not in this milestone." /></div>
-        </div>
-      )}
+      {activeTab === "sdcard" && <SdCardPanel sdPath={sdPath} onChange={setSdPath} />}
       {activeTab === "settings" && <Placeholder title="Settings" />}
       {activeTab === "about" && <About />}
     </div>
