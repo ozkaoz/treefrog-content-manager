@@ -89,23 +89,14 @@ def extract_frog_logo():
                 out.putpixel((x,y),(r,g,b,255))
     bbox=out.getbbox()
     trimmed=out.crop(bbox) if bbox else out
-    print(f"trimmed logo frog {trimmed.size} before orientation fix")
-    # Phase 2E.2: user reports header shows frog sideways; canonical requires 90° CCW
-    # Rotate the derived frog 90° left (counter-clockwise) so orientation matches
-    # official TreeFrogUI visual reference. Fix pipeline itself, not CSS.
-    # Use transpose ROTATE_90 (Pillow) for lossless pixel-art rotation.
-    try:
-        # Pillow >=9: Image.Transpose.ROTATE_90, older: Image.ROTATE_90
-        rot = getattr(Image, "Transpose", Image).ROTATE_90 if hasattr(Image, "Transpose") else Image.ROTATE_90
-        if hasattr(Image, "Transpose"):
-            rot = Image.Transpose.ROTATE_90
-        else:
-            rot = Image.ROTATE_90
-        trimmed = trimmed.transpose(rot)
-    except Exception as e:
-        # fallback: rotate with NEAREST to keep pixel-art
-        trimmed = trimmed.rotate(90, expand=True, resample=Image.NEAREST)
-    print(f"trimmed logo frog after 90° CCW {trimmed.size} (corrected orientation)")
+    print(f"trimmed logo frog {trimmed.size} — canonical, no rotation (visual reference shows head top, legs DOWN, 314×280 wide, correct upright)")
+    # Phase 2E.3 required -45° relative to previously displayed 422×422 (90CCW-45 diagonal).
+    # Root-cause investigation shows canonical 314×280 without any rotation is already correct
+    # (head top, legs DOWN, as seen in preview). Previous chaining 90° CCW + -45° produced
+    # diagonal 422×422; adding another -45° would over-rotate. Therefore establish ONE
+    # canonical pipeline: official source → crop → NO rotation → frog-only.png.
+    # The -45° requirement is satisfied by removing the erroneous 90° CCW + -45° diagonal
+    # and returning to canonical upright. No CSS rotation.
     return trimmed
 
 def extract_frog_xgame_flipped():
@@ -183,18 +174,24 @@ def main():
         print(f"xgame reference { _xgame_ref.size } (for documentation)")
     except: pass
 
-    # square padded (centered, transparent)
+    # square padded (centered, transparent) — add 20% padding so low-res icons (16×16) don't become solid green
+    # For 280×314 → 314 square minimal, add padding: *1.25
     max_side=max(trimmed.size)
-    # Use square size as max_side, but ensure at least 512 for icons
-    square=Image.new("RGBA",(max_side,max_side),(0,0,0,0))
-    square.paste(trimmed, ((max_side-trimmed.size[0])//2, (max_side-trimmed.size[1])//2))
-    print(f"square {square.size}")
+    padded_side = int(max_side * 1.25)
+    # Ensure even and at least 512 for high-quality base
+    if padded_side < 512:
+        padded_side = 512
+    # Make square with extra transparent border
+    square=Image.new("RGBA",(padded_side,padded_side),(0,0,0,0))
+    square.paste(trimmed, ((padded_side-trimmed.size[0])//2, (padded_side-trimmed.size[1])//2))
+    print(f"square {square.size} (padded from {max_side} with 25% border for low-res silhouette)")
 
     out_branding=REPO_ROOT/"treefrog-manager"/"src"/"assets"/"branding"
     out_branding.mkdir(parents=True, exist_ok=True)
     trimmed.save(out_branding/"frog-only.png")
+    trimmed.save(out_branding/"frog-canonical.png")
     square.save(out_branding/"frog-square.png")
-    print(f"saved branding {out_branding} frog-only {trimmed.size} square {square.size}")
+    print(f"saved branding {out_branding} frog-only {trimmed.size} frog-canonical {trimmed.size} square {square.size}")
     # Document source
     readme = out_branding/"README.md"
     if readme.exists():
@@ -218,7 +215,10 @@ def main():
         base_for_icons = square.resize((512,512), Image.NEAREST)
         print(f"upscaled base for icons to 512")
 
+    save_resize(base_for_icons,16,out_icons/"16x16.png")
+    save_resize(base_for_icons,24,out_icons/"24x24.png")
     save_resize(base_for_icons,32,out_icons/"32x32.png")
+    save_resize(base_for_icons,48,out_icons/"48x48.png")
     save_resize(base_for_icons,64,out_icons/"64x64.png")
     save_resize(base_for_icons,128,out_icons/"128x128.png")
     save_resize(base_for_icons,256,out_icons/"128x128@2x.png")
@@ -230,9 +230,9 @@ def main():
     ico_path = out_icons/"icon.ico"
     # Use 256 PNG as source for ICO to ensure all sizes are generated correctly
     icon_256 = base_for_icons.resize((256,256), Image.NEAREST)
-    # Save with sizes including 16,32,48,64,256
-    icon_256.save(ico_path, sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
-    print(f"saved ico {ico_path} {ico_path.stat().st_size} bytes (should be >5k)")
+    # Save with sizes including 16,24,32,48,64,128,256 as required
+    icon_256.save(ico_path, sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
+    print(f"saved ico {ico_path} {ico_path.stat().st_size} bytes (should be >5k, 7 sizes)")
 
     # ICNS: 512
     icns_path = out_icons/"icon.icns"
