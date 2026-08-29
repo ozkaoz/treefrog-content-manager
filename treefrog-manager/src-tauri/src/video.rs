@@ -2,6 +2,8 @@
 // Hardware decoder variance means we never claim compat without physical device.
 
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -29,9 +31,13 @@ pub struct CompatibilityStatus {
 }
 
 pub fn probe(path: &str) -> anyhow::Result<ProbeResult> {
-    let out = std::process::Command::new("ffprobe")
-        .args(["-v","quiet","-print_format","json","-show_format","-show_streams", path])
-        .output();
+    let mut cmd = std::process::Command::new("ffprobe");
+    cmd.args(["-v","quiet","-print_format","json","-show_format","-show_streams", path]);
+    #[cfg(target_os = "windows")]
+    {
+        cmd.creation_flags(0x08000000);
+    }
+    let out = cmd.output();
     match out {
         Ok(o) if o.status.success() => {
             let v: serde_json::Value = serde_json::from_slice(&o.stdout)?;
@@ -278,9 +284,13 @@ pub fn convert(input: &Path, temp_dir: &Path, preset: &serde_json::Value) -> Con
         let _ = std::fs::create_dir_all(temp_dir);
     }
     let cmd = conversion_command(input, &output_path, preset);
-    let output = std::process::Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .output();
+    let mut command = std::process::Command::new(&cmd[0]);
+    command.args(&cmd[1..]);
+    #[cfg(target_os = "windows")]
+    {
+        command.creation_flags(0x08000000);
+    }
+    let output = command.output();
     match output {
         Ok(o) => {
             let stdout = String::from_utf8_lossy(&o.stdout).to_string();

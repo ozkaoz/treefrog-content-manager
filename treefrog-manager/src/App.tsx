@@ -297,39 +297,109 @@ export default function App() {
     }
   }
 
-  async function handleSync() {
-    if (!globalPlan || !sdPath) {
-      setError("Primero Analizar");
-      return null;
+  async function handleSync(): Promise<any> {
+    if (!sdPath) {
+      const msg = "No hay SD seleccionada. Ve a Overview y selecciona una SD.";
+      setError(msg);
+      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
+    }
+    if (!globalPlan || !globalPlan.entries || globalPlan.entries.length === 0) {
+      const msg = "No hay archivos para sincronizar. Ve a Games/Music/Videos/BIOS/LGPT y selecciona carpetas de origen.";
+      setError(msg);
+      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
     }
     if (globalSpace?.status === "insufficient_space") {
-      setError("Espacio insuficiente");
-      return null;
+      const msg = "Espacio insuficiente";
+      setError(msg);
+      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
     }
-    const ok = confirm(`¿Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}?\nLos archivos se copiarán a la carpeta correcta según su extensión (perfil TreeFrogUI).`);
-    if (!ok) return null;
     
     setLoading(true);
+    setError("");
     try {
-      const sourcePath = [gamesSource, musicSource, videosSource].filter(Boolean)[0] || gamesSource;
-      const res = (await invoke("deploy_to_sd", { sourcePath, sdPath })) as any;
-      
-      // Show detailed result
-      if (res.breakdown && res.breakdown.length > 0) {
-        const copied = res.breakdown.filter((e: any) => e.action === "copy" || e.action === "extract").length;
-        const skipped = res.breakdown.filter((e: any) => e.action.startsWith("skip")).length;
-        const conflicts = res.breakdown.filter((e: any) => e.action === "conflict" || e.action === "manual_review").length;
-        
-        alert(`Sincronización completada:\n✓ ${copied} archivos copiados\n⚠ ${skipped} archivos omitidos (ya existen o son duplicados)\n⚠ ${conflicts} conflictos requieren revisión\n\nVe a la pestaña SD Card para ver el detalle completo.`);
+      // Multi-origen: desplegar cada fuente que tiene plan
+      const sourceEntries: Array<{ src: string; plan: any }> = [
+        { src: gamesSource, plan: gamesPlan },
+        { src: musicSource, plan: musicPlan },
+        { src: videosSource, plan: videosPlan },
+        { src: biosSource, plan: biosPlan },
+        { src: lgptSamplesSource, plan: lgptPlan },
+        { src: lgptProjectsSource, plan: lgptPlan },
+      ].filter(s => s.src && s.plan && s.plan.entries && s.plan.entries.length > 0) as any;
+
+      // Fallback: si no hay planes individuales pero globalPlan existe, usar primera fuente disponible
+      let results: any[] = [];
+      if (sourceEntries.length === 0) {
+        const fallbackSrc = [gamesSource, musicSource, videosSource, biosSource, lgptSamplesSource, lgptProjectsSource].filter(Boolean)[0];
+        if (fallbackSrc) {
+          const res: any = await invoke("deploy_to_sd", { sourcePath: fallbackSrc, sdPath });
+          results.push(res);
+        }
       } else {
-        alert(`Sincronizado: ${res.deployed} copiados, ${res.skipped} omitidos`);
+        // Deduplicate sources (lgpt samples/projects may share same plan)
+        const seen = new Set<string>();
+        for (const { src } of sourceEntries) {
+          if (seen.has(src)) continue;
+          seen.add(src);
+          try {
+            const res: any = await invoke("deploy_to_sd", { sourcePath: src, sdPath });
+            results.push(res);
+          } catch (e) {
+            results.push({ deployed: 0, skipped: 0, failed: 1, error: String(e), breakdown: [], warnings: [], errors: [String(e)] });
+          }
+        }
       }
-      
+
+      // Aggregate breakdown
+      let totalDeployed = 0;
+      let totalSkipped = 0;
+      let totalFailed = 0;
+      let allBreakdown: any[] = [];
+      let allWarnings: string[] = [];
+      let allErrors: string[] = [];
+      for (const r of results) {
+        totalDeployed += r.deployed || 0;
+        totalSkipped += r.skipped || 0;
+        totalFailed += r.failed || 0;
+        if (Array.isArray(r.breakdown)) allBreakdown.push(...r.breakdown);
+        if (Array.isArray(r.warnings)) allWarnings.push(...r.warnings);
+        if (Array.isArray(r.errors)) allErrors.push(...r.errors);
+        if (r.error) allErrors.push(String(r.error));
+      }
+
+      // Si no hubo resultados individuales pero globalPlan existe, generar breakdown desde globalPlan
+      if (allBreakdown.length === 0 && globalPlan && globalPlan.entries) {
+        allBreakdown = globalPlan.entries.map((e: any) => ({
+          source: e.source,
+          destination: e.destination,
+          action: (e as any).resolved_action || e.action,
+          reason: e.reason,
+          content_type: e.content_type,
+        }));
+        // Si no hay desglose previo, inferir totales desde summary
+        if (results.length === 0) {
+          totalDeployed = globalPlan.summary.new + globalPlan.summary.changed;
+          totalSkipped = globalPlan.summary.unchanged + globalPlan.summary.duplicate_content;
+          totalFailed = globalPlan.summary.conflicts + (globalPlan.summary.manual_review || 0);
+        }
+      }
+
+      const aggregated: any = {
+        deployed: totalDeployed,
+        skipped: totalSkipped,
+        failed: totalFailed,
+        breakdown: allBreakdown,
+        warnings: allWarnings,
+        errors: allErrors,
+        results,
+      };
+
       await handleAnalyze();
-      return res;
+      return aggregated;
     } catch (e) {
-      setError(String(e));
-      return null;
+      const msg = String(e);
+      setError(msg);
+      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
     } finally {
       setLoading(false);
     }
@@ -582,6 +652,7 @@ export default function App() {
       )}
       {activeTab === "bios" && (
         <BiosManager 
+          globalSdPath={sdPath}
           onSourceChange={setBiosSource}
           onPlanChange={setBiosPlan as any}
           onNext={() => setActiveTab("lgpt")} 
@@ -589,6 +660,7 @@ export default function App() {
       )}
       {activeTab === "lgpt" && (
         <LgptManager 
+          globalSdPath={sdPath}
           onSamplesSourceChange={setLgptSamplesSource}
           onProjectsSourceChange={setLgptProjectsSource}
           onPlanChange={setLgptPlan as any}

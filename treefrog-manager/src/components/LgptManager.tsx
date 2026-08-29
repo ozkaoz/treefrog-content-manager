@@ -27,11 +27,13 @@ type Plan = {
 };
 
 export default function LgptManager({ 
+  globalSdPath,
   onSamplesSourceChange,
   onProjectsSourceChange,
   onPlanChange,
   onNext 
 }: { 
+  globalSdPath: string;
   onSamplesSourceChange?: (v: string) => void;
   onProjectsSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
@@ -128,6 +130,12 @@ export default function LgptManager({
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
 
+  async function handleScanBoth() {
+    setError("");
+    if (samplesSource) await handleScanSamples();
+    if (projectsSource) await handleScanProjects();
+  }
+
   useEffect(() => {
     const allEntries: PlanEntry[] = [];
     
@@ -170,12 +178,86 @@ export default function LgptManager({
 
   return (
     <div className="card">
-      <h3>LGPT — Samples and Projects</h3>
-      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        LGPT is a profile/integration within TreeFrog Content Manager (<code>lgpt/samples</code> + <code>lgpt/projects</code> via <code>lgpt.json</code>, R36SX is a target, not the manager identity). Reuses scanner, logical-unit model, archive inspector, SHA-256, conflict resolver, deployment planner, dry-run UI. No SD writes in this milestone. WAV is the explicit baseline for samples.
+      <h3>LGPT — Samples & Projects (Little Piggy Tracker)</h3>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+        <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Samples source folder</label>
+        <div className="row" style={{ alignItems: "stretch" }}>
+          <div
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--input)",
+              color: samplesSource ? "var(--text)" : "var(--text-muted)",
+              fontSize: 13,
+              minHeight: 36,
+              display: "flex",
+              alignItems: "center",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={samplesSource || "No folder selected — e.g., D:\\LGPT\\samples"}
+          >
+            {samplesSource || "No folder selected — e.g., D:\\LGPT\\samples"}
+          </div>
+          <button onClick={handlePickSamples}>Browse</button>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+        <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Projects source folder</label>
+        <div className="row" style={{ alignItems: "stretch" }}>
+          <div
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--input)",
+              color: projectsSource ? "var(--text)" : "var(--text-muted)",
+              fontSize: 13,
+              minHeight: 36,
+              display: "flex",
+              alignItems: "center",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={projectsSource || "No folder selected — e.g., D:\\LGPT\\projects"}
+          >
+            {projectsSource || "No folder selected — e.g., D:\\LGPT\\projects"}
+          </div>
+          <button onClick={handlePickProjects}>Browse</button>
+        </div>
+      </div>
+
+      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px 0" }}>
+        SD destino: {globalSdPath || "—"} — la app copiará automáticamente a lgpt/samples/ y lgpt/projects/ según el tipo de contenido.
       </p>
 
-      <div className="nav" style={{ marginBottom: 12 }}>
+      <div className="row">
+        <button className="primary" onClick={handleScanBoth} disabled={loading || (!samplesSource && !projectsSource)}>
+          {loading ? "Scanning…" : "Scan LGPT"}
+        </button>
+        <button
+          onClick={() => { setSamplesResult(null); setProjectsResult(null); onPlanChange?.(null); }}
+          disabled={!samplesResult && !projectsResult}
+        >
+          Clear
+        </button>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → SD Card
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
+          Continuar a SD Card →
+        </button>
+      </div>
+
+      {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
+
+      <div className="nav" style={{ margin: "12px 0" }}>
         <button onClick={() => setActiveSubTab("samples")} className={activeSubTab === "samples" ? "active" : ""}>Samples</button>
         <button onClick={() => setActiveSubTab("projects")} className={activeSubTab === "projects" ? "active" : ""}>Projects</button>
       </div>
@@ -183,16 +265,6 @@ export default function LgptManager({
       {activeSubTab === "samples" && (
         <div>
           <h4>Samples — lgpt/samples (profile-driven)</h4>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Samples source folder</label>
-            <div className="row" style={{ alignItems: "stretch" }}>
-              <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: samplesSource ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
-                {samplesSource || "No folder selected"}
-              </div>
-              <button onClick={handlePickSamples}>Browse</button>
-              <button onClick={handleScanSamples} disabled={loading || !samplesSource} className="primary">{loading ? "Scanning…" : "Scan"}</button>
-            </div>
-          </div>
           <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Recursive scan, WAV baseline, SHA-256 duplicate, same-name/different-content conflict, unchanged, archive via Phase 2A, deterministic, dry-run, no SD writes.</p>
           {!samplesResult && !loading && <EmptyState kind="empty" title="No scan yet" description="Select a Samples folder and press Scan. Click Browse to open the native Windows folder picker." />}
           {loading && activeSubTab === "samples" && <EmptyState kind="loading" title="Scanning…" />}
@@ -238,16 +310,6 @@ export default function LgptManager({
       {activeSubTab === "projects" && (
         <div>
           <h4>Projects — lgpt/projects (logical units, not flattened)</h4>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-            <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Projects source folder</label>
-            <div className="row" style={{ alignItems: "stretch" }}>
-              <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: projectsSource ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
-                {projectsSource || "No folder selected"}
-              </div>
-              <button onClick={handlePickProjects}>Browse</button>
-              <button onClick={handleScanProjects} disabled={loading || !projectsSource} className="primary">{loading ? "Scanning…" : "Scan"}</button>
-            </div>
-          </div>
           <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Projects are logical units (directory + related files, not flattened). Recursive scan, project detection, duplicate/conflict/unchanged via deterministic content hash, deterministic planning, dry-run, no SD writes.</p>
           {!projectsResult && !loading && <EmptyState kind="empty" title="No scan yet" description="Select a Projects folder and press Scan. Click Browse to open the native Windows folder picker." />}
           {loading && activeSubTab === "projects" && <EmptyState kind="loading" title="Scanning…" />}

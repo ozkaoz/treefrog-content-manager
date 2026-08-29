@@ -77,10 +77,12 @@ const STATUS_COLOR: Record<string, string> = {
 };
 
 export default function BiosManager({ 
+  globalSdPath,
   onSourceChange,
   onPlanChange,
   onNext 
 }: { 
+  globalSdPath: string;
   onSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
   onNext?: () => void 
@@ -224,12 +226,9 @@ export default function BiosManager({
 
   return (
     <div className="card">
-      <h3>BIOS Manager — TreeFrogUI profile-driven, no downloads</h3>
-      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        BIOS files are <strong>user-supplied only</strong> — never downloaded. Workflow: user provides file → manager scans (scanner → archive inspector → hash → validator) → validates → plans deployment. R36SX is a target, not the manager identity; all BIOS logic is TreeFrogUI-global via <code>profiles/treefrogui/bios.json</code>.
-      </p>
+      <h3>BIOS — TreeFrogUI (profile-driven, sin descargas)</h3>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
         <label style={{ fontSize: 13, fontWeight: 600 }}>BIOS source folder</label>
         <div className="row" style={{ alignItems: "stretch" }}>
           <div
@@ -248,17 +247,34 @@ export default function BiosManager({
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
             }}
-            title={biosSource || "No folder selected"}
+            title={biosSource || "No folder selected — e.g., D:\\BIOS"}
           >
-            {biosSource || "No folder selected"}
+            {biosSource || "No folder selected — e.g., D:\\BIOS"}
           </div>
           <button onClick={handleBrowse}>Browse</button>
-          <button onClick={handleScan} disabled={loading || !biosSource} className="primary">
-            {loading ? "Scanning…" : "Scan Source"}
-          </button>
         </div>
       </div>
-      {error && <div className="status-error" style={{ fontSize: 12, marginBottom: 8 }}>{error}</div>}
+
+      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px 0" }}>
+        SD destino: {globalSdPath || "—"} — la app copiará automáticamente a cubegm/bios/ según el perfil TreeFrogUI.
+      </p>
+
+      <div className="row">
+        <button className="primary" onClick={handleScan} disabled={loading || !biosSource}>
+          {loading ? "Scanning…" : "Scan BIOS"}
+        </button>
+        <button onClick={() => { setResults(null); setSelected(null); onPlanChange?.(null); }} disabled={!results}>
+          Clear
+        </button>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → LGPT
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!biosSource && !results}>
+          Continuar a LGPT →
+        </button>
+      </div>
+
+      {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
       <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 360 }}>
@@ -334,14 +350,7 @@ export default function BiosManager({
         </div>
       </div>
 
-      <div className="row" style={{ marginTop: 16 }}>
-        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → LGPT
-        </button>
-        <button className="primary" onClick={() => onNext?.()} disabled={!results || results.length === 0}>
-          Continuar a LGPT →
-        </button>
-      </div>
+
     </div>
   );
 }

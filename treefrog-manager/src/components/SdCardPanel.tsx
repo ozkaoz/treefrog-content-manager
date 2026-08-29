@@ -80,6 +80,7 @@ export default function SdCardPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [syncResult, setSyncResult] = useState<any | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
   const _volumes = propVolumes !== undefined ? propVolumes : volumesState;
@@ -216,34 +217,58 @@ export default function SdCardPanel({
       )}
 
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
-        <button
-          onClick={async () => {
-            if (!onSync) return;
-            try {
-              const result = await onSync();
-              if (result) setSyncResult(result);
-            } catch (e) {
-              setError(String(e));
+        {!confirming ? (
+          <button
+            onClick={() => setConfirming(true)}
+            disabled={
+              !globalPlan || 
+              globalSpace?.status === "insufficient_space" || 
+              loading ||
+              (globalPlan.summary.new === 0 && globalPlan.summary.changed === 0)
             }
-          }}
-          disabled={
-            !globalPlan || 
-            globalSpace?.status === "insufficient_space" || 
-            loading ||
-            (globalPlan.summary.new === 0 && globalPlan.summary.changed === 0)
-          }
-          className="primary"
-          style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
-          title={
-            !globalPlan 
-              ? "Ve a Overview y pulsa ANALIZAR primero"
-              : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
-              ? "No hay archivos nuevos o modificados para sincronizar"
-              : `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}`
-          }
-        >
-          {loading ? "Sincronizando…" : "Sync to SD"}
-        </button>
+            className="primary"
+            style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
+            title={
+              !globalPlan 
+                ? "Ve a Overview y pulsa ANALIZAR primero"
+                : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
+                ? "No hay archivos nuevos o modificados para sincronizar"
+                : `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}`
+            }
+          >
+            {loading ? "Sincronizando…" : "Sync to SD"}
+          </button>
+        ) : (
+          <div style={{ padding: 12, border: "1px solid var(--warning)", borderRadius: 6, background: "var(--warning-bg)" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>¿Confirmar sincronización?</div>
+            <div style={{ fontSize: 12, marginBottom: 12 }}>
+              Se copiarán <strong>{globalPlan?.summary.new ?? 0} nuevos</strong> y <strong>{globalPlan?.summary.changed ?? 0} modificados</strong> a <code>{sdPath}</code>. Los archivos se copiarán a la carpeta correcta según su extensión.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="primary"
+                onClick={async () => {
+                  setConfirming(false);
+                  if (!onSync) return;
+                  try {
+                    const result = await onSync();
+                    if (result) setSyncResult(result);
+                    if (result?.error) setError(result.error);
+                  } catch (e) {
+                    setError(String(e));
+                  }
+                }}
+                disabled={loading}
+                style={{ flex: 1 }}
+              >
+                Sí, sincronizar
+              </button>
+              <button onClick={() => setConfirming(false)} disabled={loading} style={{ flex: 1 }}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
         <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
           {!globalPlan 
             ? "Ve a Overview y pulsa ANALIZAR para preparar la sincronización."

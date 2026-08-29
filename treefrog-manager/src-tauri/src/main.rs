@@ -1,6 +1,9 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--self-check" || a == "--smoke-test") {
@@ -19,8 +22,20 @@ fn main() {
                     eprintln!("warning: video preset status is not PROVISIONAL_UNVALIDATED");
                 }
                 // Check ffmpeg/ffprobe availability
-                let ffprobe_ok = std::process::Command::new("ffprobe").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
-                let ffmpeg_ok = std::process::Command::new("ffmpeg").arg("-version").output().map(|o| o.status.success()).unwrap_or(false);
+                let mut ffprobe_cmd = std::process::Command::new("ffprobe");
+                ffprobe_cmd.arg("-version");
+                #[cfg(target_os = "windows")]
+                {
+                    ffprobe_cmd.creation_flags(0x08000000);
+                }
+                let ffprobe_ok = ffprobe_cmd.output().map(|o| o.status.success()).unwrap_or(false);
+                let mut ffmpeg_cmd = std::process::Command::new("ffmpeg");
+                ffmpeg_cmd.arg("-version");
+                #[cfg(target_os = "windows")]
+                {
+                    ffmpeg_cmd.creation_flags(0x08000000);
+                }
+                let ffmpeg_ok = ffmpeg_cmd.output().map(|o| o.status.success()).unwrap_or(false);
                 println!("ffprobe available: {}", ffprobe_ok);
                 println!("ffmpeg available: {}", ffmpeg_ok);
                 if !ffprobe_ok {
