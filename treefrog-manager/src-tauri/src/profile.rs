@@ -65,6 +65,8 @@ pub struct LoadedProfile {
     pub archive_valid_exts: Vec<String>,
     pub archive_policy: ArchivePolicy,
     pub archive_policy_full: serde_json::Value,
+    pub video_presets: serde_json::Value,
+    pub video_preset: serde_json::Value,
 }
 
 pub fn load_profile() -> anyhow::Result<LoadedProfile> {
@@ -88,6 +90,11 @@ pub fn load_profile() -> anyhow::Result<LoadedProfile> {
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or(serde_json::Value::Object(Default::default()));
+    let video_presets: serde_json::Value = fs::read_to_string(base.join("video_presets.json"))
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let video_preset = video_presets.get("presets").and_then(|v| v.as_array()).and_then(|arr| arr.get(0)).cloned().unwrap_or(serde_json::Value::Object(Default::default()));
     let archive_policy = profile.archive_policy.clone().unwrap_or(ArchivePolicy {
         supported_extensions: vec![".zip".into(), ".7z".into(), ".rar".into()],
         nested_archives: Some(NestedPolicy { max_depth: 1, max_entries_per_archive: 1024, max_expansion_bytes: 1024*1024*1024, max_total_files_per_job: 10000 }),
@@ -115,5 +122,7 @@ pub fn load_profile() -> anyhow::Result<LoadedProfile> {
         archive_valid_exts: archive_policy.supported_extensions.clone(),
         archive_policy,
         archive_policy_full,
+        video_presets,
+        video_preset,
     })
 }

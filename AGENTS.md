@@ -151,3 +151,23 @@ Do not force every session to read full history. Evidence before synthesis.
 > Evidence has priority over plan. If new evidence contradicts written context, update context FIRST, adjust hypothesis, and continue only from the next valid checkpoint.
 > Compiling is not validating. Static PASS + Host PASS never equals Physical PASS.
 > Context files are part of the product — keeping them accurate is engineering work.
+
+## 15. Desktop Application Definition of Done (TreeFrog Content Manager)
+
+TreeFrog Content Manager is a **DESKTOP APPLICATION** for managing TreeFrogUI SD content globally. A milestone is **NOT** complete merely because unit tests pass.
+
+Every future milestone MUST include:
+
+1. implementation (Rust/Tauri + React + profiles)
+2. automated tests (`pytest treefrog-manager/tests`, `test_agent_context_contract`, `test_release_audio_bootstrap`, plus new feature tests)
+3. documentation/context updates (`CURRENT.md`, `CONTEXT_MAP.md`, `DECISIONS.md`, `docs/PLAN.md`, `docs/ARCHITECTURE.md`, `docs/BUILD_WINDOWS.md` where applicable)
+4. **Windows x64 desktop build** (`scripts/build_windows.ps1` or `scripts/build_windows.sh` + `npx tauri build`) producing `treefrog-manager/src-tauri/target/release/treefrog-manager.exe` and bundles
+5. **executable smoke test** (`--self-check` + GUI launch, profile load, source scan, dry-run with video inspection, no SD writes)
+6. reproducible build instructions (`docs/BUILD_WINDOWS.md`, `scripts/build_windows.*`)
+7. focused Git commit (`feat(manager): Phase ...`) and push to `origin/main`
+
+**First supported desktop target:** Windows x64 (MSVC + WebView2). WSL cross-compilation is **not** equivalent to a verified Windows build — `scripts/build_windows.sh` documents the limitation and delegates to Windows-native `build_windows.ps1`.
+
+No milestone may be marked complete without a tested Windows desktop build. `cargo check` or `npm run build` alone is insufficient.
+
+**Global profile invariant (from DEC-2026-08-28-01):** `TreeFrog Content Manager → TreeFrogUI profile → optional device-specific overrides`. Do NOT create console-specific managers (R36SX manager, SF3000 manager). R36SX is a target/device, not the application identity. Keep `systems`, `media`, `archive`, `BIOS`, `video` data-driven in `profiles/treefrogui/`.

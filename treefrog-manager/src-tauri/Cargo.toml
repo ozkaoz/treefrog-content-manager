@@ -25,6 +25,7 @@ walkdir = "2"
 thiserror = "1"
 chrono = "0.4"
 tempfile = "3"
+anyhow = "1"
 
 # archive extras (feature-gated, keep 7z/rar via tool adapters for now)
 # sevenz-rust and unrar when available — otherwise fallback to external tools

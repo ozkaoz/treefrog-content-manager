@@ -189,7 +189,7 @@ pub fn safe_extract_to_temp(archive_path: &Path, temp_dir: &Path, limits: &Limit
         if !dest.starts_with(&canon_temp) && !canon_dest.starts_with(&canon_temp) {
             // More robust: check relative
             if let Err(_) = dest.strip_prefix(&canon_temp) {
-                if !dest.to_string_lossy().starts_with(&canon_temp.to_string_lossy()) {
+                if !dest.to_string_lossy().starts_with(&*canon_temp.to_string_lossy()) {
                     return Err(ArchiveError::Safety(format!("extraction would escape temp dir: {} -> {}", entry.name, dest.display())));
                 }
             }

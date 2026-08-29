@@ -10,6 +10,10 @@ def load_profile():
         archive_policy = json.loads((PROFILE_DIR / "archive_policy.json").read_text(encoding="utf-8"))
     except FileNotFoundError:
         archive_policy = {}
+    try:
+        video_presets = json.loads((PROFILE_DIR / "video_presets.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        video_presets = {}
     # Build maps
     ext_to_system = {}
     alias_to_system = {}
@@ -21,6 +25,10 @@ def load_profile():
             alias_to_system[alias.lower()] = sys["id"]
     # systems by id
     sys_by_id = {s["id"]: s for s in systems["systems"]}
+    # Video preset: pick first preset (conservative default)
+    video_preset = None
+    if video_presets.get("presets"):
+        video_preset = video_presets["presets"][0]
     return {
         "profile_version": profile.get("profile_version"),
         "systems": systems["systems"],
@@ -29,6 +37,8 @@ def load_profile():
         "alias_to_system": alias_to_system,
         "archive_policy": profile.get("archive_policy", {}),
         "archive_policy_full": archive_policy,
+        "video_presets": video_presets,
+        "video_preset": video_preset,
         "profile": profile,
         "systems_raw": systems,
     }

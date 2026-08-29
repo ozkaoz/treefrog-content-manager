@@ -6,10 +6,12 @@ const RESOLUTIONS = ["skip", "replace", "keep_both", "keep_destination", "keep_s
 function badgeClass(action: string) {
   if (action === "copy") return "badge-copy";
   if (action === "extract") return "badge-extract";
+  if (action === "convert_then_copy") return "badge-copy";
   if (action === "skip_duplicate" || action === "skip_unchanged" || action === "skip") return "badge-skip";
   if (action === "conflict") return "badge-conflict";
   if (action === "manual_review") return "badge-conflict";
-  if (action === "unsupported_archive") return "badge-skip";
+  if (action === "unsupported_archive" || action === "unsupported") return "badge-skip";
+  if (action === "conversion_error") return "badge-conflict";
   if (action === "replace") return "badge-copy";
   return "badge-skip";
 }
@@ -102,10 +104,14 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
               <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }} title={e.destination}>{e.destination}</td>
               <td style={{ fontSize: 11, maxWidth: 320 }}>
                 <div>{e.reason}</div>
+                {e.status && <div style={{ fontSize: 10, color: "#b7791f" }}>status: {e.status}{e.preset ? ` / preset: ${e.preset}` : ""}{e.preset === "treefrog_conservative_default" ? " (provisional)" : ""}</div>}
                 {e.source_hash && <div style={{ fontSize: 10, color: "#555", wordBreak: "break-all" }}>src: {e.source_hash.slice(0, 16)}…</div>}
                 {e.destination_hash && <div style={{ fontSize: 10, color: "#555", wordBreak: "break-all" }}>dst: {e.destination_hash.slice(0, 16)}…</div>}
+                {e.probe && typeof e.probe === "object" && !!(e.probe as unknown as Record<string, string>).video_codec && <div style={{ fontSize: 10, color: "#555" }}>codec: {String((e.probe as unknown as Record<string, string>).video_codec)} / {String((e.probe as unknown as Record<string, string>).container)} {(e.probe as unknown as Record<string, string>).width ? ` / ${String((e.probe as unknown as Record<string, string>).width)}x${String((e.probe as unknown as Record<string, string>).height)}` : ""}</div>}
+                {e.converted_name && <div style={{ fontSize: 10, color: "#2e7d32" }}>converted: {e.converted_name} (temp, validated with ffprobe)</div>}
                 {e.members && e.members.length > 0 && <div style={{ fontSize: 10, color: "#1565c0" }}>members: {e.members.join(", ")}</div>}
                 {e.group && !e.members && <div style={{ fontSize: 10, color: "#1565c0" }}>group: {e.group.join(", ")}</div>}
+                {e.content_type === "video" && <div style={{ fontSize: 10, color: "#666" }}>original never modified; temp output only, deterministic naming</div>}
               </td>
               <td style={{ fontSize: 11 }}>
                 {(e.action === "conflict" || e.action === "skip_duplicate" || e.action === "manual_review" || e.action === "skip_unchanged") ? (

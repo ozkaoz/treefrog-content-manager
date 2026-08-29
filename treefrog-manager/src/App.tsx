@@ -91,8 +91,9 @@ export type PlanSummary = {
 export type PlanEntry = {
   source: string;
   destination: string;
-  action: "copy" | "extract" | "skip_unchanged" | "skip_duplicate" | "conflict" | "manual_review" | "unsupported_archive";
+  action: "copy" | "extract" | "skip_unchanged" | "skip_duplicate" | "conflict" | "manual_review" | "unsupported_archive" | "convert_then_copy" | "unsupported" | "conversion_error";
   reason: string;
+  status?: string;
   hash?: string;
   source_hash?: string | null;
   destination_hash?: string | null;
@@ -104,6 +105,9 @@ export type PlanEntry = {
   resolution?: string | null;
   resolved_action?: string | null;
   original_destination?: string;
+  preset?: string;
+  probe?: Record<string, unknown> | null;
+  converted_name?: string;
 };
 
 export type Plan = {

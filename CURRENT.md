@@ -46,9 +46,9 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **TreeFrog Content Manager — Phase 2B (duplicate & conflict resolution):** Deterministic duplicate/conflict layer on top of scanner/archive/logical-unit planner + SHA-256 engine; zero SD writes. Planner distinguishes exact duplicate / same-filename-diff-content (conflict) / different-filename-identical-content (duplicate/alias) / grouped identical / archive-vs-extracted / unchanged; planner entries carry source/destination/content_type/source_hash/destination_hash/reason/members/default_action/resolution/resolved_action for UI; explicit decisions `skip/replace/keep_both/keep_destination/keep_source` override defaults (duplicate→skip, conflict→conflict) without silent replace; deterministic stable-sort; planner is single source of truth for future SD writes.
+- **TreeFrog Content Manager — Phase 2C (video conversion + Windows desktop build):** Robust video inspection via `ffprobe` (authoritative), compatibility evaluation (`compatible`/`conversion_required`/`unsupported`/`inspection_error`) data-driven from `profiles/treefrogui/video_presets.json` (`PROVISIONAL_UNVALIDATED`), dedicated conversion service (never modifies source, temp workspace only, deterministic `*.converted.mp4`, overwrite protection, capture FFmpeg stderr, re-probe validation, clean temp, no SD writes), planner integration (`convert_then_copy`/`conversion_error` etc. as planned artifacts, single source of truth), dry-run UI shows video conversion (source/status/target/preset/reason), first real Windows x64 desktop build (`treefrog-manager/src-tauri/target/release/treefrog-manager.exe` + MSI/NSIS) with `--self-check` smoke test (profile load 1.1.0/75 systems, ffmpeg/ffprobe availability reporting, deterministic dataset: normal ROM, ZIP container, duplicate, compatible video, conversion-required video, zero SD writes).
 - **Release golden preserved:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation in this phase; verify `git diff -- sd_root` = NO).
-- **Idle baseline:** No active LGPT runtime task beyond content-manager Phase 2B — Await explicit user-approved objective for next Phase (2C SD writes) — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
+- **Idle baseline:** No active LGPT runtime task beyond content-manager Phase 2C — Await explicit user-approved objective for next milestone — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
 
 ## Last Relevant Validation
 
@@ -56,7 +56,7 @@ Do not trust hardcoded historical state.
 - `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
 - `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
 - `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
-- `MANAGER Phase 2B`: `profile 1.1.0 PASS` + `archive 1.1.0 PASS` + `planner 2B PASS` + `66 tests PASS` (53+13 Phase 2B) + `context-contract PASS` + `preflight PASS` + `sd_root clean` + `deterministic PASS` + `zero-write PASS`
+- `MANAGER Phase 2C`: `profile 1.1.0 PASS` + `video presets PROVISIONAL_UNVALIDATED PASS` + `ffprobe/ffmpeg service PASS` + `planner 2C PASS` + `77 tests PASS` (66+11 Phase 2C) + `Windows x64 exe 12.21 MB PASS` + `MSI 4.18 MB + NSIS 2.92 MB PASS` + `self-check PASS` (profile 1.1.0/75, video provisional, ffmpeg/ffprobe) + `smoke dataset PASS` (ROM/ZIP/duplicate/compatible+conversion videos, zero SD writes) + `context-contract PASS` + `preflight PASS` + `sd_root clean`
 
 ## Known Issues / Risks
 
@@ -66,11 +66,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- Content Manager Phase 2B: awaiting review — then Phase 2C SD writes (not in this task).
+- Content Manager Phase 2C: awaiting review — then Phase 3 SD writes (not in this task). Video preset remains `PROVISIONAL_UNVALIDATED` until R36SX hardware test.
 
 ## Next Exact Action
 
-- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v`, `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root` and prepare Phase 2C planning.
+- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v`, `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify Windows build `scripts/build_windows.ps1` and `treefrog-manager/src-tauri/target/release/treefrog-manager.exe --self-check`.
 
 ## Stop Conditions
 

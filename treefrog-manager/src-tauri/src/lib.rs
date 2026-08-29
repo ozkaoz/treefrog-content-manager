@@ -24,7 +24,7 @@ pub struct PlanSummary {
     pub unsupported_archive: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PlanEntry {
     pub source: String,
     pub destination: String,

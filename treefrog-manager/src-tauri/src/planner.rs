@@ -2,7 +2,7 @@ use crate::profile::LoadedProfile;
 use crate::scanner::ScannedFile;
 use crate::hash;
 use crate::archive;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::collections::{HashMap, HashSet};
 
 use crate::Plan;
@@ -300,7 +300,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     let actual_dest = if sf.classification.destination.is_empty() { dr } else { format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy()) };
                     // Use more accurate dest
                     let dest2 = if sf.classification.destination.is_empty() { format!("roms/UNKNOWN/{}", sf.source_path.file_name().unwrap().to_string_lossy()) } else { format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy()) };
-                    entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dest2, action: "unsupported_archive".into(), reason: format!("archive handler not available for {} (stub)", ext), hash: None, size: Some(sf.size), group: None });
+                    entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dest2, action: "unsupported_archive".into(), reason: format!("archive handler not available for {} (stub)", ext), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                     unsupported += 1;
                     continue;
                 }
@@ -316,7 +316,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                         _ => { manual += 1; "manual_review" },
                     };
                     let dr = if sf.classification.destination.is_empty() { format!("roms/UNKNOWN/{}", sf.source_path.file_name().unwrap().to_string_lossy()) } else { format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy()) };
-                    entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: action.into(), reason: format!("archive error: {}", msg), hash: None, size: Some(sf.size), group: None });
+                    entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: action.into(), reason: format!("archive error: {}", msg), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                     if action == "unsupported_archive" { /* already counted */ } else if action == "manual_review" { /* already */ }
                     continue;
                 }
@@ -325,7 +325,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             let inner_file_count = inner.iter().filter(|e| !e.is_dir).count();
             if total_planned + inner_file_count > max_total {
                 let dr = format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy());
-                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: format!("exceeds max_total_files_per_job {} (bomb guard)", max_total), hash: None, size: Some(sf.size), group: None });
+                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: format!("exceeds max_total_files_per_job {} (bomb guard)", max_total), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                 manual += 1;
                 continue;
             }
@@ -333,7 +333,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             let mode = decide_archive_mode(&sf.source_path, &inner, profile);
             if mode == "unsupported" {
                 let dr = format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy());
-                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "unsupported_archive".into(), reason: format!("mode unsupported for {}", ext), hash: None, size: Some(sf.size), group: None });
+                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "unsupported_archive".into(), reason: format!("mode unsupported for {}", ext), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                 unsupported += 1;
                 continue;
             }
@@ -373,13 +373,13 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     },
                 };
                 let hash_val = if matches!(act, "copy" | "skip_duplicate") { hash::sha256_file(&sf.source_path).ok() } else { src_hash };
-                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dest_rel2, action: act.into(), reason: rsn.into(), hash: hash_val, size: Some(sf.size), group: None });
+                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dest_rel2, action: act.into(), reason: rsn.into(), hash: hash_val, size: Some(sf.size), group: None, ..Default::default()});
                 total_planned += 1;
                 continue;
             }
             if mode == "manual" {
                 let dr = format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy());
-                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: "archive requires explicit user decision (profile manual / mixed / nested)".into(), hash: None, size: Some(sf.size), group: None });
+                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: "archive requires explicit user decision (profile manual / mixed / nested)".into(), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                 manual += 1;
                 continue;
             }
@@ -442,7 +442,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             let coll = detect_collisions(&dests_for_coll);
             if !coll.is_empty() {
                 let dr = format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy());
-                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: format!("output collision inside archive: {} collides with {}", coll[0].0, coll[0].1), hash: None, size: Some(sf.size), group: None });
+                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: format!("output collision inside archive: {} collides with {}", coll[0].0, coll[0].1), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                 manual += 1;
                 continue;
             }
@@ -495,18 +495,18 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                         let dst_hash = if dest_abs_inner.is_file() { hash::sha256_file(&dest_abs_inner).ok() } else { None };
                         if let (Some(ih), Some(dh)) = (&inner_hash, &dst_hash) {
                             if ih == dh {
-                                entries.push(PlanEntry { source: format!("{}::{}", sf.source_path.display(), grp[0].name), destination: dest_rel_inner.clone(), action: "skip_unchanged".into(), reason: "same path + same hash (extracted payload unchanged)".into(), hash: inner_hash.clone(), size: Some(grp[0].size), group: None });
+                                entries.push(PlanEntry { source: format!("{}::{}", sf.source_path.display(), grp[0].name), destination: dest_rel_inner.clone(), action: "skip_unchanged".into(), reason: "same path + same hash (extracted payload unchanged)".into(), hash: inner_hash.clone(), size: Some(grp[0].size), group: None, ..Default::default()});
                                 unchanged +=1;
                             } else {
-                                entries.push(PlanEntry { source: format!("{}::{}", sf.source_path.display(), grp[0].name), destination: dest_rel_inner.clone(), action: "conflict".into(), reason: "same path + different hash (extracted payload conflict)".into(), hash: inner_hash.clone(), size: Some(grp[0].size), group: None });
+                                entries.push(PlanEntry { source: format!("{}::{}", sf.source_path.display(), grp[0].name), destination: dest_rel_inner.clone(), action: "conflict".into(), reason: "same path + different hash (extracted payload conflict)".into(), hash: inner_hash.clone(), size: Some(grp[0].size), group: None, ..Default::default()});
                                 conflicts +=1; changed +=1;
                             }
                         } else {
-                            entries.push(PlanEntry { source: format!("{}::{}", sf.source_path.display(), grp[0].name), destination: dest_rel_inner.clone(), action: "conflict".into(), reason: "extracted payload exists, hash compare unavailable".into(), hash: inner_hash.clone(), size: Some(grp[0].size), group: None });
+                            entries.push(PlanEntry { source: format!("{}::{}", sf.source_path.display(), grp[0].name), destination: dest_rel_inner.clone(), action: "conflict".into(), reason: "extracted payload exists, hash compare unavailable".into(), hash: inner_hash.clone(), size: Some(grp[0].size), group: None, ..Default::default()});
                             conflicts +=1;
                         }
                     } else {
-                        entries.push(PlanEntry { source: format!("{}::group:{} ({})", sf.source_path.display(), Path::new(&grp[0].name).file_stem().unwrap().to_string_lossy(), grp.iter().map(|e| e.name.clone()).collect::<Vec<_>>().join(", ")), destination: dest_rel_inner.clone(), action: "conflict".into(), reason: "grouped payload destination exists (folder)".into(), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: Some(grp.iter().map(|e| e.name.clone()).collect()) });
+                        entries.push(PlanEntry { source: format!("{}::group:{} ({})", sf.source_path.display(), Path::new(&grp[0].name).file_stem().unwrap().to_string_lossy(), grp.iter().map(|e| e.name.clone()).collect::<Vec<_>>().join(", ")), destination: dest_rel_inner.clone(), action: "conflict".into(), reason: "grouped payload destination exists (folder)".into(), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: Some(grp.iter().map(|e| e.name.clone()).collect()), ..Default::default()});
                         conflicts +=1;
                     }
                     continue;
@@ -515,13 +515,13 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                 if let Some(ref h) = inner_hash {
                     if sd_hash_map.contains_key(h) {
                         let src = if grp.len()==1 { format!("{}::{}", sf.source_path.display(), grp[0].name) } else { format!("{}::group:{}", sf.source_path.display(), grp[0].name) };
-                        entries.push(PlanEntry { source: src, destination: dest_rel_inner.clone(), action: "skip_duplicate".into(), reason: format!("duplicate extracted payload (inner {} already on SD at {})", Path::new(&grp[0].name).extension().unwrap_or_default().to_string_lossy(), sd_hash_map[h]), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None } });
+                        entries.push(PlanEntry { source: src, destination: dest_rel_inner.clone(), action: "skip_duplicate".into(), reason: format!("duplicate extracted payload (inner {} already on SD at {})", Path::new(&grp[0].name).extension().unwrap_or_default().to_string_lossy(), sd_hash_map[h]), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None }, ..Default::default()});
                         duplicate +=1;
                         continue;
                     }
                     if hash_to_dest.contains_key(h) {
                         let src = if grp.len()==1 { format!("{}::{}", sf.source_path.display(), grp[0].name) } else { format!("{}::group:{}", sf.source_path.display(), grp[0].name) };
-                        entries.push(PlanEntry { source: src, destination: dest_rel_inner.clone(), action: "skip_duplicate".into(), reason: "duplicate extracted payload in same job".into(), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None } });
+                        entries.push(PlanEntry { source: src, destination: dest_rel_inner.clone(), action: "skip_duplicate".into(), reason: "duplicate extracted payload in same job".into(), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None }, ..Default::default()});
                         duplicate +=1;
                         continue;
                     }
@@ -530,13 +530,185 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                 // New extract
                 let src_str = if grp.len()==1 { format!("{}::{}", sf.source_path.display(), grp[0].name) } else { format!("{}::group:{} ({})", sf.source_path.display(), Path::new(&grp[0].name).file_stem().unwrap().to_string_lossy(), grp.iter().map(|e| e.name.clone()).collect::<Vec<_>>().join(", ")) };
                 let reason = if grp.len()==1 { format!("archive-extract -> {} ({})", Path::new(&grp[0].name).file_name().unwrap().to_string_lossy(), Path::new(&grp[0].name).extension().unwrap_or_default().to_string_lossy()) } else { format!("grouped CUE/BIN logical unit ({} files)", grp.len()) };
-                entries.push(PlanEntry { source: src_str, destination: dest_rel_inner.clone(), action: "extract".into(), reason, hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None } });
+                entries.push(PlanEntry { source: src_str, destination: dest_rel_inner.clone(), action: "extract".into(), reason, hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None }, ..Default::default()});
                 new_c +=1;
                 total_planned += grp.len();
             }
             continue;
         }
 
+        // Video pipeline: check if this is a video file (via classification)
+        if sf.classification.kind == crate::classify::Kind::Video {
+            let video_preset = &profile.video_preset;
+            let probe_result = crate::video::probe(&sf.source_path.to_string_lossy());
+            let (status, reason_str) = match probe_result {
+                Ok(probe) => {
+                    let eval = crate::video::evaluate_compatibility(&probe, video_preset);
+                    (eval.status, eval.reason)
+                },
+                Err(e) => ("inspection_error".to_string(), format!("video inspection error: {}", e)),
+            };
+            let dest_rel_video = format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy());
+            if status == "inspection_error" {
+                entries.push(crate::PlanEntry {
+                    source: sf.source_path.to_string_lossy().to_string(),
+                    destination: dest_rel_video.clone(),
+                    action: "manual_review".to_string(),
+                    reason: reason_str.clone(),
+                    hash: None,
+                    source_hash: None,
+                    destination_hash: None,
+                    content_type: Some("video".to_string()),
+                    size: Some(sf.size),
+                    group: None,
+                    members: None,
+                    default_action: Some("manual_review".to_string()),
+                    resolution: Some("manual_review".to_string()),
+                    resolved_action: Some("manual_review".to_string()),
+                    original_destination: None,
+                    
+                });
+                manual += 1;
+                continue;
+            } else if status == "unsupported" {
+                entries.push(crate::PlanEntry {
+                    source: sf.source_path.to_string_lossy().to_string(),
+                    destination: dest_rel_video.clone(),
+                    action: "unsupported".to_string(),
+                    reason: reason_str.clone(),
+                    hash: None,
+                    source_hash: None,
+                    destination_hash: None,
+                    content_type: Some("video".to_string()),
+                    size: Some(sf.size),
+                    group: None,
+                    members: None,
+                    default_action: Some("unsupported".to_string()),
+                    resolution: Some("manual_review".to_string()),
+                    resolved_action: Some("manual_review".to_string()),
+                    original_destination: None,
+                    
+                });
+                manual += 1;
+                continue;
+            } else if status == "compatible" {
+                let dest_abs_v = sd_path.join(&dest_rel_video);
+                let exists_v = dest_abs_v.exists();
+                let src_hash_v = hash::sha256_file(&sf.source_path).ok();
+                let dst_hash_v = if exists_v { hash::sha256_file(&dest_abs_v).ok() } else { None };
+                let same_hash_v = if let (Some(a), Some(b)) = (&src_hash_v, &dst_hash_v) {
+                    if std::fs::metadata(&dest_abs_v).map(|m| m.len()).unwrap_or(0) != sf.size { false } else { a == b }
+                } else { false };
+                let class_v = if exists_v { hash::classify(None, exists_v, same_hash_v, exists_v) } else { hash::DuplicateClass::New };
+                let duplicate_elsewhere_v = if !exists_v {
+                    if let Some(h) = &src_hash_v {
+                        if sd_hash_map.contains_key(h) || hash_to_dest.contains_key(h) { true } else { hash_to_dest.insert(h.clone(), dest_rel_video.clone()); false }
+                    } else { false }
+                } else { false };
+                let (action_v, reason_v) = if duplicate_elsewhere_v {
+                    duplicate += 1;
+                    ("skip_duplicate", "different path + same hash -> duplicate (video)")
+                } else {
+                    match class_v {
+                        hash::DuplicateClass::Unchanged => { unchanged += 1; ("skip_unchanged", "same path + same hash -> unchanged (video compatible)") },
+                        hash::DuplicateClass::Conflict => { conflicts += 1; changed += 1; ("conflict", "same path + different hash -> conflict (video)") },
+                        _ => { new_c += 1; ("copy", "video compatible -> copy") },
+                    }
+                };
+                entries.push(crate::PlanEntry {
+                    source: sf.source_path.to_string_lossy().to_string(),
+                    destination: dest_rel_video.clone(),
+                    action: action_v.to_string(),
+                    reason: format!("{} | {}", reason_str, reason_v),
+                    hash: src_hash_v.clone(),
+                    source_hash: src_hash_v.clone(),
+                    destination_hash: dst_hash_v.clone(),
+                    content_type: Some("video".to_string()),
+                    size: Some(sf.size),
+                    group: None,
+                    members: None,
+                    default_action: Some(action_v.to_string()),
+                    resolution: Some(default_resolution_for_action(action_v)),
+                    resolved_action: Some(action_v.to_string()),
+                    original_destination: None,
+                    
+                });
+                continue;
+            } else if status == "conversion_required" {
+                let ffmpeg_cfg = video_preset.get("ffmpeg").and_then(|v| v.as_object());
+                let output_ext = ffmpeg_cfg.and_then(|m| m.get("output_extension")).and_then(|x| x.as_str()).unwrap_or(".mp4");
+                let base = sf.source_path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+                let safe_base: String = base.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+                let safe_base = if safe_base.is_empty() { "output".to_string() } else { safe_base };
+                let converted_name = format!("{}.converted{}", safe_base, output_ext);
+                let converted_dest = format!("{}/{}", sf.classification.destination, converted_name);
+                let dest_abs_conv = sd_path.join(&converted_dest);
+                let exists_conv = dest_abs_conv.exists();
+                if exists_conv {
+                    entries.push(crate::PlanEntry {
+                        source: sf.source_path.to_string_lossy().to_string(),
+                        destination: converted_dest.clone(),
+                        action: "conflict".to_string(),
+                        reason: format!("{} | conversion_required -> {} already exists (conflict)", reason_str, converted_name),
+                        hash: None,
+                        source_hash: None,
+                        destination_hash: None,
+                        content_type: Some("video".to_string()),
+                        size: Some(sf.size),
+                        group: None,
+                        members: None,
+                        default_action: Some("conflict".to_string()),
+                        resolution: Some("conflict".to_string()),
+                        resolved_action: Some("conflict".to_string()),
+                        original_destination: None,
+                        
+                    });
+                    conflicts += 1;
+                } else {
+                    entries.push(crate::PlanEntry {
+                        source: sf.source_path.to_string_lossy().to_string(),
+                        destination: converted_dest.clone(),
+                        action: "convert_then_copy".to_string(),
+                        reason: format!("{} | conversion_required via {} (provisional) -> {}", reason_str, video_preset.get("id").and_then(|x| x.as_str()).unwrap_or("unknown"), converted_name),
+                        hash: None,
+                        source_hash: None,
+                        destination_hash: None,
+                        content_type: Some("video".to_string()),
+                        size: Some(sf.size),
+                        group: None,
+                        members: None,
+                        default_action: Some("convert_then_copy".to_string()),
+                        resolution: Some("copy".to_string()),
+                        resolved_action: Some("convert_then_copy".to_string()),
+                        original_destination: None,
+                        
+                    });
+                    new_c += 1;
+                }
+                continue;
+            } else {
+                entries.push(crate::PlanEntry {
+                    source: sf.source_path.to_string_lossy().to_string(),
+                    destination: dest_rel.clone(),
+                    action: "manual_review".to_string(),
+                    reason: reason_str.clone(),
+                    hash: None,
+                    source_hash: None,
+                    destination_hash: None,
+                    content_type: Some("video".to_string()),
+                    size: Some(sf.size),
+                    group: None,
+                    members: None,
+                    default_action: Some("manual_review".to_string()),
+                    resolution: Some("manual_review".to_string()),
+                    resolved_action: Some("manual_review".to_string()),
+                    original_destination: None,
+                    
+                });
+                manual += 1;
+                continue;
+            }
+        }
         // Normal file: hash compare (always compute hashes for UI, even when sizes differ)
         let exists = dest_abs.exists();
         let same_path = exists;
@@ -576,14 +748,14 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
         };
 
         let (action, reason2) = match class {
-            hash::DuplicateClass::Unchanged => { unchanged+=1; ("skip_unchanged", "same path + same hash -> unchanged") },
-            hash::DuplicateClass::DuplicateContent => { duplicate+=1; ("skip_duplicate", "different path + same hash -> duplicate content default skip") },
-            hash::DuplicateClass::Conflict => { conflicts+=1; if same_path { changed+=1; } ("conflict", "same path + different hash -> conflict") },
-            hash::DuplicateClass::New => { new_c+=1; ("copy", reason.clone()) },
+            hash::DuplicateClass::Unchanged => { unchanged+=1; ("skip_unchanged".to_string(), "same path + same hash -> unchanged".to_string()) },
+            hash::DuplicateClass::DuplicateContent => { duplicate+=1; ("skip_duplicate".to_string(), "different path + same hash -> duplicate content default skip".to_string()) },
+            hash::DuplicateClass::Conflict => { conflicts+=1; if same_path { changed+=1; } ("conflict".to_string(), "same path + different hash -> conflict".to_string()) },
+            hash::DuplicateClass::New => { new_c+=1; ("copy".to_string(), reason.clone()) },
         };
         let r = if action=="copy" { reason } else { reason2.to_string() };
 
-        let src_str = if let Some(members) = sf.group_members { format!("{} (group {} files)", sf.source_path.display(), members.len()) } else { sf.source_path.to_string_lossy().to_string() };
+        let src_str = if let Some(ref members) = sf.group_members { format!("{} (group {} files)", sf.source_path.display(), members.len()) } else { sf.source_path.to_string_lossy().to_string() };
         let ct = content_type_for_classification(&sf.classification.kind, &sf.classification.system_id);
         let members_vec = sf.group_members.as_ref().map(|v| v.iter().map(|p| p.file_name().unwrap().to_string_lossy().to_string()).collect::<Vec<_>>());
         entries.push(PlanEntry {
@@ -601,8 +773,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             default_action: Some(action.clone()),
             resolution: Some(default_resolution_for_action(&action)),
             resolved_action: Some(action.clone()),
-            original_destination: None,
-        });
+            original_destination: None, ..Default::default()});
     }
 
     // Enrich entries with Phase 2B metadata for UI (content_type, hashes, resolution)

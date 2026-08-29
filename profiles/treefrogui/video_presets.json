@@ -1,7 +1,7 @@
 {
-  "schema_version": "1.0.0",
-  "profile_version": "1.0.0",
-  "description": "Video handling presets — declarative. App must probe via ffprobe and auto-convert via FFmpeg when incompatible; keep original untouched, stage temp, re-probe, validate before deploy, batch + cancel without corrupt final files.",
+  "schema_version": "1.1.0",
+  "profile_version": "1.1.0",
+  "description": "Video handling presets — declarative, data-driven. App must probe via ffprobe (authoritative) and auto-convert via FFmpeg when incompatible; keep original untouched, stage temp, re-probe, validate before deploy, batch + cancel without corrupt final files. PROVISIONAL_UNVALIDATED until R36SX hardware tested.",
   "presets": [
     {
       "id": "treefrog_conservative_default",
@@ -10,6 +10,43 @@
       "validated_on_device": false,
       "requires_physical_validation": true,
       "target": "roms/videos",
+      "compatibility": {
+        "container": ["mp4", "mov", "matroska", "avi", "mpeg", "mpegts", "webm"],
+        "container_aliases": {
+          "mp4": ["mov,mp4,m4a,3gp,3g2,mj2"],
+          "matroska": ["matroska,webm"],
+          "avi": ["avi"],
+          "mpeg": ["mpeg"],
+          "mpegts": ["mpegts"]
+        },
+        "video_codec": ["h264", "avc", "mpeg4"],
+        "video_codec_aliases": {
+          "h264": ["h264", "avc"]
+        },
+        "audio_codec": ["aac", "mp3", "pcm_s16le", "pcm_s16be"],
+        "resolution": {
+          "max_width": 854,
+          "max_height": 480,
+          "max_pixels": 409920,
+          "note": "640x480 for R36SX/GB350 4:3, 854x480 for SF3000 family 16:9 — panel-native is safest"
+        },
+        "pixel_format": ["yuv420p"],
+        "frame_rate": {
+          "max": 30.0,
+          "min": 1.0,
+          "note": "30fps max suggested conservative"
+        },
+        "audio_sample_rate": {
+          "allowed": [44100, 48000],
+          "max": 48000
+        },
+        "max_file_size": 2147483648,
+        "stream_constraints": {
+          "max_streams": 2,
+          "require_video_stream": true,
+          "note": "Firmware libffplayer hardware decoder; actual support varies by device"
+        }
+      },
       "probe_fields": ["container", "video_codec", "codec_profile/level", "pixel_format/bit_depth", "dimensions", "frame_rate", "audio_codec/sample", "stream_count"],
       "compatibility_hints": {
         "notes": "Do NOT assume .mp4/.mkv compatible merely because extension appears in docs. Firmware uses libffplayer hardware decoder; actual supported codecs determined by firmware media plane, not libretro cores.",
@@ -24,7 +61,13 @@
         }
       },
       "ffmpeg": {
-        "command_template": "ffmpeg -i <input> -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p -vf scale='min(640,iw)':-2 -r 30 -c:a aac -ar 48000 -ac 2 -movflags +faststart <output>.mp4",
+        "command_template": "ffmpeg -y -i <input> -c:v libx264 -profile:v baseline -level 3.0 -pix_fmt yuv420p -vf scale='min(640,iw)':-2:flags=lanczos -r 30 -c:a aac -ar 48000 -ac 2 -movflags +faststart <output>.mp4",
+        "output_extension": ".mp4",
+        "output_codec": {
+          "video": "h264",
+          "audio": "aac",
+          "pix_fmt": "yuv420p"
+        },
         "stage_temp": true,
         "re_probe": true,
         "validate_before_deploy": true,
@@ -32,15 +75,35 @@
         "progress": true,
         "batch": true,
         "cancel_safe": true,
-        "notes": "This template is staged to temp and re-probed; only deployed after validation. User can override via declarative preset editing."
+        "deterministic_naming": true,
+        "overwrite_protection": true,
+        "notes": "This template is staged to temp and re-probed; only deployed after validation. User can override via declarative preset editing. Deterministic: <input_basename>.converted.mp4 in temp."
       }
     }
   ],
   "probe_adapter": {
-    "tool": "ffprobe (or robust equivalent)",
+    "tool": "ffprobe (authoritative)",
     "fields_required": ["container", "video codec", "codec profile/level when available", "pixel format / bit depth", "dimensions", "frame rate", "audio codec / sample properties", "stream count where relevant"],
     "when_compatible": "copy directly",
-    "when_incompatible": "auto-convert via FFmpeg with staging + re-probe + validation"
+    "when_incompatible": "auto-convert via FFmpeg with staging + re-probe + validation",
+    "when_unsupported": "manual_review (e.g., no video stream, unknown container)",
+    "when_inspection_error": "inspection_error (ffprobe failed, file not found, invalid)"
+  },
+  "evaluator": {
+    "states": ["compatible", "conversion_required", "unsupported", "inspection_error"],
+    "rules": [
+      "If ffprobe fails or returns invalid JSON → inspection_error",
+      "If no video stream → unsupported",
+      "If container not in compatibility.container (including aliases) → conversion_required (or unsupported if container completely unknown)",
+      "If video_codec not in compatibility.video_codec → conversion_required",
+      "If pixel_format not in compatibility.pixel_format → conversion_required",
+      "If width > max_width or height > max_height → conversion_required",
+      "If fps > max or fps < min → conversion_required",
+      "If audio_codec present and not in compatibility.audio_codec → conversion_required",
+      "If audio_sample_rate present and not in allowed and > max → conversion_required",
+      "If file_size > max_file_size → unsupported",
+      "Otherwise → compatible"
+    ]
   },
   "warnings": [
     "PROVISIONAL_UNVALIDATED — do not claim hardware compatibility without physical R36SX/SF3000 family validation",
