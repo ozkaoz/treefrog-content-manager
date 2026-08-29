@@ -103,6 +103,7 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     let mut breakdown_rows: Vec<serde_json::Value> = Vec::new();
+    let mut written_dests: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
 
     for entry in &plan.entries {
         let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
@@ -155,6 +156,33 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
             downgraded
         };
 
+        // Runtime double-write guard: never write the same destination twice in one job.
+        let is_write = matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy" | "replace");
+        if is_write {
+            let norm_dest = dest_abs.to_string_lossy().to_lowercase();
+            if let Some(prev_hash) = written_dests.get(&norm_dest).cloned() {
+                let cur_hash = entry.hash.clone().or_else(|| entry.source_hash.clone());
+                skipped += 1;
+                let (act, msg) = if prev_hash.is_some() && prev_hash == cur_hash {
+                    ("skip_duplicate", format!("duplicate within job skipped: {} (same content already deployed to {})", entry.source, dest_rel))
+                } else {
+                    ("conflict", format!("conflict within job skipped: {} (destination {} already written by another entry with different content -> manual review)", entry.source, dest_rel))
+                };
+                warnings.push(msg.clone());
+                warn!("{}", msg);
+                breakdown_rows.push(serde_json::json!({
+                    "source": entry.source,
+                    "destination": dest_rel,
+                    "dest_abs": dest_abs.to_string_lossy(),
+                    "dest_exists": dest_exists_now,
+                    "action": act,
+                    "reason": msg,
+                    "content_type": entry.content_type,
+                }));
+                continue;
+            }
+        }
+
         // Record breakdown row with absolute verified path (loop-collected)
         breakdown_rows.push(serde_json::json!({
             "source": entry.source,
@@ -176,7 +204,10 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     continue;
                 }
                 match safe_copy_file(src, &dest_abs) {
-                    Ok(()) => deployed += 1,
+                    Ok(()) => {
+                        deployed += 1;
+                        written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                    },
                     Err(e) => {
                         errors.push(format!("copy {} -> {}: {}", src.display(), dest_abs.display(), e));
                         failed += 1;
@@ -218,9 +249,14 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                             if let Err(e) = safe_copy_file(&p, &dest_file) {
                                 errors.push(format!("extract copy {} -> {}: {}", p.display(), dest_file.display(), e));
                                 ok = false;
+                            } else {
+                                written_dests.insert(dest_file.to_string_lossy().to_lowercase(), None);
                             }
                         }
-                        if ok { deployed += 1; } else { failed += 1; }
+                        if ok {
+                            deployed += 1;
+                            written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                        } else { failed += 1; }
                     },
                     Err(e) => {
                         // Fallback: copy archive as is if it's a payload (e.g., cps1 zip)
@@ -252,7 +288,10 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                 // For this milestone (read-only dry-run), we just copy the source and warn that conversion is provisional.
                 warnings.push(format!("video conversion for {} is PROVISIONAL_UNVALIDATED (would convert via FFmpeg to {} before deploy)", src.display(), entry.converted_name.as_deref().unwrap_or("converted.mp4")));
                 match safe_copy_file(src, &dest_abs) {
-                    Ok(()) => deployed += 1,
+                    Ok(()) => {
+                        deployed += 1;
+                        written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                    },
                     Err(e) => {
                         errors.push(format!("video copy {} -> {}: {}", src.display(), dest_abs.display(), e));
                         failed += 1;

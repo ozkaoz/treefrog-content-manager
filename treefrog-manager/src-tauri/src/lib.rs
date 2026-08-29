@@ -246,8 +246,15 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
     for e in &plan.entries {
         sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
     }
-    let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
-    let collisions = sd_target::check_case_collision(&dests);
+    // ONLY entries that write to the SD can collide. Skips/duplicates/conflicts never write.
+    let write_dests: Vec<String> = plan.entries.iter()
+        .filter(|e| {
+            let a = e.resolved_action.as_ref().unwrap_or(&e.action);
+            matches!(a.as_str(), "copy" | "extract" | "convert_then_copy" | "replace")
+        })
+        .map(|e| e.destination.clone())
+        .collect();
+    let collisions = sd_target::check_case_collision(&write_dests);
     if !collisions.is_empty() {
         log::warn!("Unexpected leftover collisions (resolved as warnings): {:?}", collisions);
     }
@@ -290,11 +297,19 @@ async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>)
     if space.status == "insufficient_space" {
         return Err(format!("Insufficient space: required {} available {}", space.required_bytes, space.available_bytes.unwrap_or(0)));
     }
-    let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
-    let collisions = sd_target::check_case_collision(&dests);
+    // ONLY entries that write to the SD can collide. Skips/duplicates/conflicts
+    // never write, so their destinations must not be checked.
+    let write_dests: Vec<String> = plan.entries.iter()
+        .filter(|e| {
+            let a = e.resolved_action.as_ref().unwrap_or(&e.action);
+            matches!(a.as_str(), "copy" | "extract" | "convert_then_copy" | "replace")
+        })
+        .map(|e| e.destination.clone())
+        .collect();
+    let collisions = sd_target::check_case_collision(&write_dests);
     if !collisions.is_empty() {
-        // The planner resolves same-destination entries; leftovers are warnings, never an abort.
-        log::warn!("Unexpected leftover collisions (resolved as warnings): {:?}", collisions);
+        // Never abort: deploy.rs has a runtime double-write guard as last resort.
+        log::warn!("Leftover write collisions (deploy guard will skip them): {:?}", collisions);
     }
     let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force).map_err(|e| e.to_string())?;
     let mut out = serde_json::to_value(&result).unwrap();
