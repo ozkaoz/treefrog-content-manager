@@ -177,9 +177,6 @@ fn is_path_within(base: &Path, target: &Path) -> bool {
     // Canonicalize base if possible
     let canon_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
     // For target that doesn't exist yet, check its parent and normalized components
-    let mut current = target;
-    // Walk up until we find an existing ancestor or reach base
-    let mut to_check = target.to_path_buf();
     // Normalize by checking components for ParentDir
     for comp in target.components() {
         if matches!(comp, std::path::Component::ParentDir) {

@@ -23,7 +23,7 @@ pub enum DuplicateClass {
     New,              // new path + new hash -> copy
 }
 
-pub fn classify(cheap_same: Option<bool>, same_path: bool, same_hash: bool, exists: bool) -> DuplicateClass {
+pub fn classify(_cheap_same: Option<bool>, same_path: bool, same_hash: bool, exists: bool) -> DuplicateClass {
     if !exists {
         return DuplicateClass::New;
     }

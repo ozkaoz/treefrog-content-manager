@@ -155,6 +155,7 @@ fn content_type_for_classification(kind: &crate::classify::Kind, system_id: &Opt
     }
 }
 
+#[allow(dead_code)]
 const VALID_RESOLUTIONS: &[&str] = &["skip", "replace", "keep_both", "keep_destination", "keep_source"];
 
 fn default_resolution_for_action(action: &str) -> String {
@@ -296,9 +297,6 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             if handler.is_none() || (ext == ".7z" || ext == ".rar") {
                 // 7z/rar are stubbed as unsupported
                 if matches!(ext.as_str(), ".7z" | ".rar") {
-                    let dr = if dest_rel.is_empty() { format!("roms/UNKNOWN/{}", sf.source_path.file_name().unwrap().to_string_lossy()) } else { format!("{}/{}", dest_rel, sf.source_path.file_name().unwrap().to_string_lossy()) };
-                    let actual_dest = if sf.classification.destination.is_empty() { dr } else { format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy()) };
-                    // Use more accurate dest
                     let dest2 = if sf.classification.destination.is_empty() { format!("roms/UNKNOWN/{}", sf.source_path.file_name().unwrap().to_string_lossy()) } else { format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy()) };
                     entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dest2, action: "unsupported_archive".into(), reason: format!("archive handler not available for {} (stub)", ext), hash: None, size: Some(sf.size), group: None, ..Default::default()});
                     unsupported += 1;
@@ -451,12 +449,11 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                 let dest_abs_inner = sd_path.join(&dest_rel_inner);
                 let exists = dest_abs_inner.exists();
                 // Try to hash inner content via temp extraction
-                let mut inner_hash: Option<String> = None;
                 // We'll attempt to extract to temp and hash
                 // Use tempfile
                 let hash_attempt = (|| -> Option<String> {
                     let tmp = tempfile::TempDir::new().ok()?;
-                    let extracted = archive::safe_extract_to_temp(&sf.source_path, tmp.path(), &limits).ok()?;
+                    let _extracted = archive::safe_extract_to_temp(&sf.source_path, tmp.path(), &limits).ok()?;
                     if grp.len()==1 {
                         let target = grp[0].name.clone();
                         let fname = Path::new(&target).file_name().unwrap().to_string_lossy().to_string();
@@ -488,7 +485,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                         Some(hex::encode(hasher.finalize()))
                     }
                 })();
-                inner_hash = hash_attempt;
+                let inner_hash = hash_attempt;
 
                 if exists {
                     if grp.len()==1 {
@@ -854,15 +851,17 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
     Ok(Plan { summary, entries, warnings: vec!["PROVISIONAL_UNVALIDATED video preset — not hardware validated".into(), "arch archives bounded: depth=1 entries=1024 expansion=1GiB".into()] })
 }
 
+#[allow(dead_code)]
 fn dest_abs_exists(p: &Path) -> bool { p.exists() }
 
+#[allow(dead_code)]
 fn do_hash_compare(src: &Path, dst: &Path) -> anyhow::Result<(Option<String>, Option<String>)> {
     let sh = if src.exists() { hash::sha256_file(src).ok() } else { None };
     let dh = if dst.exists() { hash::sha256_file(dst).ok() } else { None };
     Ok((sh, dh))
 }
 
-fn resolve_destination(sf: &ScannedFile, profile: &LoadedProfile, sd_root: &Path) -> anyhow::Result<(String, String, String)> {
+fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Path) -> anyhow::Result<(String, String, String)> {
     let kind = &sf.classification.kind;
     let dest_base = &sf.classification.destination;
     let file_name = sf.source_path.file_name().unwrap().to_string_lossy().to_string();

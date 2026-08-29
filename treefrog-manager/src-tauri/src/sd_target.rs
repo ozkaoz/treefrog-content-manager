@@ -272,12 +272,10 @@ pub fn list_volumes_findfirst() -> Vec<Volume> {
         // Get free space and drive type from first mount point or GUID
         let mut total: Option<u64> = None;
         let mut free: Option<u64> = None;
-        let mut drive_type = 0u32;
-        let mut accessible = false;
         let test_path = mount_points.first().map(|s| s.as_str()).unwrap_or(&guid);
         let w: Vec<u16> = OsStr::new(test_path).encode_wide().chain(std::iter::once(0)).collect();
-        drive_type = unsafe { GetDriveTypeW(windows::core::PCWSTR(w.as_ptr())) };
-        accessible = Path::new(test_path).exists();
+        let drive_type = unsafe { GetDriveTypeW(windows::core::PCWSTR(w.as_ptr())) };
+        let accessible = Path::new(test_path).exists();
         let mut free_bytes = 0u64;
         let mut total_bytes = 0u64;
         let mut avail = 0u64;
@@ -289,7 +287,7 @@ pub fn list_volumes_findfirst() -> Vec<Volume> {
         }
         let removable = matches!(drive_type, 2);
         // Try to get physical device info via IOCTL (best effort, no admin)
-        let physical = get_physical_device_for_volume(&guid);
+        let _physical = get_physical_device_for_volume(&guid);
 
         // Solo incluir dispositivos removibles (SD cards, USB drives)
         // DRIVE_REMOVABLE = 2, excluye discos fijos (DRIVE_FIXED = 3)
