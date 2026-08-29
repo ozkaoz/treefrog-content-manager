@@ -365,6 +365,32 @@
 
 ---
 
+## DEC-2026-08-29-02 — Phase 2E.1 Branding and Windows icon correction (hotfix, no new modules, no SD writes)
+
+**Date:** 2026-08-29
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / branding / icons / desktop
+
+**Context:** After 2E, user reports: (A) frog inside app appears vertically inverted/upside down, (B) Windows Desktop shortcut/app icon displays as generic green square, not frog. 2E derived frog from `xgame-logo.bmp` 480×854 vertical boot asset (overall bbox 201,250,288,638, gap 349–358, frog 201,250,288,353 → trimmed 87×99 → square 99×99) via `r<20` transparent, NEAREST. That asset is top-down BMP (`height=-854`) but is stored for handheld's rotated boot display; on desktop it appears inverted (head at bottom, eyes at y80 of 99). Low-res 87×99 when NEAREST-scaled to 32×32 loses detail → near-solid green. Icon generation used `ico_images[0].save(sizes=[...])` from 16×16 source → ICO 641 bytes single-resolution, not multi-resolution → Windows shows generic. No new modules/SD writes allowed.
+
+**Decision:** 
+- **Root cause:** `xgame-logo.bmp` boot orientation inverted for handheld; 87×99 low-res + incorrect ICO (16 source) caused both symptoms. Fix source pipeline, not CSS `rotate(180deg)` workaround.
+- **Canonical source switch:** Primary now `logo.png` 1536×1024 high-res desktop horizontal (frog left of x-gap 517–549, 330×280 → trimmed 314×280, no flip, desktop upright, high-res). `xgame-logo.bmp` retained only as fallback (would `FLIP_TOP_BOTTOM` to correct, but not used as canonical). No redraw, no generation, no duplicate large BMPs committed.
+- **Derived assets:** `frog-only.png` 314×280 RGBA transparent + `frog-square.png` 314×314 square padded (centered, upscaled to 512 for icons). Previous 87×99/99×99 replaced.
+- **Icons:** Regenerated via `scripts/generate_branding.py` (updated): `base_for_icons` = square upscaled to 512 via NEAREST, then `save_resize` for 32 (1686B), 64,128,256,512; `icon_256 = base_for_icons.resize((256,256), NEAREST)` then `icon_256.save("icon.ico", sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])` → **103442 bytes** (was 641), 6 sizes PNG-compressed; `icon.icns` 927052B (was 320k). Header uses `frog-square.png` 32×32 upright (no mirror/stretch/blur), same transparent frog works in Light (`#ffffff`) and Dark (`#0f172a`).
+- **Shortcut:** NSIS installer now correctly embeds ICO; fresh install after `uninstall /S` + removal of residual shortcuts bypasses Windows icon cache. Documented clean validation 9-step in `MANUAL_QA_2E.md` § Windows icon cache QA. No end-user cache rebuild required.
+- **Verification:** `test_phase2e_branding_fix.py` 9 tests (frog high-res 314×280 + alpha + not solid, square 314×314, generation script uses `logo.png` + `FLIP` only for xgame, no placeholder, ICO 6 sizes, provenance, NEAREST, header no rotate, version). `test_phase2e_desktop_ux` still 20 PASS. Total 160 PASS. `npm run build` now 94.57kB frog assets + 184kB JS; `cargo check` PASS; fresh install Desktop/StartMenu/taskbar/window/header all frog upright.
+
+**Reason:** High-res desktop logo avoids inversion and preserves detail at small sizes; correct ICO multi-resolution ensures Windows picks appropriate size for shortcut (16) vs taskbar (32) vs window (256) instead of generic. Flipping asset pipeline fixes root cause without CSS workaround.
+
+**Consequences:** `src/assets/branding/frog-only.png` 314×280 + `frog-square.png` 314×314, `src-tauri/icons/*` 32/64/128/256/512/ico/icns, `scripts/generate_branding.py` updated to use `logo.png` + correct ICO from 256 source, `src/assets/branding/README.md` updated with root cause & high-res, `docs/BUILD_WINDOWS.md`, `MANUAL_QA_2E.md`, `ARCHITECTURE.md`, `CURRENT.md` updated; no SD writes; no new modules.
+
+**Evidence:** `src/assets/branding/frog-only.png` 314×280 RGBA, `frog-square.png` 314×314, `generate_branding.py` (logo.png primary, FLIP for xgame fallback, NEAREST, 512 base), `src-tauri/icons/icon.ico` 103442 bytes 6 sizes via `struct` header, `32x32.png` 1686B, `npm build` PASS 94.57kB, `cargo check` PASS, `pytest 160 PASS`, fresh install `C:\Users\DaFunkNoise\AppData\Local\TreeFrog Content Manager\treefrog-manager.exe` 14.08 MB `TreeFrog Content Manager_0.1.0_x64-setup.exe` 3.48 MB `2c4f88c...` on Desktop, `git diff -- sd_root` empty.
+
+**Related:** `scripts/generate_branding.py`, `src/assets/branding/README.md`, `src/assets/branding/frog-only.png`, `src-tauri/icons/*`, `src/components/Header.tsx`, `docs/MANUAL_QA_2E.md`, `docs/BUILD_WINDOWS.md`, `docs/ARCHITECTURE.md`, `DEC-2026-08-29-01`.
+
+---
+
 ### Removed / migrated (not durable — history stays in Git)
 
 - Operational pushes `999A2B27`, `3423e35`, `bdbda77`, `f3273f6`, `588270c`, `c74bd86`, `21bee8d`, `8cc0a47`, `10C9B608`, `38F8CF02`, `E9B23E36`, `DBAD57A7` etc. (DEC-2026-08-21-13..27, DEC-2026-08-21-29) — Git log is authority.
