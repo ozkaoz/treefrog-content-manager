@@ -75,9 +75,12 @@ export default function App() {
     return cleanup;
   }, []);
 
-  // Auto-detect SD on mount: list volumes + fallback probe for any drive with TreeFrogUI markers
+  // Auto-detect SD on mount + polling for arrival/removal (Rufus-like)
   useEffect(() => {
-    async function autoDetect() {
+    let interval: number | null = null;
+    let mounted = true;
+
+    async function doDetect() {
       try {
         const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
         if (!tauri) return;
@@ -85,76 +88,87 @@ export default function App() {
         try {
           vols = (await tauri.invoke("list_volumes")) as VolumeInfo[];
         } catch {}
-        // Fallback: if list_volumes failed or returned empty, probe common drives
         if (vols.length === 0) {
           const candidates = ["G:\\", "E:\\", "F:\\", "D:\\", "H:\\", "I:\\", "J:\\"];
           for (const cand of candidates) {
             try {
               const a = (await tauri.invoke("analyze_target", { path: cand })) as TargetAnalysis;
-              // Create a synthetic VolumeInfo for fallback
               vols.push({ path: cand, label: a.label || null, filesystem: a.filesystem || null, total_bytes: a.capacity_bytes, free_bytes: a.free_bytes, removable: null, accessible: a.volume?.accessible ?? true });
             } catch {}
           }
         }
+        if (!mounted) return;
         setVolumes(vols);
-        // First, try to find any valid TreeFrogUI among volumes
-        let foundValid: string | null = null;
-        let foundAnalysis: TargetAnalysis | null = null;
-        for (const v of vols) {
-          if (!v.accessible) continue;
-          try {
-            const analysis = (await tauri.invoke("analyze_target", { path: v.path })) as TargetAnalysis;
-            if (analysis.is_treefrog) {
-              foundValid = v.path;
-              foundAnalysis = analysis;
-              break;
-            }
-          } catch {}
-        }
-        // If no valid among listed, brute-force probe all letters A-Z for TreeFrogUI (covers any SD, not just G:)
-        if (!foundValid) {
-          for (let code = 65; code <= 90; code++) {
-            const letter = String.fromCharCode(code);
-            const cand = `${letter}:\\`;
-            if (vols.some((v) => v.path === cand)) continue; // already checked
+        // Check if current sdPath is still present and accessible; if removed, invalidate
+        if (sdPath) {
+          const stillPresent = vols.some((v) => v.path === sdPath && v.accessible);
+          if (!stillPresent) {
+            // Check via analyze_target if still accessible (maybe volume list missed it)
             try {
-              const a = (await tauri.invoke("analyze_target", { path: cand })) as TargetAnalysis;
-              if (a.is_treefrog) {
-                foundValid = cand;
-                foundAnalysis = a;
-                // Also add to volumes list for SD Card display
-                vols.push({ path: cand, label: a.label || null, filesystem: a.filesystem || null, total_bytes: a.capacity_bytes, free_bytes: a.free_bytes, removable: true, accessible: true });
-                break;
+              const a = (await tauri.invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
+              if (a.status === "inaccessible") {
+                setSdAnalysis({ ...a, status: "inaccessible" } as any);
+                setError(`SD desconectada: ${sdPath} ya no está accesible`);
+              }
+            } catch {
+              setSdAnalysis(null);
+              setError(`SD desconectada: ${sdPath} ya no está accesible`);
+            }
+          }
+        }
+        // Auto-select first valid TreeFrogUI if none selected or current is not valid
+        const currentValid = sdAnalysis?.is_treefrog && vols.some((v) => v.path === sdPath);
+        if (!sdPath || !currentValid) {
+          for (const v of vols) {
+            if (!v.accessible) continue;
+            try {
+              const analysis = (await tauri.invoke("analyze_target", { path: v.path })) as TargetAnalysis;
+              if (analysis.is_treefrog) {
+                if (sdPath !== v.path) {
+                  setSdPath(v.path);
+                  setSdAnalysis(analysis);
+                }
+                return;
               }
             } catch {}
           }
-        }
-        if (foundValid && foundAnalysis) {
-          setSdPath(foundValid);
-          setSdAnalysis(foundAnalysis);
-          setVolumes([...vols]); // update with any new found
-        } else if (vols.length > 0) {
-          // No valid TreeFrogUI found, but show volumes for manual selection
-          // Try to keep first accessible as analysis for UI feedback (will show as unknown/incomplete)
-          const firstAccessible = vols.find((v) => v.accessible);
-          if (firstAccessible) {
-            try {
-              const a = (await tauri.invoke("analyze_target", { path: firstAccessible.path })) as TargetAnalysis;
-              setSdAnalysis(a);
-              if (!sdPath) setSdPath(firstAccessible.path);
-            } catch {}
+          // Fallback brute-force A-Z if no valid among listed
+          if (!sdPath) {
+            for (let code = 65; code <= 90; code++) {
+              const letter = String.fromCharCode(code);
+              const cand = `${letter}:\\`;
+              if (vols.some((v) => v.path === cand)) continue;
+              try {
+                const a = (await tauri.invoke("analyze_target", { path: cand })) as TargetAnalysis;
+                if (a.is_treefrog) {
+                  vols.push({ path: cand, label: a.label || null, filesystem: a.filesystem || null, total_bytes: a.capacity_bytes, free_bytes: a.free_bytes, removable: true, accessible: true });
+                  setVolumes([...vols]);
+                  setSdPath(cand);
+                  setSdAnalysis(a);
+                  return;
+                }
+              } catch {}
+            }
           }
-        } else {
-          // No volumes at all — will show empty state in Overview/SD Card
-          setError("No se detectaron unidades. Conecta una SD y usa SD Card → Seleccionar SD.");
         }
       } catch (e) {
         console.warn("autoDetect failed", e);
       }
     }
-    autoDetect();
+
+    doDetect();
+    // Poll every 2s for arrival/removal (lightweight, metadata only, no hashing)
+    interval = window.setInterval(doDetect, 2000) as unknown as number;
+    // Also listen for Tauri window focus to re-check (when user switches back)
+    const onFocus = () => doDetect();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      mounted = false;
+      if (interval) window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sdPath, sdAnalysis?.is_treefrog]);
 
   // When sdPath changes (via SD Card tab), re-analyze
   useEffect(() => {

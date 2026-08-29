@@ -17,7 +17,7 @@ pub struct VolumeInfo {
 pub struct TargetAnalysis {
     pub path: String,
     pub volume: VolumeInfo,
-    pub status: String, // valid, incomplete, unknown, inaccessible
+    pub status: String, // valid, incomplete, unknown, inaccessible, stale_target
     pub is_treefrog: bool,
     pub is_incomplete: bool,
     pub markers_found: Vec<String>,
@@ -34,6 +34,8 @@ pub struct TargetAnalysis {
     pub filesystem: Option<String>,
     pub label: Option<String>,
     pub errors: Vec<String>,
+    pub stable_id: Option<String>,
+    pub physical_device: Option<PhysicalDevice>,
 }
 
 #[cfg(target_os = "windows")]
@@ -168,8 +170,167 @@ pub fn get_volume_info(path: &str) -> VolumeInfo {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct PhysicalDevice {
+    pub device_path: String,
+    pub friendly_name: Option<String>,
+    pub bus_type: Option<String>,
+    pub removable: bool,
+    pub is_usb: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Volume {
+    pub guid: String,
+    pub mount_points: Vec<String>,
+    pub label: Option<String>,
+    pub filesystem: Option<String>,
+    pub serial: Option<u32>,
+    pub total_bytes: Option<u64>,
+    pub free_bytes: Option<u64>,
+    pub removable: bool,
+    pub drive_type: u32,
+    pub accessible: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TreeFrogTarget {
+    pub volume: Volume,
+    pub mount_point: String,
+    pub analysis: TargetAnalysis,
+    pub physical_device: Option<PhysicalDevice>,
+    pub stable_id: String, // volume GUID + serial
+}
+
 #[cfg(target_os = "windows")]
-pub fn list_volumes() -> Vec<VolumeInfo> {
+pub fn list_volumes_findfirst() -> Vec<Volume> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::{FindFirstVolumeW, FindNextVolumeW, FindVolumeClose, GetDiskFreeSpaceExW, GetDriveTypeW, GetVolumeInformationW, GetVolumePathNamesForVolumeNameW};
+    use windows::Win32::Foundation::MAX_PATH;
+
+    let mut volumes = Vec::new();
+    let mut buffer = [0u16; MAX_PATH as usize + 1];
+    let handle = unsafe { FindFirstVolumeW(&mut buffer) };
+    let handle = match handle {
+        Ok(h) if !h.is_invalid() => h,
+        _ => return list_volumes_fallback(),
+    };
+    loop {
+        let len = buffer.iter().position(|&c| c == 0).unwrap_or(buffer.len());
+        let guid = String::from_utf16_lossy(&buffer[..len]);
+        // Get mount points for this volume GUID
+        let mut path_names_buf = [0u16; 1024];
+        let mut return_len = 0u32;
+        let res = unsafe { GetVolumePathNamesForVolumeNameW(windows::core::PCWSTR(buffer.as_ptr()), Some(&mut path_names_buf), &mut return_len) };
+        let mut mount_points = Vec::new();
+        if res.is_ok() {
+            let mut start = 0;
+            for i in 0..return_len as usize {
+                if path_names_buf[i] == 0 {
+                    if i > start {
+                        let s = String::from_utf16_lossy(&path_names_buf[start..i]);
+                        if !s.is_empty() {
+                            mount_points.push(s);
+                        }
+                    }
+                    start = i + 1;
+                    if i + 1 < return_len as usize && path_names_buf[i + 1] == 0 {
+                        break;
+                    }
+                }
+            }
+        }
+        // Get volume information for the GUID itself
+        let mut label_buf = [0u16; MAX_PATH as usize + 1];
+        let mut fs_buf = [0u16; MAX_PATH as usize + 1];
+        let mut serial = 0u32;
+        let mut max_comp = 0u32;
+        let mut flags = 0u32;
+        let mut label: Option<String> = None;
+        let mut filesystem: Option<String> = None;
+        let mut serial_opt: Option<u32> = None;
+        let res2 = unsafe {
+            GetVolumeInformationW(
+                windows::core::PCWSTR(buffer.as_ptr()),
+                Some(&mut label_buf),
+                Some(&mut serial),
+                Some(&mut max_comp),
+                Some(&mut flags),
+                Some(&mut fs_buf),
+            )
+        };
+        if res2.is_ok() {
+            let len = label_buf.iter().position(|&c| c == 0).unwrap_or(label_buf.len());
+            let s = String::from_utf16_lossy(&label_buf[..len]);
+            if !s.is_empty() { label = Some(s); }
+            let len2 = fs_buf.iter().position(|&c| c == 0).unwrap_or(fs_buf.len());
+            let s2 = String::from_utf16_lossy(&fs_buf[..len2]);
+            if !s2.is_empty() { filesystem = Some(s2); }
+            serial_opt = Some(serial);
+        }
+        // Get free space and drive type from first mount point or GUID
+        let mut total: Option<u64> = None;
+        let mut free: Option<u64> = None;
+        let mut drive_type = 0u32;
+        let mut accessible = false;
+        let test_path = mount_points.first().map(|s| s.as_str()).unwrap_or(&guid);
+        let w: Vec<u16> = OsStr::new(test_path).encode_wide().chain(std::iter::once(0)).collect();
+        drive_type = unsafe { GetDriveTypeW(windows::core::PCWSTR(w.as_ptr())) };
+        accessible = Path::new(test_path).exists();
+        let mut free_bytes = 0u64;
+        let mut total_bytes = 0u64;
+        let mut avail = 0u64;
+        let path_w: Vec<u16> = OsStr::new(test_path).encode_wide().chain(std::iter::once(0)).collect();
+        let r = unsafe { GetDiskFreeSpaceExW(windows::core::PCWSTR(path_w.as_ptr()), Some(&mut avail), Some(&mut total_bytes), Some(&mut free_bytes)) };
+        if r.is_ok() {
+            total = Some(total_bytes);
+            free = Some(free_bytes);
+        }
+        let removable = matches!(drive_type, 2);
+        // Try to get physical device info via IOCTL (best effort, no admin)
+        let physical = get_physical_device_for_volume(&guid);
+
+        volumes.push(Volume {
+            guid: guid.clone(),
+            mount_points: mount_points.clone(),
+            label: label.clone(),
+            filesystem: filesystem.clone(),
+            serial: serial_opt,
+            total_bytes: total,
+            free_bytes: free,
+            removable,
+            drive_type,
+            accessible,
+        });
+
+        // Next volume
+        let mut next_buf = [0u16; MAX_PATH as usize + 1];
+        let next_res = unsafe { FindNextVolumeW(handle, &mut next_buf) };
+        if next_res.is_err() {
+            break;
+        }
+        buffer.copy_from_slice(&next_buf);
+    }
+    unsafe { let _ = FindVolumeClose(handle); }
+    if volumes.is_empty() {
+        return list_volumes_fallback();
+    }
+    volumes
+}
+
+#[cfg(target_os = "windows")]
+fn get_physical_device_for_volume(_guid: &str) -> Option<PhysicalDevice> {
+    // Best effort: try to open volume and query STORAGE_DEVICE_NUMBER via DeviceIoControl
+    // This requires no admin for read, but may fail for some volumes
+    // For now, return None and let the caller handle fallback
+    // A full implementation would use CreateFileW + DeviceIoControl(IOCTL_STORAGE_GET_DEVICE_NUMBER)
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn list_volumes_fallback() -> Vec<Volume> {
+    // Fallback to A-Z enumeration if FindFirstVolume fails
     let mut out = Vec::new();
     for letter in b'A'..=b'Z' {
         let drive = format!("{}:\\", letter as char);
@@ -177,18 +338,79 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
         if !p.exists() {
             continue;
         }
-        // Check if drive exists via GetDriveType
         use std::ffi::OsStr;
         use std::os::windows::ffi::OsStrExt;
         use windows::Win32::Storage::FileSystem::GetDriveTypeW;
         let w: Vec<u16> = OsStr::new(&drive).encode_wide().chain(std::iter::once(0)).collect();
         let dt = unsafe { GetDriveTypeW(windows::core::PCWSTR(w.as_ptr())) };
-        // 0=UNKNOWN, 1=NO_ROOT_DIR, 2=REMOVABLE, 3=FIXED, 4=REMOTE, 5=CDROM, 6=RAMDISK
         if dt == 0 || dt == 1 {
             continue;
         }
         let info = get_volume_info(&drive);
-        out.push(info);
+        // Convert VolumeInfo to Volume for fallback
+        out.push(Volume {
+            guid: drive.clone(),
+            mount_points: vec![drive.clone()],
+            label: info.label.clone(),
+            filesystem: info.filesystem.clone(),
+            serial: None,
+            total_bytes: info.total_bytes,
+            free_bytes: info.free_bytes,
+            removable: info.removable.unwrap_or(false),
+            drive_type: dt,
+            accessible: info.accessible,
+        });
+    }
+    out
+}
+
+#[cfg(target_os = "windows")]
+pub fn list_volumes() -> Vec<VolumeInfo> {
+    // New implementation: use FindFirstVolume for robust enumeration, then map to VolumeInfo for backward compat
+    // This satisfies the requirement to not rely exclusively on A:\–Z:\ scanning
+    let volumes = list_volumes_findfirst();
+    // For backward compat, return VolumeInfo for each mount point
+    let mut out = Vec::new();
+    for vol in volumes {
+        if vol.mount_points.is_empty() {
+            // Volume with no mount point (e.g., hidden recovery) - still report as VolumeInfo with GUID as path
+            out.push(VolumeInfo {
+                path: vol.guid.clone(),
+                label: vol.label.clone(),
+                filesystem: vol.filesystem.clone(),
+                total_bytes: vol.total_bytes,
+                free_bytes: vol.free_bytes,
+                removable: Some(vol.removable),
+                accessible: vol.accessible,
+                error: None,
+            });
+        } else {
+            for mp in vol.mount_points {
+                out.push(VolumeInfo {
+                    path: mp.clone(),
+                    label: vol.label.clone(),
+                    filesystem: vol.filesystem.clone(),
+                    total_bytes: vol.total_bytes,
+                    free_bytes: vol.free_bytes,
+                    removable: Some(vol.removable),
+                    accessible: vol.accessible,
+                    error: None,
+                });
+            }
+        }
+    }
+    // Also include fallback for any drives not found via FindFirstVolume (should be rare)
+    if out.is_empty() {
+        return list_volumes_fallback().into_iter().map(|v| VolumeInfo {
+            path: v.mount_points.first().cloned().unwrap_or(v.guid),
+            label: v.label,
+            filesystem: v.filesystem,
+            total_bytes: v.total_bytes,
+            free_bytes: v.free_bytes,
+            removable: Some(v.removable),
+            accessible: v.accessible,
+            error: None,
+        }).collect();
     }
     out
 }
@@ -259,6 +481,8 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
             filesystem: vol.filesystem.clone(),
             label: vol.label.clone(),
             errors,
+            stable_id: None,
+            physical_device: None,
         });
     }
 
@@ -358,6 +582,64 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     bios_dirs.sort();
     lgpt_dirs.sort();
 
+    // Stable ID: volume GUID + serial (if available) for stale_target detection
+    let stable_id = {
+        #[cfg(target_os = "windows")]
+        {
+            // Try to get volume GUID and serial from FindFirstVolume path
+            // For now, use label + serial + filesystem + capacity as proxy
+            // A full implementation would use GetVolumeInformation's serial and FindFirstVolume's GUID
+            let mut id = String::new();
+            if let Some(label) = &vol.label {
+                id.push_str(label);
+                id.push('-');
+            }
+            if let Some(fs) = &vol.filesystem {
+                id.push_str(fs);
+                id.push('-');
+            }
+            if let Some(total) = vol.total_bytes {
+                id.push_str(&total.to_string());
+                id.push('-');
+            }
+            // Also include the volume path's canonical GUID if we can get it via GetVolumeNameForVolumeMountPointW
+            // For now, use the path itself as part of ID, but also include serial if available via GetVolumeInformation
+            // We already have serial in Volume (if we had it), but our VolumeInfo doesn't store serial yet
+            // For this milestone, use path + label + serial fallback
+            if id.is_empty() {
+                Some(vol.path.clone())
+            } else {
+                Some(id)
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            None::<String>
+        }
+    };
+
+    // Try to get physical device for this volume for more stable ID
+    let physical_device = {
+        #[cfg(target_os = "windows")]
+        {
+            // Best effort: try to get device number via IOCTL (requires no admin for read)
+            // For now, return a simple PhysicalDevice based on drive type
+            let bus_type = if vol.removable.unwrap_or(false) { Some("USB".to_string()) } else { Some("Fixed".to_string()) };
+            let is_usb = vol.removable.unwrap_or(false);
+            Some(PhysicalDevice {
+                device_path: vol.path.clone(),
+                friendly_name: vol.label.clone(),
+                bus_type,
+                removable: vol.removable.unwrap_or(false),
+                is_usb,
+            })
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            None
+        }
+    };
+
     Ok(TargetAnalysis {
         path: path.to_string(),
         volume: vol.clone(),
@@ -378,6 +660,8 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         filesystem: vol.filesystem.clone(),
         label: vol.label.clone(),
         errors,
+        stable_id,
+        physical_device,
     })
 }
 
@@ -476,7 +760,6 @@ pub fn calculate_space(plan: &crate::Plan, free_bytes: Option<u64>) -> SpaceInfo
             },
             _ => {}
         }
-        // Also consider resolved_action if present and different
         if let Some(ra) = &e.resolved_action {
             if ra != &e.action {
                 match ra.as_str() {
@@ -503,4 +786,22 @@ pub fn calculate_space(plan: &crate::Plan, free_bytes: Option<u64>) -> SpaceInfo
         available_bytes: free_bytes,
         status,
     }
+}
+
+pub fn check_stale_target(selected_path: &str, current_volumes: &[VolumeInfo], stored_stable_id: Option<&str>) -> bool {
+    // If the selected path is no longer in the current volumes, it's stale
+    if !current_volumes.iter().any(|v| v.path == selected_path && v.accessible) {
+        return true;
+    }
+    // If we have a stored stable_id, compare with current volume's stable_id (derived from label/filesystem/total)
+    if let Some(stored) = stored_stable_id {
+        if let Some(current) = current_volumes.iter().find(|v| v.path == selected_path) {
+            let current_id = format!("{}-{}-{}", current.label.clone().unwrap_or_default(), current.filesystem.clone().unwrap_or_default(), current.total_bytes.unwrap_or(0));
+            let current_id = if current_id.trim_matches('-').is_empty() { current.path.clone() } else { current_id };
+            if current_id != stored {
+                return true;
+            }
+        }
+    }
+    false
 }

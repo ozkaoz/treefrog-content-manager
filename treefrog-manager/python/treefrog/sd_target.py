@@ -81,6 +81,8 @@ def analyze_target(path: str):
             "filesystem": vol["filesystem"],
             "label": vol["label"],
             "errors": errors,
+            "stable_id": None,
+            "physical_device": None,
         }
     # Load markers from sd_markers.json if available, else defaults
     required = ["cubegm", "roms"]
@@ -162,6 +164,23 @@ def analyze_target(path: str):
     media_dirs.sort()
     bios_dirs.sort()
     lgpt_dirs.sort()
+    # Stable ID: label + filesystem + total as proxy (real would be GUID+serial)
+    stable_id = None
+    if vol["label"] or vol["filesystem"] or vol["total_bytes"]:
+        stable_id = f"{vol['label'] or ''}-{vol['filesystem'] or ''}-{vol['total_bytes'] or ''}"
+        if not stable_id.strip("-"):
+            stable_id = vol["path"]
+        else:
+            stable_id = stable_id.strip("-")
+    else:
+        stable_id = vol["path"]
+    physical_device = {
+        "device_path": vol["path"],
+        "friendly_name": vol["label"],
+        "bus_type": "USB" if vol["removable"] else "Fixed" if vol["removable"] is not None else None,
+        "removable": bool(vol["removable"]) if vol["removable"] is not None else False,
+        "is_usb": bool(vol["removable"]) if vol["removable"] is not None else False,
+    } if vol["removable"] is not None else None
     return {
         "path": path,
         "volume": vol,
@@ -182,6 +201,8 @@ def analyze_target(path: str):
         "filesystem": vol["filesystem"],
         "label": vol["label"],
         "errors": errors,
+        "stable_id": stable_id,
+        "physical_device": physical_device,
     }
 
 def validate_destination_path(dest: str):
