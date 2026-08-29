@@ -196,6 +196,37 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
 
         match action_final.as_str() {
             "copy" | "replace" => {
+                let raw_src = entry.source.clone();
+                let is_group = raw_src.contains("::group:") || raw_src.contains(" (group ");
+                if is_group {
+                    let base = raw_src.split("::").next().unwrap_or(&raw_src);
+                    let base = base.split(" (group ").next().unwrap_or(base).trim();
+                    let cue_path = std::path::PathBuf::from(base);
+                    let src_dir = cue_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
+                    let dest_dir = dest_abs.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| dest_abs.clone());
+
+                    let mut members = entry.members.clone().or_else(|| entry.group.clone()).unwrap_or_default();
+                    if let Some(cn) = cue_path.file_name().and_then(|n| n.to_str()) {
+                        if !members.iter().any(|m| m == cn) { members.insert(0, cn.to_string()); }
+                    }
+
+                    let mut ok = true;
+                    for m in &members {
+                        let s = src_dir.join(m);
+                        let d = dest_dir.join(m);
+                        if !s.exists() { errors.push(format!("group member not found: {}", s.display())); ok = false; continue; }
+                        match safe_copy_file(&s, &d) {
+                            Ok(()) => { written_dests.insert(d.to_string_lossy().to_lowercase(), None); }
+                            Err(e) => { errors.push(format!("copy {} -> {}: {}", s.display(), d.display(), e)); ok = false; }
+                        }
+                    }
+                    if ok {
+                        deployed += 1;
+                        written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone());
+                    } else { failed += 1; }
+                    // breakdown row con action final y miembros
+                    continue;
+                }
                 let src_str = entry.source.split("::").next().unwrap_or(&entry.source);
                 let src = Path::new(src_str);
                 if !src.exists() {

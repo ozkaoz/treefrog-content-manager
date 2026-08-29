@@ -267,24 +267,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
     let mut unsupported = 0usize;
     let mut hash_to_dest: HashMap<String, String> = HashMap::new();
 
-    // Pre-index SD hashes for duplicate detection
-    let scanned_sizes: HashSet<u64> = scanned.iter().map(|s| s.size).collect();
-    let mut sd_hash_map: HashMap<String, String> = HashMap::new();
-    if sd_path.exists() {
-        for entry in walkdir::WalkDir::new(sd_path).follow_links(false).into_iter().filter_map(|e| e.ok()) {
-            if entry.path().is_file() && !entry.file_type().is_symlink() {
-                if let Ok(meta) = entry.metadata() {
-                    if scanned_sizes.contains(&meta.len()) {
-                        if let Ok(h) = hash::sha256_file(entry.path()) {
-                            if let Ok(rel) = entry.path().strip_prefix(sd_path) {
-                                sd_hash_map.insert(h, rel.to_string_lossy().to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    let mut job_seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Deterministic order
     let mut scanned_sorted = scanned;
@@ -365,7 +348,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     hash::DuplicateClass::DuplicateContent => { duplicate+=1; ("skip_duplicate", "different path + same hash -> duplicate (payload)") },
                     hash::DuplicateClass::Conflict => { conflicts+=1; ("conflict", "same path + different hash -> conflict (payload)") },
                     hash::DuplicateClass::New => {
-                        // check duplicate via sd_hash_map or hash_to_dest for archive itself
+                        // In-job dedup only for archive payload
                         let h = hash::sha256_file(&sf.source_path).ok();
                         if let Some(hv) = h {
                             if hash_to_dest.contains_key(&hv) {
@@ -632,7 +615,6 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     if std::fs::metadata(&dest_abs_v).map(|m| m.len()).unwrap_or(0) != sf.size { false } else { a == b }
                 } else { false };
                 let class_v = if exists_v { hash::classify(None, exists_v, same_hash_v, exists_v) } else { hash::DuplicateClass::New };
-                let wrong_location_v = src_hash_v.as_ref().and_then(|h| sd_hash_map.get(h).cloned());
                 let duplicate_elsewhere_v = if !exists_v {
                     if let Some(h) = &src_hash_v {
                         if hash_to_dest.contains_key(h) { true } else { hash_to_dest.insert(h.clone(), dest_rel_video.clone()); false }
@@ -645,14 +627,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     match class_v {
                         hash::DuplicateClass::Unchanged => { unchanged += 1; ("skip_unchanged".to_string(), "same path + same hash -> unchanged (video compatible)".to_string()) },
                         hash::DuplicateClass::Conflict => { conflicts += 1; changed += 1; ("conflict".to_string(), "same path + different hash -> conflict (video)".to_string()) },
-                        _ => {
-                            new_c += 1;
-                            let base = "video compatible -> copy".to_string();
-                            let r = if let Some(wl) = &wrong_location_v {
-                                format!("{} | same content already exists at {} (wrong location) -> copy to required destination", base, wl)
-                            } else { base };
-                            ("copy".to_string(), r)
-                        },
+                        _ => { new_c += 1; ("copy".to_string(), "video compatible -> copy".to_string()) },
                     }
                 };
                 entries.push(crate::PlanEntry {
@@ -770,45 +745,36 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             } else { false }
         } else { false };
 
-        // Wrong-location info: same content exists elsewhere on SD (only informative now)
-        let wrong_location: Option<String> = if !same_path {
-            if let Ok(h) = hash::sha256_file(&sf.source_path) {
-                sd_hash_map.get(&h).cloned()
-            } else { None }
-        } else { None };
+        // Hash ONLY when the destination exists (unchanged/conflict decision).
+        let exists = dest_abs.exists();
+        let (src_hash, dst_hash, same_hash) = if exists {
+            let sh = hash::sha256_file(&sf.source_path).ok();
+            let dh = hash::sha256_file(&dest_abs).ok();
+            let same = match (&sh, &dh) {
+                (Some(a), Some(b)) => std::fs::metadata(&dest_abs).map(|m| m.len()).unwrap_or(0) == sf.size && a == b,
+                _ => false,
+            };
+            (sh, dh, same)
+        } else {
+            (None, None, false)
+        };
 
-        // In-job dedup only: same hash twice within this job -> skip_duplicate.
-        // Same hash elsewhere on SD -> COPY to the required destination (TreeFrogUI/LGPT
-        // need the file at the profile destination; a copy in another path doesn't count).
-        let duplicate_elsewhere = if !same_path {
-            if let Ok(h) = hash::sha256_file(&sf.source_path) {
-                if hash_to_dest.contains_key(&h) {
-                    true
-                } else {
-                    hash_to_dest.insert(h.clone(), dest_rel.clone());
-                    false
-                }
-            } else { false }
-        } else { false };
+        // Cheap in-job dedupe: same name + same size within this job -> skip_duplicate
+        let file_name_lower = sf.source_path.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+        let dedupe_key = format!("{}|{}", file_name_lower, sf.size);
+        let duplicate_in_job = !exists && !job_seen.insert(dedupe_key);
 
-        let class = if duplicate_elsewhere {
+        let class = if duplicate_in_job {
             hash::DuplicateClass::DuplicateContent
         } else {
-            hash::classify(None, same_path, same_hash, exists)
+            hash::classify(None, exists, same_hash, exists)
         };
 
         let (action, reason2) = match class {
             hash::DuplicateClass::Unchanged => { unchanged+=1; ("skip_unchanged".to_string(), "same path + same hash -> unchanged".to_string()) },
-            hash::DuplicateClass::DuplicateContent => { duplicate+=1; ("skip_duplicate".to_string(), "different path + same hash -> duplicate content default skip".to_string()) },
-            hash::DuplicateClass::Conflict => { conflicts+=1; if same_path { changed+=1; } ("conflict".to_string(), "same path + different hash -> conflict".to_string()) },
-            hash::DuplicateClass::New => {
-                new_c+=1;
-                let base = reason.clone();
-                let r = if let Some(wl) = &wrong_location {
-                    format!("{} | same content already exists at {} (wrong location) -> copy to required destination", base, wl)
-                } else { base };
-                ("copy".to_string(), r)
-            },
+            hash::DuplicateClass::DuplicateContent => { duplicate+=1; ("skip_duplicate".to_string(), "same name+size within job -> only one copy deployed".to_string()) },
+            hash::DuplicateClass::Conflict => { conflicts+=1; if exists { changed+=1; } ("conflict".to_string(), "same path + different hash -> conflict".to_string()) },
+            hash::DuplicateClass::New => { new_c+=1; ("copy".to_string(), reason.clone()) },
         };
         let r = reason2.clone();
 

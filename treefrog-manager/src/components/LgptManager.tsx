@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
@@ -101,14 +101,14 @@ export default function LgptManager({
     if (projectsSource) await handleScanProjects();
   }
 
-  // Re-scan automatically when the tab becomes visible again,
-  // so the plan always reflects the current state of disk/SD.
+  const lastScanKey = useRef("");
   useEffect(() => {
-    if (visible && (samplesSource || projectsSource)) {
+    const key = `${samplesSource}|${projectsSource}|${globalSdPath}`;
+    if (visible && (samplesSource || projectsSource) && globalSdPath && key !== lastScanKey.current) {
+      lastScanKey.current = key;
       handleScanBoth();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, samplesSource, projectsSource, globalSdPath]);
 
   useEffect(() => {
     const allEntries: PlanEntry[] = [];
@@ -212,7 +212,7 @@ export default function LgptManager({
       </p>
 
       <div className="row">
-        <button className="primary" onClick={handleScanBoth} disabled={loading || (!samplesSource && !projectsSource)}>
+        <button className="primary" onClick={() => { lastScanKey.current = `${samplesSource}|${projectsSource}|${globalSdPath}`; handleScanBoth(); }} disabled={loading || (!samplesSource && !projectsSource)}>
           {loading ? "Scanning…" : "Scan LGPT"}
         </button>
         <button

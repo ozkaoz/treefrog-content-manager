@@ -20,12 +20,16 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
     }
     let mut out = Vec::new();
     let mut seen_sources: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut consumed: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     // Walk recursively, skip hidden .res artwork folders? No — we classify everything, but planner will filter
     for entry in WalkDir::new(root).follow_links(false).into_iter().filter_map(|e| e.ok()) {
         let p = entry.path();
         let canon = std::fs::canonicalize(entry.path()).unwrap_or_else(|_| entry.path().to_path_buf());
-        if !seen_sources.insert(canon) {
+        if !seen_sources.insert(canon.clone()) {
             continue; // same physical file visited twice (symlink/junction) -> ignore
+        }
+        if consumed.contains(&canon) {
+            continue; // part of a CUE/BIN group already emitted as one logical unit
         }
         if p.is_dir() {
             continue;
@@ -52,6 +56,15 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
         let class = classify::classify(p, profile);
         // multi-file group detection: if file is part of CUE/BIN etc, group with siblings
         let group = detect_group(p, &class);
+        if let Some(ref members) = group {
+            for m in members.iter().skip(1) {
+                if let Ok(c) = std::fs::canonicalize(m) {
+                    consumed.insert(c);
+                } else {
+                    consumed.insert(m.clone());
+                }
+            }
+        }
         out.push(ScannedFile {
             source_path: p.to_path_buf(),
             relative_hint: p.strip_prefix(root).unwrap_or(p).to_string_lossy().to_string(),

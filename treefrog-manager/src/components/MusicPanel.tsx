@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
@@ -87,14 +87,14 @@ export default function MusicPanel({
     return Array.from(map.entries());
   })();
 
-  // Re-scan automatically when the tab becomes visible again,
-  // so the plan always reflects the current state of disk/SD.
+  const lastScanKey = useRef("");
   useEffect(() => {
-    if (visible && source && globalSdPath) {
+    const key = `${source}|${globalSdPath}`;
+    if (visible && source && globalSdPath && key !== lastScanKey.current) {
+      lastScanKey.current = key;
       handlePreview();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, source, globalSdPath]);
 
   return (
     <div className="card">
@@ -115,7 +115,7 @@ export default function MusicPanel({
       </div>
 
       <div className="row">
-        <button className="primary" onClick={handlePreview} disabled={loading || !source || !globalSdPath}>
+        <button className="primary" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Music"}
         </button>
         <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>

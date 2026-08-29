@@ -12,6 +12,20 @@ pub mod sd_target;
 pub mod video;
 
 use serde::{Deserialize, Serialize};
+use std::sync::Mutex;
+use std::time::Instant;
+static ANALYZE_CACHE: Mutex<Option<(String, Instant, serde_json::Value)>> = Mutex::new(None);
+
+fn analyze_target_cached(path: &str) -> Result<serde_json::Value, String> {
+    if let Ok(g) = ANALYZE_CACHE.lock() {
+        if let Some((p, t, v)) = &*g {
+            if p == path && t.elapsed().as_secs() < 15 { return Ok(v.clone()); }
+        }
+    }
+    let v = serde_json::to_value(sd_target::analyze_target(path).map_err(|e| e.to_string())?).unwrap();
+    if let Ok(mut g) = ANALYZE_CACHE.lock() { *g = Some((path.to_string(), Instant::now(), v.clone())); }
+    Ok(v)
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlanSummary {
@@ -236,7 +250,8 @@ fn analyze_target(path: String) -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
-    let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
+    let target_val = analyze_target_cached(&sd_path)?;
+    let target: sd_target::TargetAnalysis = serde_json::from_value(target_val).unwrap();
     if target.status == "inaccessible" {
         return Err(format!("Target inaccessible: {}", sd_path));
     }
@@ -272,7 +287,8 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
 #[tauri::command]
 async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
-    let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
+    let target_val = analyze_target_cached(&sd_path)?;
+    let target: sd_target::TargetAnalysis = serde_json::from_value(target_val).unwrap();
     if target.status == "inaccessible" {
         return Err(format!("Target inaccessible: {}", sd_path));
     }

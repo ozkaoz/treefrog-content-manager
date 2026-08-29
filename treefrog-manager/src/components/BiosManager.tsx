@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
@@ -136,14 +136,14 @@ export default function BiosManager({
     }
   }
 
-  // Re-scan automatically when the tab becomes visible again,
-  // so the plan always reflects the current state of disk/SD.
+  const lastScanKey = useRef("");
   useEffect(() => {
-    if (visible && biosSource) {
+    const key = `${biosSource}|${globalSdPath}`;
+    if (visible && biosSource && globalSdPath && key !== lastScanKey.current) {
+      lastScanKey.current = key;
       handleScan();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, biosSource, globalSdPath]);
 
   useEffect(() => {
     if (!results || results.length === 0) {
@@ -223,7 +223,7 @@ export default function BiosManager({
       </p>
 
       <div className="row">
-        <button className="primary" onClick={handleScan} disabled={loading || !biosSource}>
+        <button className="primary" onClick={() => { lastScanKey.current = `${biosSource}|${globalSdPath}`; handleScan(); }} disabled={loading || !biosSource}>
           {loading ? "Scanning…" : "Scan BIOS"}
         </button>
         <button onClick={() => { setResults(null); setSelected(null); onPlanChange?.(null); }} disabled={!results}>

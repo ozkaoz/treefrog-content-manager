@@ -222,15 +222,29 @@ export default function SdCardPanel({
           <input type="checkbox" checked={forceCopy} onChange={(e) => setForceCopy(e.target.checked)} />
           Forzar copia (re-copiar aunque los archivos ya existan o estén sin cambios)
         </label>
-        {!confirming ? (
+        {confirming ? (
+          <div style={{ padding: 12, border: "1px solid var(--accent)", borderRadius: 6, background: "var(--surface-elevated)" }}>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>
+              ¿Sincronizar a <strong>{sdPath}</strong>? {globalPlan?.summary.new ?? 0} nuevos, {globalPlan?.summary.changed ?? 0} modificados
+              {forceCopy ? " + FORZAR re-copia de todos los archivos" : ""}.
+            </div>
+            <div className="row">
+              <button className="primary" onClick={async () => {
+                setConfirming(false);
+                setSyncResult(null);
+                try {
+                  const r = await onSync?.(forceCopy);
+                  setSyncResult(r);
+                } catch (e) { setError(String(e)); }
+              }}>Sí, sincronizar</button>
+              <button onClick={() => setConfirming(false)}>Cancelar</button>
+            </div>
+          </div>
+        ) : (
           <button
-            onClick={() => setConfirming(true)}
-            disabled={
-              !globalPlan || 
-              globalSpace?.status === "insufficient_space" || 
-              loading ||
-              (globalPlan.summary.new === 0 && globalPlan.summary.changed === 0)
-            }
+            onClick={() => { setError(""); setConfirming(true); }}
+            disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading ||
+              ((globalPlan.summary.new === 0 && globalPlan.summary.changed === 0) && !forceCopy)}
             className="primary"
             style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
             title={
@@ -243,36 +257,7 @@ export default function SdCardPanel({
           >
             {loading ? "Sincronizando…" : "Sync to SD"}
           </button>
-        ) : (
-          <div style={{ padding: 12, border: "1px solid var(--warning)", borderRadius: 6, background: "var(--warning-bg)" }}>
-            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>¿Confirmar sincronización?</div>
-            <div style={{ fontSize: 12, marginBottom: 12 }}>
-              Se copiarán <strong>{globalPlan?.summary.new ?? 0} nuevos</strong> y <strong>{globalPlan?.summary.changed ?? 0} modificados</strong> a <code>{sdPath}</code>. Los archivos se copiarán a la carpeta correcta según su extensión.
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button
-                className="primary"
-                onClick={async () => {
-                  setConfirming(false);
-                  if (!onSync) return;
-                  try {
-                    const result = await onSync?.(forceCopy);
-                    if (result) setSyncResult(result);
-                    if (result?.error) setError(result.error);
-                  } catch (e) {
-                    setError(String(e));
-                  }
-                }}
-                disabled={loading}
-                style={{ flex: 1 }}
-              >
-                Sí, sincronizar
-              </button>
-              <button onClick={() => setConfirming(false)} disabled={loading} style={{ flex: 1 }}>
-                Cancelar
-              </button>
-            </div>
-          </div>
+
         )}
         <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
           {!globalPlan 
