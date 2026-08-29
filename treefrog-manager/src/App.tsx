@@ -4,10 +4,13 @@ import DryRunPreview from "./components/DryRunPreview";
 import BiosManager from "./components/BiosManager";
 import LgptManager from "./components/LgptManager";
 import Header from "./components/Header";
-import Placeholder from "./components/Placeholder";
 import EmptyState from "./components/EmptyState";
 import About from "./components/About";
 import SdCardPanel from "./components/SdCardPanel";
+import GamesPanel from "./components/GamesPanel";
+import MusicPanel from "./components/MusicPanel";
+import VideosPanel from "./components/VideosPanel";
+import SettingsPanel from "./components/SettingsPanel";
 import { initTheme } from "./services/theme";
 import { pickFolder } from "./services/dialog";
 
@@ -177,13 +180,13 @@ export default function App() {
         </>
       )}
 
-      {activeTab === "games" && <Placeholder title="Games" />}
-      {activeTab === "music" && <Placeholder title="Music" />}
-      {activeTab === "videos" && <Placeholder title="Videos" />}
+      {activeTab === "games" && <GamesPanel globalSdPath={sdPath} />}
+      {activeTab === "music" && <MusicPanel globalSdPath={sdPath} />}
+      {activeTab === "videos" && <VideosPanel globalSdPath={sdPath} />}
       {activeTab === "bios" && <BiosManager />}
       {activeTab === "lgpt" && <LgptManager />}
       {activeTab === "sdcard" && <SdCardPanel sdPath={sdPath} onChange={setSdPath} />}
-      {activeTab === "settings" && <Placeholder title="Settings" />}
+      {activeTab === "settings" && <SettingsPanel />}
       {activeTab === "about" && <About />}
     </div>
   );

@@ -132,8 +132,9 @@ def test_navigation_entries():
     t = p.read_text(encoding="utf-8")
     for tab in ["Overview", "Games", "Music", "Videos", "BIOS", "LGPT", "SD Card", "Settings", "About"]:
         assert tab in t, f"missing navigation {tab}"
-    # Ensure placeholder for not-yet-implemented
-    assert "Coming in a future release" in t or "Placeholder" in t
+    # Games/Music/Videos/Settings are now implemented (not placeholder)
+    for comp in ["GamesPanel", "MusicPanel", "VideosPanel", "SettingsPanel"]:
+        assert comp in t or (SRC / "components" / f"{comp}.tsx").exists(), f"missing {comp} implementation"
 
 def test_working_modules_preserved():
     # BIOS and LGPT must remain functional imports
@@ -147,12 +148,12 @@ def test_working_modules_preserved():
 # 5 — Source picker consistency
 
 def test_source_picker_consistent_across_modules():
-    # All modules should share same dialog abstraction
-    for comp in ["BiosManager.tsx", "LgptManager.tsx"]:
+    # Content modules should share same dialog abstraction (Settings is info-only)
+    for comp in ["BiosManager.tsx", "LgptManager.tsx", "GamesPanel.tsx", "MusicPanel.tsx", "VideosPanel.tsx", "SdCardPanel.tsx"]:
         p = SRC / "components" / comp
         if p.exists():
             t = p.read_text(encoding="utf-8")
-            assert "pickFolder" in t, f"{comp} does not use dialogService.pickFolder"
+            assert "pickFolder" in t or "pickFile" in t, f"{comp} does not use dialogService.pickFolder/pickFile"
 
 # 6 — Empty states
 
