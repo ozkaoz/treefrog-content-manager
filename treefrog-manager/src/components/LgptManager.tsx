@@ -11,7 +11,7 @@ type LgptScanResult = {
   } | null;
 };
 
-export default function LgptManager() {
+export default function LgptManager({ onNext }: { onNext?: () => void }) {
   const [samplesSource, setSamplesSource] = useState<string>("");
   const [projectsSource, setProjectsSource] = useState<string>("");
   const [activeSubTab, setActiveSubTab] = useState<"samples" | "projects">("samples");
@@ -215,6 +215,15 @@ export default function LgptManager() {
       <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>
         Audio waveform/preview is a future enhancement (not in this milestone). Archive handling reuses Phase 2A <code>ArchiveHandler</code> (temp workspace, traversal/symlink/collision/expansion protections).
       </p>
+
+      <div className="row" style={{ marginTop: 16 }}>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → SD Card
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!samplesResult && !projectsResult}>
+          Continuar a SD Card →
+        </button>
+      </div>
     </div>
   );
 }

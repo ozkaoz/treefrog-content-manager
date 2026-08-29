@@ -61,7 +61,7 @@ const STATUS_COLOR: Record<string, string> = {
   not_required: "var(--text-muted)",
 };
 
-export default function BiosManager() {
+export default function BiosManager({ onNext }: { onNext?: () => void }) {
   const [biosSource, setBiosSource] = useState<string>("");
   const [results, setResults] = useState<BiosValidation[] | null>(null);
   const [selected, setSelected] = useState<BiosValidation | null>(null);
@@ -268,6 +268,15 @@ export default function BiosManager() {
             );
           })()}
         </div>
+      </div>
+
+      <div className="row" style={{ marginTop: 16 }}>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → LGPT
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!results || results.length === 0}>
+          Continuar a LGPT →
+        </button>
       </div>
     </div>
   );

@@ -106,10 +106,10 @@ export default function VideosPanel({ globalSdPath, onSourceChange, onNext }: { 
         </button>
         <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → SD Card
+          Omitir → BIOS
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
-          Continuar a SD Card →
+          Continuar a BIOS →
         </button>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza recursivamente; la app copiará automáticamente a <code>roms/videos/</code> según extensión, con conversión si es necesario.</div>

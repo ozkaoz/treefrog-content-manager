@@ -481,15 +481,15 @@ export default function App() {
               SINCRONIZAR
             </button>
           </div>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flujo: <code>ANALIZAR</code> (estado real SD) → <code>TRANSFERIR ARCHIVOS</code> (Games → Music → Videos → SD Card) → <code>Sync to SD</code> en SD Card. La app verifica la extensión y copia automáticamente a la carpeta correcta (perfil TreeFrogUI, no eliges carpeta en SD). Análisis recursivo de subcarpetas.</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flujo: <code>ANALIZAR</code> (estado real SD) → <code>TRANSFERIR ARCHIVOS</code> (Games → Music → Videos → BIOS → LGPT → SD Card) → <code>Sync to SD</code> en SD Card. La app verifica la extensión y copia automáticamente a la carpeta correcta (perfil TreeFrogUI, no eliges carpeta en SD). Análisis recursivo de subcarpetas.</p>
         </div>
       )}
 
       {activeTab === "games" && <GamesPanel globalSdPath={sdPath} onSourceChange={setGamesSource} onNext={() => setActiveTab("music")} />}
       {activeTab === "music" && <MusicPanel globalSdPath={sdPath} onSourceChange={setMusicSource} onNext={() => setActiveTab("videos")} />}
-      {activeTab === "videos" && <VideosPanel globalSdPath={sdPath} onSourceChange={setVideosSource} onNext={() => setActiveTab("sdcard")} />}
-      {activeTab === "bios" && <BiosManager />}
-      {activeTab === "lgpt" && <LgptManager />}
+      {activeTab === "videos" && <VideosPanel globalSdPath={sdPath} onSourceChange={setVideosSource} onNext={() => setActiveTab("bios")} />}
+      {activeTab === "bios" && <BiosManager onNext={() => setActiveTab("lgpt")} />}
+      {activeTab === "lgpt" && <LgptManager onNext={() => setActiveTab("sdcard")} />}
       {activeTab === "sdcard" && (
         <SdCardPanel 
           sdPath={sdPath} 

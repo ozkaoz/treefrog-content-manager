@@ -217,17 +217,30 @@ export default function SdCardPanel({
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
         <button
           onClick={onSync}
-          disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading}
+          disabled={
+            !globalPlan || 
+            globalSpace?.status === "insufficient_space" || 
+            loading ||
+            (globalPlan.summary.new === 0 && globalPlan.summary.changed === 0)
+          }
           className="primary"
           style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
-          title={globalPlan ? `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}` : "Ve a Overview y pulsa ANALIZAR primero"}
+          title={
+            !globalPlan 
+              ? "Ve a Overview y pulsa ANALIZAR primero"
+              : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
+              ? "No hay archivos nuevos o modificados para sincronizar"
+              : `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}`
+          }
         >
           {loading ? "Sincronizando…" : "Sync to SD"}
         </button>
         <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
-          {globalPlan 
-            ? `Listo para sincronizar: ${globalPlan.summary.new} nuevos, ${globalPlan.summary.unchanged} sin cambios.` 
-            : "Ve a Overview y pulsa ANALIZAR para preparar la sincronización."}
+          {!globalPlan 
+            ? "Ve a Overview y pulsa ANALIZAR para preparar la sincronización."
+            : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
+            ? "No hay archivos nuevos o modificados. Ve a Games/Music/Videos/BIOS/LGPT y selecciona carpetas de origen."
+            : `Listo para sincronizar: ${globalPlan.summary.new} nuevos, ${globalPlan.summary.changed} modificados, ${globalPlan.summary.unchanged} sin cambios.`}
         </div>
       </div>
 
