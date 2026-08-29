@@ -16,7 +16,7 @@ type Plan = {
   entries: PlanEntry[];
 };
 
-export default function MusicPanel({ globalSdPath, onSourceChange }: { globalSdPath: string; onSourceChange?: (v: string) => void }) {
+export default function MusicPanel({ globalSdPath, onSourceChange, onNext }: { globalSdPath: string; onSourceChange?: (v: string) => void; onNext?: () => void }) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,7 +107,14 @@ export default function MusicPanel({ globalSdPath, onSourceChange }: { globalSdP
           {loading ? "Scanning…" : "Scan Music"}
         </button>
         <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → Videos
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
+          Continuar a Videos →
+        </button>
       </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza recursivamente subcarpetas; cada subcarpeta se preserva como playlist en <code>roms/music/</code>.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 

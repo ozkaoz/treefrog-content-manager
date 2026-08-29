@@ -19,7 +19,7 @@ type Plan = {
   entries: PlanEntry[];
 };
 
-export default function VideosPanel({ globalSdPath, onSourceChange }: { globalSdPath: string; onSourceChange?: (v: string) => void }) {
+export default function VideosPanel({ globalSdPath, onSourceChange, onNext }: { globalSdPath: string; onSourceChange?: (v: string) => void; onNext?: () => void }) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -105,7 +105,14 @@ export default function VideosPanel({ globalSdPath, onSourceChange }: { globalSd
           {loading ? "Scanning…" : "Scan Videos"}
         </button>
         <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → SD Card
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
+          Continuar a SD Card →
+        </button>
       </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza recursivamente; la app copiará automáticamente a <code>roms/videos/</code> según extensión, con conversión si es necesario.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 

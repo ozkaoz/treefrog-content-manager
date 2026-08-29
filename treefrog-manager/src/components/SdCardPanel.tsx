@@ -58,7 +58,7 @@ function fmtBytes(n?: number | null): string {
   return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
 }
 
-export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes, onVolumesRefresh }: { sdPath: string; onChange: (v: string) => void; volumes?: VolumeInfo[]; onVolumesRefresh?: () => Promise<void> }) {
+export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes }: { sdPath: string; onChange: (v: string) => void; volumes?: VolumeInfo[] }) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
   const [space, setSpace] = useState<SpaceInfo | null>(null);
   const [plan, setPlan] = useState<any | null>(null);
@@ -66,14 +66,12 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes, on
   const [error, setError] = useState("");
   const [sourcePath, setSourcePath] = useState("");
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
-  const [volumesLoading, setVolumesLoading] = useState(false);
   const volumes = propVolumes !== undefined ? propVolumes : volumesState;
 
   // Load volumes if not provided via props (for standalone use)
   useEffect(() => {
     if (propVolumes !== undefined) return;
     async function loadVolumes() {
-      setVolumesLoading(true);
       try {
         const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
         if (tauri) {
@@ -81,7 +79,6 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes, on
           setVolumesState(vols);
         }
       } catch {}
-      setVolumesLoading(false);
     }
     loadVolumes();
   }, [propVolumes]);
@@ -180,50 +177,35 @@ export default function SdCardPanel({ sdPath, onChange, volumes: propVolumes, on
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>SD target (selección global)</label>
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <div
-            style={{
-              flex: 1,
-              padding: "8px 10px",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              background: "var(--input)",
-              color: sdPath ? "var(--text)" : "var(--text-muted)",
-              fontSize: 13,
-              minHeight: 36,
-              display: "flex",
-              alignItems: "center",
-            }}
-          >
-            {sdPath || "No SD seleccionada — detección automática en curso..."}
-          </div>
-          <button onClick={handlePick}>Select SD</button>
-          <button onClick={() => handleAnalyze()} disabled={!sdPath || loading}>
-            {loading ? "Analyzing…" : "Analyze"}
+        <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>SD seleccionada (global)</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— ya elegida en Overview, no se repite aquí</span>
+        </div>
+        <div
+          style={{
+            padding: "8px 10px",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            background: "var(--surface)",
+            color: sdPath ? "var(--text)" : "var(--text-muted)",
+            fontSize: 13,
+            minHeight: 36,
+            display: "flex",
+            alignItems: "center",
+            fontWeight: sdPath ? 600 : 400,
+          }}
+        >
+          {sdPath ? `${sdPath} — ${analysis?.label || "TreeFrogUI"} ✓` : "No hay SD seleccionada — ve a Overview para detección automática"}
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <button onClick={handlePick} style={{ fontSize: 12 }}>Cambiar SD…</button>
+          <button onClick={() => handleAnalyze()} disabled={!sdPath || loading} style={{ fontSize: 12 }}>
+            {loading ? "Analizando…" : "Re-analizar"}
           </button>
-          {(onVolumesRefresh || !propVolumes) && (
-            <button
-              onClick={async () => {
-                if (onVolumesRefresh) await onVolumesRefresh();
-                else {
-                  setVolumesLoading(true);
-                  try {
-                    const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-                    if (tauri) {
-                      const vols = (await tauri.invoke("list_volumes")) as VolumeInfo[];
-                      setVolumesState(vols);
-                    }
-                  } catch {}
-                  setVolumesLoading(false);
-                }
-              }}
-              disabled={volumesLoading}
-              title="Refrescar lista de unidades"
-            >
-              {volumesLoading ? "…" : "↻"}
-            </button>
-          )}
+          <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>Analiza recursivamente subcarpetas, no crea nada.</span>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          La SD se detecta automáticamente al iniciar y se selecciona globalmente. Si no es la correcta, usa <strong>Cambiar SD…</strong> (explorador nativo) o elige abajo entre todas las conectadas.
         </div>
         {volumes.length > 0 && (
           <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 8, background: "var(--surface)", maxHeight: 180, overflowY: "auto" }}>

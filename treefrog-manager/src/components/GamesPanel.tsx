@@ -19,7 +19,7 @@ type Plan = {
   warnings: string[];
 };
 
-export default function GamesPanel({ globalSdPath, onSourceChange }: { globalSdPath: string; onSourceChange?: (v: string) => void }) {
+export default function GamesPanel({ globalSdPath, onSourceChange, onNext }: { globalSdPath: string; onSourceChange?: (v: string) => void; onNext?: () => void }) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -103,7 +103,14 @@ export default function GamesPanel({ globalSdPath, onSourceChange }: { globalSdP
           {loading ? "Scanning…" : "Scan Games"}
         </button>
         <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
+        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+          Omitir → Music
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
+          Continuar a Music →
+        </button>
       </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza <strong>recursivamente</strong> subcarpetas (ej. <code>{source || "D:\\ROMs"}\\GBA\game.gba</code> y subcarpetas). Omitir si no tienes Games.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
