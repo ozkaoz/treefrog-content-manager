@@ -73,7 +73,7 @@ fn safe_copy_file(src: &Path, dest: &Path) -> anyhow::Result<()> {
     }
 }
 
-pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyhow::Result<DeployResult> {
+pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: bool) -> anyhow::Result<DeployResult> {
     let sd_path = Path::new(sd_root);
     if !sd_path.exists() {
         anyhow::bail!("SD root not found: {}", sd_root);
@@ -133,13 +133,26 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
 
         // ---- Fresh on-disk verification: never trust a stale skip decision ----
         let dest_exists_now = dest_abs.exists();
-        let action_final: String = match action.as_str() {
+        let downgraded: String = match action.as_str() {
             // "unchanged" REQUIRES the file to actually exist on the SD right now.
             "skip_unchanged" if !dest_exists_now => {
                 info!("Downgrade skip_unchanged -> copy (destination missing on SD): {}", dest_abs.display());
                 "copy".to_string()
             }
             other => other.to_string(),
+        };
+
+        // Force mode: user explicitly wants to (re)copy everything.
+        let action_final: String = if force {
+            match downgraded.as_str() {
+                "skip_unchanged" | "skip_duplicate" | "skip" => {
+                    info!("Force copy: {} -> {}", entry.source, dest_abs.display());
+                    "copy".to_string()
+                }
+                _ => downgraded,
+            }
+        } else {
+            downgraded
         };
 
         // Record breakdown row with absolute verified path (loop-collected)

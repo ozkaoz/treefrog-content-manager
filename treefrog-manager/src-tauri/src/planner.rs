@@ -908,8 +908,15 @@ fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Pa
             Ok((dest, "inspect".into(), "archive — inspect entries before copy".into()))
         },
         _ => {
-            let dest = format!("{}/{}", dest_base, file_name);
-            Ok((dest, "copy".into(), "unknown -> roms/UNKNOWN (needs review)".into()))
+            // Preserve relative subpath so two unknown files with the same name
+            // in different folders never collide at the same destination.
+            let rel = sf.relative_hint.replace('\\', "/");
+            let dest = if rel.is_empty() || rel == file_name {
+                format!("{}/{}", dest_base, file_name)
+            } else {
+                format!("{}/{}", dest_base, rel)
+            };
+            Ok((dest, "copy".into(), "unknown -> roms/UNKNOWN preserving relative path (needs review)".into()))
         }
     }
 }

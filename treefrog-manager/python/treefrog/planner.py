@@ -884,7 +884,13 @@ def plan(scanned, sd_root: str, profile):
             manual+=1
             continue
         else:
-            dest_rel = f"{dest_base}/{file_name}"
+            # Preserve relative subpath so two unknown files with the same name
+            # in different folders never collide at the same destination.
+            rel = sf["relative_hint"].replace("\\", "/")
+            if not rel or rel == file_name:
+                dest_rel = f"{dest_base}/{file_name}"
+            else:
+                dest_rel = f"{dest_base}/{rel}"
 
         dest_abs = sd_path / dest_rel
         exists = dest_abs.exists()

@@ -29,6 +29,18 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
         if entry.file_type().is_symlink() {
             continue;
         }
+        // Skip junk/placeholder files that are never content and cause collisions
+        let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let fname_lower = file_name.to_lowercase();
+        if fname_lower.starts_with('.')
+            || fname_lower == "thumbs.db"
+            || fname_lower == "desktop.ini"
+            || fname_lower == ".keep"
+            || fname_lower == ".gitkeep"
+            || fname_lower == ".ds_store"
+        {
+            continue;
+        }
         let meta = match std::fs::metadata(p) { Ok(m) => m, Err(_) => continue };
         let size = meta.len();
         // classify by profile + extension/content hints (not filename alone, but extension is primary hint)

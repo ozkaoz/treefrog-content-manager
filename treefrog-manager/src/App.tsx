@@ -163,16 +163,9 @@ export default function App() {
           for (const cand of candidates) {
             try {
               const a = (await invoke("analyze_target", { path: cand })) as TargetAnalysis;
-              if (a.status !== "inaccessible") {
-                vols.push({ 
-                  path: cand, 
-                  label: a.label || null, 
-                  filesystem: a.filesystem || null, 
-                  total_bytes: a.capacity_bytes, 
-                  free_bytes: a.free_bytes, 
-                  removable: null, 
-                  accessible: true 
-                });
+              // NEVER accept fixed/local drives as SD candidates
+              if (a.status !== "inaccessible" && a.volume?.removable === true) {
+                vols.push({ path: cand, label: a.label || null, filesystem: a.filesystem || null, total_bytes: a.capacity_bytes, free_bytes: a.free_bytes, removable: true, accessible: true });
               }
             } catch {}
           }
@@ -217,7 +210,9 @@ export default function App() {
             if (!v.accessible) continue;
             try {
               const analysis = (await invoke("analyze_target", { path: v.path })) as TargetAnalysis;
-              if (analysis.is_treefrog) {
+
+
+              if (analysis.is_treefrog && analysis.volume?.removable === true) {
                 const validCount = await (async () => {
                   let c = 0;
                   for (const vv of vols) {
@@ -297,7 +292,7 @@ export default function App() {
     }
   }
 
-  async function handleSync(): Promise<any> {
+  async function handleSync(force: boolean = false): Promise<any> {
     if (!sdPath) return { error: "No hay SD seleccionada. Ve a Overview." };
     if (!globalPlan) return { error: "No hay plan de sincronización. Escanea al menos una carpeta de origen." };
     if (globalSpace?.status === "insufficient_space") return { error: "Espacio insuficiente en la SD." };
@@ -318,7 +313,7 @@ export default function App() {
       if (jobs.length === 0) return { error: "No hay carpetas de origen escaneadas. Ve a Games/Music/Videos/BIOS/LGPT y pulsa Scan." };
 
       for (const job of jobs) {
-        const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath })) as any;
+        const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force })) as any;
         agg.deployed += res.deployed || 0;
         agg.skipped += res.skipped || 0;
         agg.failed += res.failed || 0;
@@ -474,6 +469,11 @@ export default function App() {
                     ))}
                   </div>
                 )}
+                {sdAnalysis && sdAnalysis.volume?.removable !== true && (
+                  <div className="status-error" style={{ marginTop: 6, fontSize: 12 }}>
+                    ⚠ {sdPath} NO es una unidad removible. No parece una SD real — selecciona la SD correcta arriba.
+                  </div>
+                )}
                 
                 {sdAnalysis ? (
                   <>
@@ -551,7 +551,7 @@ export default function App() {
             ) : (
               <button disabled title="Primero Analizar la SD">TRANSFERIR ARCHIVOS</button>
             )}
-            <button className="primary" onClick={handleSync} disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading} style={{ display: "none" }}>
+            <button className="primary" onClick={() => handleSync()} disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading} style={{ display: "none" }}>
               SINCRONIZAR
             </button>
           </div>
@@ -606,8 +606,8 @@ export default function App() {
           volumes={volumes}
           globalPlan={globalPlan}
           globalSpace={globalSpace}
-          onSync={async () => {
-            const result = await handleSync();
+          onSync={async (force) => {
+            const result = await handleSync(force);
             setSyncResult(result);
             return result;
           }}

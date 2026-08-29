@@ -72,7 +72,7 @@ export default function SdCardPanel({
   volumes?: VolumeInfo[];
   globalPlan?: any;
   globalSpace?: any;
-  onSync?: () => Promise<any>;
+  onSync?: (force: boolean) => Promise<any>;
 }) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
   const [space] = useState<SpaceInfo | null>(null);
@@ -81,6 +81,7 @@ export default function SdCardPanel({
   const [error, setError] = useState("");
   const [syncResult, setSyncResult] = useState<any | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [forceCopy, setForceCopy] = useState(false);
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
   const _volumes = propVolumes !== undefined ? propVolumes : volumesState;
@@ -217,6 +218,10 @@ export default function SdCardPanel({
       )}
 
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={forceCopy} onChange={(e) => setForceCopy(e.target.checked)} />
+          Forzar copia (re-copiar aunque los archivos ya existan o estén sin cambios)
+        </label>
         {!confirming ? (
           <button
             onClick={() => setConfirming(true)}
@@ -251,7 +256,7 @@ export default function SdCardPanel({
                   setConfirming(false);
                   if (!onSync) return;
                   try {
-                    const result = await onSync();
+                    const result = await onSync?.(forceCopy);
                     if (result) setSyncResult(result);
                     if (result?.error) setError(result.error);
                   } catch (e) {

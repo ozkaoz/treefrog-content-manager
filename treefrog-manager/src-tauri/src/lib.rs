@@ -256,7 +256,7 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
 }
 
 #[tauri::command]
-async fn deploy_to_sd(source_path: String, sd_path: String) -> Result<serde_json::Value, String> {
+async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
     let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
     if target.status == "inaccessible" {
@@ -264,6 +264,17 @@ async fn deploy_to_sd(source_path: String, sd_path: String) -> Result<serde_json
     }
     if !target.is_treefrog {
         return Err(format!("Target is not a valid TreeFrogUI SD (status: {}): {}", target.status, sd_path));
+    }
+
+    let force = force.unwrap_or(false);
+
+    // HARD GUARD: never write to a non-removable drive unless the user explicitly forces it
+    // (some USB card readers report as fixed; force covers that case).
+    if target.volume.removable != Some(true) && !force {
+        return Err(format!(
+            "REFUSADO: {} no es una unidad removible (SD/USB). Conecta la SD y selecciónala en Overview. Activa 'Forzar copia' en SD Card solo si tu lector reporta la SD como unidad fija.",
+            sd_path
+        ));
     }
     let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
     let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
@@ -279,7 +290,7 @@ async fn deploy_to_sd(source_path: String, sd_path: String) -> Result<serde_json
     if !collisions.is_empty() {
         return Err(format!("Case collision detected: {} collides with {}", collisions[0].0, collisions[0].1));
     }
-    let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile).map_err(|e| e.to_string())?;
+    let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force).map_err(|e| e.to_string())?;
     let mut out = serde_json::to_value(&result).unwrap();
     out["target"] = serde_json::to_value(&target).unwrap();
     out["space"] = serde_json::to_value(&space).unwrap();

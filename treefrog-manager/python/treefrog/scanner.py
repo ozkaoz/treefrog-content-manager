@@ -27,6 +27,10 @@ def scan(source_root: str, profile):
             continue
         if p.is_symlink():
             continue
+        # Skip junk/placeholder files that are never content and cause collisions
+        fname_lower = p.name.lower()
+        if fname_lower.startswith('.') or fname_lower in ("thumbs.db", "desktop.ini", ".keep", ".gitkeep", ".ds_store"):
+            continue
         # classify
         c = cl.classify(p, profile)
         # size
