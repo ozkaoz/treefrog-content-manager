@@ -19,9 +19,8 @@ type Plan = {
   entries: PlanEntry[];
 };
 
-export default function VideosPanel({ globalSdPath }: { globalSdPath: string }) {
+export default function VideosPanel({ globalSdPath, onSourceChange }: { globalSdPath: string; onSourceChange?: (v: string) => void }) {
   const [source, setSource] = useState("");
-  const [sdPath, setSdPath] = useState(globalSdPath);
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -30,24 +29,22 @@ export default function VideosPanel({ globalSdPath }: { globalSdPath: string }) 
   async function handlePickSource() {
     try {
       const sel = await pickFolder({ title: "Select Videos source folder" });
-      if (sel) setSource(sel);
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  async function handlePickSd() {
-    try {
-      const sel = await pickFolder({ title: "Select TreeFrogUI SD root (must contain cubegm/ + roms/)" });
-      if (sel) setSdPath(sel);
+      if (sel) {
+        setSource(sel);
+        onSourceChange?.(sel);
+      }
     } catch (e) {
       setError(String(e));
     }
   }
 
   async function handlePreview() {
-    if (!source || !sdPath) {
-      setError("Select both Videos source and SD target");
+    if (!source) {
+      setError("Selecciona la carpeta de origen de Videos");
+      return;
+    }
+    if (!globalSdPath) {
+      setError("No hay SD seleccionada — ve a SD Card para seleccionar automáticamente");
       return;
     }
     setLoading(true);
@@ -56,7 +53,7 @@ export default function VideosPanel({ globalSdPath }: { globalSdPath: string }) 
       const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
       let result: Plan;
       if (tauri) {
-        const raw = (await tauri.invoke("dry_run_preview", { sourcePath: source, sdPath })) as any;
+        const raw = (await tauri.invoke("dry_run_preview", { sourcePath: source, sdPath: globalSdPath })) as any;
         const videoEntries = (raw.entries as PlanEntry[]).filter((e) => e.content_type === "video" || e.destination.includes("roms/videos") || e.destination.includes("videos"));
         result = { summary: raw.summary, entries: videoEntries };
       } else {
@@ -100,17 +97,11 @@ export default function VideosPanel({ globalSdPath }: { globalSdPath: string }) 
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <label style={{ fontSize: 13, fontWeight: 600, marginTop: 6 }}>SD target</label>
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: sdPath ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
-            {sdPath || "No SD selected"}
-          </div>
-          <button onClick={handlePickSd}>Browse</button>
-        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destino: <strong>{globalSdPath || "ninguna (selecciona en SD Card)"}</strong> — la app copiará automáticamente a <code>roms/videos/</code> según extensión.</div>
       </div>
 
       <div className="row">
-        <button className="primary" onClick={handlePreview} disabled={loading || !source || !sdPath}>
+        <button className="primary" onClick={handlePreview} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Videos"}
         </button>
         <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
