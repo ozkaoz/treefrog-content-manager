@@ -173,35 +173,84 @@ pub fn is_archive_runtime_payload(path: &Path, inner_entries: &[ArchiveEntry], p
     false
 }
 
+fn is_path_within(base: &Path, target: &Path) -> bool {
+    // Canonicalize base if possible
+    let canon_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    // For target that doesn't exist yet, check its parent and normalized components
+    let mut current = target;
+    // Walk up until we find an existing ancestor or reach base
+    let mut to_check = target.to_path_buf();
+    // Normalize by checking components for ParentDir
+    for comp in target.components() {
+        if matches!(comp, std::path::Component::ParentDir) {
+            return false;
+        }
+    }
+    // Check that the target's string representation starts with base's string after normalization
+    // Use lexical check: target must start with base and not contain .. after normalization
+    let base_str = canon_base.to_string_lossy().replace('\\', "/").trim_end_matches('/').to_string();
+    let target_str = target.to_string_lossy().replace('\\', "/").to_string();
+    // Ensure target is absolute or joined correctly
+    if !target_str.starts_with(&base_str) {
+        // Try canonicalizing parent
+        if let Some(parent) = target.parent() {
+            if let Ok(canon_parent) = parent.canonicalize() {
+                if !canon_parent.starts_with(&canon_base) {
+                    return false;
+                }
+            } else {
+                // Parent doesn't exist yet, check lexical
+                let parent_str = parent.to_string_lossy().replace('\\', "/");
+                if !parent_str.starts_with(&base_str) && !target_str.starts_with(&base_str) {
+                    return false;
+                }
+            }
+        } else {
+            return false;
+        }
+    }
+    // Also ensure no traversal after normalization
+    let normalized = target_str.replace('\\', "/");
+    if normalized.contains("../") || normalized.contains("..\\") || normalized.ends_with("/..") {
+        return false;
+    }
+    true
+}
+
 pub fn safe_extract_to_temp(archive_path: &Path, temp_dir: &Path, limits: &Limits) -> Result<Vec<PathBuf>, ArchiveError> {
     let entries = inspect_archive(archive_path, limits)?;
     let mut extracted = Vec::new();
     let mut za = ZipArchive::new(File::open(archive_path).map_err(|e| ArchiveError::Other(e.into()))?).map_err(|e| ArchiveError::Other(e.into()))?;
+    let canon_temp = temp_dir.canonicalize().unwrap_or_else(|_| temp_dir.to_path_buf());
     for entry in entries.iter().filter(|e| !e.is_dir) {
-        // Find entry in zip by name
         let mut file = za.by_name(&entry.name).map_err(|e| ArchiveError::Other(e.into()))?;
         let normalized = entry.name.replace('\\', "/");
+        // Reject any entry that would escape temp_dir lexically
+        if normalized.contains("../") || normalized.starts_with("../") || normalized.starts_with('/') {
+            return Err(ArchiveError::Safety(format!("extraction would escape temp dir (traversal): {} -> {}", entry.name, normalized)));
+        }
+        if is_windows_drive_absolute(&normalized) {
+            return Err(ArchiveError::Safety(format!("extraction would escape temp dir (drive): {} -> {}", entry.name, normalized)));
+        }
         let dest = temp_dir.join(&normalized);
-        // Ensure inside temp_dir
-        let canon_temp = temp_dir.canonicalize().unwrap_or_else(|_| temp_dir.to_path_buf());
-        let canon_dest = dest.canonicalize().unwrap_or(dest.clone());
-        // Check via starts_with after normalizing
-        if !dest.starts_with(&canon_temp) && !canon_dest.starts_with(&canon_temp) {
-            // More robust: check relative
-            if let Err(_) = dest.strip_prefix(&canon_temp) {
-                if !dest.to_string_lossy().starts_with(&*canon_temp.to_string_lossy()) {
-                    return Err(ArchiveError::Safety(format!("extraction would escape temp dir: {} -> {}", entry.name, dest.display())));
-                }
-            }
+        if !is_path_within(&canon_temp, &dest) {
+            return Err(ArchiveError::Safety(format!("extraction would escape temp dir: {} -> {}", entry.name, dest.display())));
         }
         if dest.exists() {
             return Err(ArchiveError::Collision(format!("output collision in temp: {} already exists", dest.display())));
         }
-        if dest == archive_path.canonicalize().unwrap_or(archive_path.to_path_buf()) {
-            return Err(ArchiveError::Safety(format!("would overwrite source archive: {}", dest.display())));
+        if let Ok(canon_archive) = archive_path.canonicalize() {
+            if dest == canon_archive || dest.starts_with(&canon_archive) {
+                return Err(ArchiveError::Safety(format!("would overwrite source archive: {}", dest.display())));
+            }
         }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| ArchiveError::Other(e.into()))?;
+            // Re-check after parent creation that parent is still within temp
+            let canon_parent = parent.canonicalize().unwrap_or(parent.to_path_buf());
+            if !canon_parent.starts_with(&canon_temp) && !is_path_within(&canon_temp, &canon_parent) {
+                return Err(ArchiveError::Safety(format!("parent escapes temp dir: {}", parent.display())));
+            }
         }
         let mut out = File::create(&dest).map_err(|e| ArchiveError::Other(e.into()))?;
         std::io::copy(&mut file, &mut out).map_err(|e| ArchiveError::Other(e.into()))?;

@@ -31,23 +31,43 @@ fn ensure_parent_exists(dest: &Path) -> anyhow::Result<()> {
 }
 
 fn safe_copy_file(src: &Path, dest: &Path) -> anyhow::Result<()> {
+    // Validate the full destination relative to SD root (strip drive letter if present)
     let dest_str = dest.to_string_lossy().to_string().replace('\\', "/");
-    // For absolute dest, we need to validate the relative part
-    // If dest is absolute (like G:/roms/...), extract the relative part after the SD root
-    // For validation, we use the file name and parent logic, but we should not validate the drive letter
-    // Instead, validate the part after the SD root mount point
-    // For now, just validate the file name and directory names
-    if let Some(file_name) = dest.file_name().and_then(|n| n.to_str()) {
-        // Check for illegal chars in file name only for this simplified version
-        sd_target::validate_destination_path(&format!("roms/{}", file_name)).map_err(|e| anyhow::anyhow!("invalid file name: {}", e))?;
-    }
+    // For validation, extract the part after the SD root (e.g., G:/roms/GBA/game.gba -> roms/GBA/game.gba)
+    // Find the first occurrence of "roms/" or "cubegm/" or "lgpt/" or "frogui/" to get the relative part
+    let relative = if dest_str.contains("roms/") {
+        dest_str.split("roms/").last().map(|s| format!("roms/{}", s)).unwrap_or(dest_str.clone())
+    } else if dest_str.contains("cubegm/") {
+        dest_str.split("cubegm/").last().map(|s| format!("cubegm/{}", s)).unwrap_or(dest_str.clone())
+    } else if dest_str.contains("lgpt/") {
+        dest_str.split("lgpt/").last().map(|s| format!("lgpt/{}", s)).unwrap_or(dest_str.clone())
+    } else if dest_str.contains("frogui/") {
+        dest_str.split("frogui/").last().map(|s| format!("frogui/{}", s)).unwrap_or(dest_str.clone())
+    } else {
+        // Fallback: use file name with roms/ prefix for validation
+        if let Some(file_name) = dest.file_name().and_then(|n| n.to_str()) {
+            format!("roms/{}", file_name)
+        } else {
+            dest_str.clone()
+        }
+    };
+    sd_target::validate_destination_path(&relative).map_err(|e| anyhow::anyhow!("invalid destination {}: {}", dest.display(), e))?;
     ensure_parent_exists(dest)?;
     let parent = dest.parent().unwrap_or_else(|| Path::new("."));
-    let tmp_name = format!(".treefrog_staging_{}_{}.tmp", std::process::id(), dest.file_name().unwrap_or_default().to_string_lossy());
+    // Use a unique temp file per operation to avoid collisions
+    let tmp_name = format!(".treefrog_staging_{}_{}_{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), dest.file_name().unwrap_or_default().to_string_lossy());
     let tmp_path = parent.join(tmp_name);
     std::fs::copy(src, &tmp_path)?;
-    std::fs::rename(&tmp_path, dest)?;
-    Ok(())
+    // On Windows FAT32/exFAT, rename is atomic if same directory, but not across volumes
+    // Since tmp is in same parent as dest, rename should be atomic
+    match std::fs::rename(&tmp_path, dest) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // Fallback: copy and remove tmp if rename fails (e.g., cross-device)
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(anyhow::anyhow!("atomic rename failed: {}", e))
+        }
+    }
 }
 
 pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyhow::Result<DeployResult> {
@@ -123,31 +143,41 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
                     failed += 1;
                     continue;
                 }
-                let dest_dir = if dest_abs.extension().is_some() {
-                    dest_abs.parent().unwrap_or(sd_path).to_path_buf()
-                } else {
-                    dest_abs.clone()
-                };
-                // For now, if it's an archive payload, just copy; otherwise try to extract
-                // Use the archive module to decide
-                match crate::archive::safe_extract_to_temp(archive_src, &std::env::temp_dir().join(format!("tf_extract_{}", std::process::id())), &crate::archive::Limits::default()) {
+                // For grouped logical units (CUE/BIN), the destination is a folder like roms/PS/Game
+                // For single files, it's a file like roms/SFC/game.sfc
+                // We need to preserve hierarchy: use a unique TempDir per archive
+                let tmp_dir = tempfile::TempDir::new().map_err(|e| anyhow::anyhow!("tempdir failed: {}", e))?;
+                match crate::archive::safe_extract_to_temp(archive_src, tmp_dir.path(), &crate::archive::Limits::default()) {
                     Ok(extracted) => {
-                        // Copy each extracted file to dest_dir
                         let mut ok = true;
+                        // For grouped, dest_abs is a directory; for single, it's a file's parent
+                        let dest_base = if dest_abs.extension().is_some() && !dest_abs.is_dir() {
+                            // Single file: dest_abs is like roms/SFC/game.sfc, so parent is roms/SFC
+                            dest_abs.parent().unwrap_or(sd_path).to_path_buf()
+                        } else {
+                            // Grouped: dest_abs is like roms/PS/Game (directory)
+                            dest_abs.clone()
+                        };
                         for p in extracted {
-                            if let Some(rel) = p.file_name() {
-                                let dest_file = dest_dir.join(rel);
-                                if let Err(e) = safe_copy_file(&p, &dest_file) {
-                                    errors.push(format!("extract copy {} -> {}: {}", p.display(), dest_file.display(), e));
-                                    ok = false;
-                                }
+                            // Preserve relative path from temp dir
+                            let rel = p.strip_prefix(tmp_dir.path()).unwrap_or(&p);
+                            let dest_file = dest_base.join(rel);
+                            // Validate before copy
+                            if let Err(e) = sd_target::validate_destination_path(&rel.to_string_lossy().to_string().replace('\\', "/")) {
+                                errors.push(format!("extracted path invalid {} -> {}: {}", p.display(), dest_file.display(), e));
+                                ok = false;
+                                continue;
+                            }
+                            if let Err(e) = safe_copy_file(&p, &dest_file) {
+                                errors.push(format!("extract copy {} -> {}: {}", p.display(), dest_file.display(), e));
+                                ok = false;
                             }
                         }
                         if ok { deployed += 1; } else { failed += 1; }
                     },
                     Err(e) => {
-                        // Fallback: copy archive as is if it's a payload
-                        if entry.destination.ends_with(".zip") {
+                        // Fallback: copy archive as is if it's a payload (e.g., cps1 zip)
+                        if entry.destination.ends_with(".zip") || entry.content_type.as_deref() == Some("archive-payload") {
                             match safe_copy_file(archive_src, &dest_abs) {
                                 Ok(()) => deployed += 1,
                                 Err(e2) => {
@@ -169,8 +199,11 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
                     failed += 1;
                     continue;
                 }
-                // In real implementation, this would be the converted file in staging
-                // For now, just copy the source
+                // For video conversion, the planner has already determined that the source needs conversion
+                // via ffprobe -> FFmpeg -> re-probe. In a full implementation, we would call video::convert here
+                // to generate the converted file in a temp staging area, then copy the converted file.
+                // For this milestone (read-only dry-run), we just copy the source and warn that conversion is provisional.
+                warnings.push(format!("video conversion for {} is PROVISIONAL_UNVALIDATED (would convert via FFmpeg to {} before deploy)", src.display(), entry.converted_name.as_deref().unwrap_or("converted.mp4")));
                 match safe_copy_file(src, &dest_abs) {
                     Ok(()) => deployed += 1,
                     Err(e) => {

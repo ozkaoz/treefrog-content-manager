@@ -566,7 +566,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     resolution: Some("manual_review".to_string()),
                     resolved_action: Some("manual_review".to_string()),
                     original_destination: None,
-                    
+                    ..Default::default()
                 });
                 manual += 1;
                 continue;
@@ -587,7 +587,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     resolution: Some("manual_review".to_string()),
                     resolved_action: Some("manual_review".to_string()),
                     original_destination: None,
-                    
+                    ..Default::default()
                 });
                 manual += 1;
                 continue;
@@ -631,7 +631,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     resolution: Some(default_resolution_for_action(action_v)),
                     resolved_action: Some(action_v.to_string()),
                     original_destination: None,
-                    
+                    ..Default::default()
                 });
                 continue;
             } else if status == "conversion_required" {
@@ -661,7 +661,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                         resolution: Some("conflict".to_string()),
                         resolved_action: Some("conflict".to_string()),
                         original_destination: None,
-                        
+                        ..Default::default()
                     });
                     conflicts += 1;
                 } else {
@@ -681,7 +681,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                         resolution: Some("copy".to_string()),
                         resolved_action: Some("convert_then_copy".to_string()),
                         original_destination: None,
-                        
+                        ..Default::default()
                     });
                     new_c += 1;
                 }
@@ -703,7 +703,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     resolution: Some("manual_review".to_string()),
                     resolved_action: Some("manual_review".to_string()),
                     original_destination: None,
-                    
+                    ..Default::default()
                 });
                 manual += 1;
                 continue;

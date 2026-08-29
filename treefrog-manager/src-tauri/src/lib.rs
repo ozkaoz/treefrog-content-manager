@@ -52,6 +52,12 @@ pub struct PlanEntry {
     pub resolved_action: Option<String>,
     #[serde(default)]
     pub original_destination: Option<String>,
+    #[serde(default)]
+    pub preset: Option<String>,
+    #[serde(default)]
+    pub probe: Option<serde_json::Value>,
+    #[serde(default)]
+    pub converted_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
