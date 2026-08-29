@@ -72,13 +72,14 @@ export default function SdCardPanel({
   volumes?: VolumeInfo[];
   globalPlan?: any;
   globalSpace?: any;
-  onSync?: () => Promise<void>;
+  onSync?: () => Promise<any>;
 }) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
   const [space] = useState<SpaceInfo | null>(null);
   const [plan] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [syncResult, setSyncResult] = useState<any | null>(null);
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
   const _volumes = propVolumes !== undefined ? propVolumes : volumesState;
@@ -216,7 +217,15 @@ export default function SdCardPanel({
 
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
         <button
-          onClick={onSync}
+          onClick={async () => {
+            if (!onSync) return;
+            try {
+              const result = await onSync();
+              if (result) setSyncResult(result);
+            } catch (e) {
+              setError(String(e));
+            }
+          }}
           disabled={
             !globalPlan || 
             globalSpace?.status === "insufficient_space" || 
@@ -243,6 +252,73 @@ export default function SdCardPanel({
             : `Listo para sincronizar: ${globalPlan.summary.new} nuevos, ${globalPlan.summary.changed} modificados, ${globalPlan.summary.unchanged} sin cambios.`}
         </div>
       </div>
+
+      {syncResult && (
+        <div style={{ marginTop: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)" }}>
+          <h4 style={{ margin: "0 0 8px 0" }}>Resultado de Sincronización</h4>
+          <div style={{ fontSize: 13, marginBottom: 8 }}>
+            <div><strong>Copiados:</strong> <span style={{ color: "var(--success)" }}>{syncResult.deployed}</span></div>
+            <div><strong>Omitidos:</strong> <span style={{ color: "var(--warning)" }}>{syncResult.skipped}</span></div>
+            <div><strong>Fallidos:</strong> <span style={{ color: "var(--danger)" }}>{syncResult.failed}</span></div>
+          </div>
+          
+          {syncResult.breakdown && syncResult.breakdown.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Ver detalle de archivos ({syncResult.breakdown.length})</summary>
+              <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
+                <table style={{ width: "100%", fontSize: 11 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Archivo</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Destino</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Acción</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Razón</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {syncResult.breakdown.map((item: any, idx: number) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "4px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={item.source}>
+                          {item.source.split(/[/\\]/).pop()}
+                        </td>
+                        <td style={{ padding: "4px", fontSize: 10 }}>{item.destination}</td>
+                        <td style={{ padding: "4px" }}>
+                          <span className={`badge badge-${item.action === "copy" ? "copy" : item.action.startsWith("skip") ? "skip" : "conflict"}`}>
+                            {item.action}
+                          </span>
+                        </td>
+                        <td style={{ padding: "4px", fontSize: 10 }}>{item.reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+          
+          {syncResult.warnings && syncResult.warnings.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <strong style={{ fontSize: 12 }}>Advertencias:</strong>
+              <ul style={{ fontSize: 11, margin: "4px 0", paddingLeft: 20 }}>
+                {syncResult.warnings.map((w: string, idx: number) => (
+                  <li key={idx} style={{ color: "var(--warning)" }}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {syncResult.errors && syncResult.errors.length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <strong style={{ fontSize: 12, color: "var(--danger)" }}>Errores:</strong>
+              <ul style={{ fontSize: 11, margin: "4px 0", paddingLeft: 20 }}>
+                {syncResult.errors.map((e: string, idx: number) => (
+                  <li key={idx}>{e}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
 
       <MiniScraper sdPath={sdPath} />
     </div>

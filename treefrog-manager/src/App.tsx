@@ -76,6 +76,8 @@ export default function App() {
   const [lgptPlan, setLgptPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [syncResult, setSyncResult] = useState<any | null>(null);
+  void syncResult;
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   // Build aggregated plan from all individual plans
@@ -298,23 +300,36 @@ export default function App() {
   async function handleSync() {
     if (!globalPlan || !sdPath) {
       setError("Primero Analizar");
-      return;
+      return null;
     }
     if (globalSpace?.status === "insufficient_space") {
       setError("Espacio insuficiente");
-      return;
+      return null;
     }
     const ok = confirm(`¿Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}?\nLos archivos se copiarán a la carpeta correcta según su extensión (perfil TreeFrogUI).`);
-    if (!ok) return;
+    if (!ok) return null;
     
     setLoading(true);
     try {
       const sourcePath = [gamesSource, musicSource, videosSource].filter(Boolean)[0] || gamesSource;
       const res = (await invoke("deploy_to_sd", { sourcePath, sdPath })) as any;
-      alert(`Sincronizado: ${res.deployed} copiados, ${res.skipped} omitidos`);
+      
+      // Show detailed result
+      if (res.breakdown && res.breakdown.length > 0) {
+        const copied = res.breakdown.filter((e: any) => e.action === "copy" || e.action === "extract").length;
+        const skipped = res.breakdown.filter((e: any) => e.action.startsWith("skip")).length;
+        const conflicts = res.breakdown.filter((e: any) => e.action === "conflict" || e.action === "manual_review").length;
+        
+        alert(`Sincronización completada:\n✓ ${copied} archivos copiados\n⚠ ${skipped} archivos omitidos (ya existen o son duplicados)\n⚠ ${conflicts} conflictos requieren revisión\n\nVe a la pestaña SD Card para ver el detalle completo.`);
+      } else {
+        alert(`Sincronizado: ${res.deployed} copiados, ${res.skipped} omitidos`);
+      }
+      
       await handleAnalyze();
+      return res;
     } catch (e) {
       setError(String(e));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -587,7 +602,11 @@ export default function App() {
           volumes={volumes}
           globalPlan={globalPlan}
           globalSpace={globalSpace}
-          onSync={handleSync}
+          onSync={async () => {
+            const result = await handleSync();
+            setSyncResult(result);
+            return result;
+          }}
         />
       )}
       {activeTab === "settings" && <SettingsPanel />}

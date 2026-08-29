@@ -2,6 +2,7 @@ use crate::Plan;
 use crate::profile::LoadedProfile;
 use crate::sd_target;
 use std::path::Path;
+use log::{info, warn};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -21,6 +22,8 @@ pub struct DeployResult {
     pub failed: usize,
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breakdown: Option<Vec<serde_json::Value>>,
 }
 
 fn ensure_parent_exists(dest: &Path) -> anyhow::Result<()> {
@@ -102,6 +105,13 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
 
     for entry in &plan.entries {
         let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
+        info!(
+            "Processing: {} -> {} (action: {}, reason: {})",
+            entry.source,
+            entry.destination,
+            action,
+            entry.reason
+        );
         let dest_rel = &entry.destination;
         // Validate (for relative dest)
         let dest_for_validation = if dest_rel.contains(':') || dest_rel.starts_with('/') || dest_rel.starts_with('\\') {
@@ -226,7 +236,49 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
         }
     }
 
+    info!(
+        "Deploy complete: {} deployed, {} skipped, {} failed",
+        deployed, skipped, failed
+    );
+
+    // Log detailed breakdown
+    if skipped > 0 {
+        let skipped_entries: Vec<_> = plan.entries.iter()
+            .filter(|e| {
+                let action = e.resolved_action.as_ref().unwrap_or(&e.action);
+                matches!(action.as_str(), "skip" | "skip_unchanged" | "skip_duplicate" | "conflict" | "manual_review")
+            })
+            .collect();
+        
+        for entry in skipped_entries {
+            let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
+            warn!(
+                "Skipped: {} -> {} (action: {}, reason: {})",
+                entry.source, entry.destination, action, entry.reason
+            );
+        }
+    }
+
+    if failed > 0 {
+        for error in &errors {
+            warn!("Deploy error: {}", error);
+        }
+    }
+
     let success = failed == 0;
+
+    // Build detailed breakdown for UI
+    let breakdown: Vec<serde_json::Value> = plan.entries.iter().map(|e| {
+        let action = e.resolved_action.as_ref().unwrap_or(&e.action);
+        serde_json::json!({
+            "source": e.source,
+            "destination": e.destination,
+            "action": action,
+            "reason": e.reason,
+            "content_type": e.content_type,
+        })
+    }).collect();
+
     Ok(DeployResult {
         success,
         deployed,
@@ -234,5 +286,6 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
         failed,
         errors,
         warnings,
+        breakdown: Some(breakdown),
     })
 }
