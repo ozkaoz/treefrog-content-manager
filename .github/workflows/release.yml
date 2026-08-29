@@ -1,0 +1,58 @@
+name: Release — TreeFrog Content Manager
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: treefrog-manager/package-lock.json
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Install frontend deps
+        working-directory: treefrog-manager
+        run: npm ci
+      - name: Build Windows x64 (Tauri)
+        working-directory: treefrog-manager
+        run: npx tauri build
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+      - name: Prepare portable + installer artifacts
+        shell: pwsh
+        run: |
+          $version = (Get-Content treefrog-manager/package.json | ConvertFrom-Json).version
+          $exe = "treefrog-manager/src-tauri/target/release/treefrog-manager.exe"
+          $portable = "TreeFrog-Content-Manager-$version-Windows-x64.exe"
+          Copy-Item -LiteralPath $exe -Destination $portable -Force
+          $hashP = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$portable.sha256" -Value "$hashP  $portable" -Encoding ascii
+          Write-Host "Portable $portable $hashP"
+          $nsis = Get-ChildItem -Path "treefrog-manager/src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+          $installer = "TreeFrog-Content-Manager-$version-Windows-x64-Setup.exe"
+          Copy-Item -LiteralPath $nsis.FullName -Destination $installer -Force
+          $hashI = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath "$installer.sha256" -Value "$hashI  $installer" -Encoding ascii
+          Write-Host "Installer $installer $hashI"
+          Get-ChildItem -Filter "TreeFrog-Content-Manager-*.exe*" | Format-Table -AutoSize
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            TreeFrog-Content-Manager-*.exe
+            TreeFrog-Content-Manager-*.exe.sha256
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

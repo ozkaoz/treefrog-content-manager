@@ -69,31 +69,49 @@ pub struct LoadedProfile {
     pub video_preset: serde_json::Value,
 }
 
+// Embedded fallback for portable EXE (no external profiles required)
+const EMBEDDED_PROFILE_JSON: &str = include_str!("../../../profiles/treefrogui/profile.json");
+const EMBEDDED_SYSTEMS_JSON: &str = include_str!("../../../profiles/treefrogui/systems.json");
+const EMBEDDED_ARCHIVE_POLICY_JSON: &str = include_str!("../../../profiles/treefrogui/archive_policy.json");
+const EMBEDDED_VIDEO_PRESETS_JSON: &str = include_str!("../../../profiles/treefrogui/video_presets.json");
+
 pub fn load_profile() -> anyhow::Result<LoadedProfile> {
     let candidates = [
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../profiles/treefrogui"),
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../profiles/treefrogui"),
         Path::new("profiles/treefrogui").to_path_buf(),
         Path::new("../profiles/treefrogui").to_path_buf(),
+        // Portable: exe dir + profiles (for distribution as folder)
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("profiles/treefrogui"))).unwrap_or_else(|| Path::new("profiles/treefrogui").to_path_buf()),
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("../profiles/treefrogui"))).unwrap_or_else(|| Path::new("profiles/treefrogui").to_path_buf()),
     ];
     let mut base: Option<std::path::PathBuf> = None;
-    for c in candidates {
+    for c in &candidates {
         if c.join("profile.json").exists() && c.join("systems.json").exists() {
-            base = Some(c);
+            base = Some(c.clone());
             break;
         }
     }
-    let base = base.ok_or_else(|| anyhow::anyhow!("profiles/treefrogui not found"))?;
-    let profile: Profile = serde_json::from_str(&fs::read_to_string(base.join("profile.json"))?)?;
-    let systems: SystemsFile = serde_json::from_str(&fs::read_to_string(base.join("systems.json"))?)?;
-    let archive_policy_full: serde_json::Value = fs::read_to_string(base.join("archive_policy.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(serde_json::Value::Object(Default::default()));
-    let video_presets: serde_json::Value = fs::read_to_string(base.join("video_presets.json"))
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(serde_json::Value::Object(Default::default()));
+    // Use filesystem if found, otherwise embedded
+    let (profile_str, systems_str, archive_policy_str, video_presets_str) = if let Some(base) = base {
+        let p = fs::read_to_string(base.join("profile.json"))?;
+        let s = fs::read_to_string(base.join("systems.json"))?;
+        let a = fs::read_to_string(base.join("archive_policy.json")).unwrap_or_else(|_| EMBEDDED_ARCHIVE_POLICY_JSON.to_string());
+        let v = fs::read_to_string(base.join("video_presets.json")).unwrap_or_else(|_| EMBEDDED_VIDEO_PRESETS_JSON.to_string());
+        (p, s, a, v)
+    } else {
+        // Portable fallback: embedded (no external files required)
+        (
+            EMBEDDED_PROFILE_JSON.to_string(),
+            EMBEDDED_SYSTEMS_JSON.to_string(),
+            EMBEDDED_ARCHIVE_POLICY_JSON.to_string(),
+            EMBEDDED_VIDEO_PRESETS_JSON.to_string(),
+        )
+    };
+    let profile: Profile = serde_json::from_str(&profile_str)?;
+    let systems: SystemsFile = serde_json::from_str(&systems_str)?;
+    let archive_policy_full: serde_json::Value = serde_json::from_str::<serde_json::Value>(&archive_policy_str).unwrap_or(serde_json::Value::Object(Default::default()));
+    let video_presets: serde_json::Value = serde_json::from_str::<serde_json::Value>(&video_presets_str).unwrap_or(serde_json::Value::Object(Default::default()));
     let video_preset = video_presets.get("presets").and_then(|v| v.as_array()).and_then(|arr| arr.get(0)).cloned().unwrap_or(serde_json::Value::Object(Default::default()));
     let archive_policy = profile.archive_policy.clone().unwrap_or(ArchivePolicy {
         supported_extensions: vec![".zip".into(), ".7z".into(), ".rar".into()],

@@ -62,10 +62,15 @@ Use the latest GitHub Release **Bacon-1.5** to install the precompiled port. The
 
 ### TreeFrog Content Manager (Desktop) — Manager
 
-**End-user installation (Windows x64):**
+**End-user — Portable (primary, no installer):**
 
-- Download the latest **TreeFrog Content Manager** GitHub Release asset: `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` (NSIS installer, with `.sha256`). No manual `target/release` lookup — the build copies the installer to Desktop as `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe`.
-- Run the installer → Start Menu / Desktop shortcuts → launch **TreeFrog Content Manager**. Window/taskbar/installer icon is the TreeFrog frog pixel-art.
+- Download the latest **TreeFrog Content Manager** GitHub Release asset: `TreeFrog-Content-Manager-<version>-Windows-x64.exe` (portable, with `.sha256`). No installation, no Rust/Node/Tauri required — just WebView2 (preinstalled on Windows 10/11).
+- Copy to any folder (e.g., `C:\Tools\` or clean `C:\Temp\`) and double-click → **TreeFrog Content Manager** appears. Frog header upright, native Browse, BIOS/LGPT/dry-run all work, profile `1.1.0` embedded (no external `profiles/` needed). See `docs/MANUAL_QA_2E.md` § Portable EXE.
+
+**End-user — Installer (optional):**
+
+- Download `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` (NSIS installer, with `.sha256`). No manual `target/release` lookup — the build copies both artifacts to Desktop as `TreeFrog-Content-Manager-<version>-Windows-x64.exe` (portable) and `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` (installer).
+- Run the installer → Start Menu / Desktop shortcuts → launch **TreeFrog Content Manager**. Window/taskbar/installer/shortcut icon is the TreeFrog frog pixel-art (upright, high-res, 6-size ICO). If Windows shows stale icon, see icon-cache clean validation in `docs/MANUAL_QA_2E.md`.
 
 **Developer build (from source):**
 
@@ -74,11 +79,14 @@ Use the latest GitHub Release **Bacon-1.5** to install the precompiled port. The
 git clone https://github.com/ozkaoz/treefrog-content-manager.git
 cd treefrog-content-manager
 powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
-# Artifacts: treefrog-manager/src-tauri/target/release/treefrog-manager.exe + bundle/msi + bundle/nsis
-# Manual QA: docs/MANUAL_QA_2E.md
+# Artifacts: treefrog-manager/src-tauri/target/release/treefrog-manager.exe (portable, 14 MB, profile embedded)
+#            bundle/msi/*.msi + bundle/nsis/*-Setup.exe (installer)
+#            Desktop: TreeFrog-Content-Manager-<version>-Windows-x64.exe + .sha256 (portable)
+#                     TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe + .sha256 (installer)
+# Manual QA: docs/MANUAL_QA_2E.md (portable + installed, frog orientation, icons, Light/Dark, BIOS/LGPT)
 ```
 
-Branding: Frog pixel-art from `xgame-logo.bmp` (TreeFrogUI upstream, CC BY-NC-SA 4.0) — frog-only as primary icon, transparent `src/assets/branding/frog-only.png` derived via `scripts/generate_branding.py`; full frog+wordmark retained only in About/Credits (`src/assets/branding/README.md`). No newly generated logo.
+Branding: Frog pixel-art from `logo.png` 1536×1024 high-res desktop upright (primary, `logo.png` left 314×280 → `280×314` after 90° CCW, `frog-only.png` 280×314, `frog-square.png` 314×314) — previous `xgame-logo.bmp` vertical boot asset was inverted/sideways and low-res (87×99 → solid green at 32). Pipeline `scripts/generate_branding.py` (NEAREST, `r<20` transparent, x-gap 517–549, 90° CCW) + 6-size ICO `103k` (was 641B). Full frog+wordmark retained only in About/Credits (`src/assets/branding/README.md`). No newly generated logo, no CSS rotation.
 
 ## Repository layout
 

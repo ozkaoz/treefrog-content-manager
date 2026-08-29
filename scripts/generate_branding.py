@@ -89,7 +89,23 @@ def extract_frog_logo():
                 out.putpixel((x,y),(r,g,b,255))
     bbox=out.getbbox()
     trimmed=out.crop(bbox) if bbox else out
-    print(f"trimmed logo frog {trimmed.size} (no flip — logo.png is desktop upright)")
+    print(f"trimmed logo frog {trimmed.size} before orientation fix")
+    # Phase 2E.2: user reports header shows frog sideways; canonical requires 90° CCW
+    # Rotate the derived frog 90° left (counter-clockwise) so orientation matches
+    # official TreeFrogUI visual reference. Fix pipeline itself, not CSS.
+    # Use transpose ROTATE_90 (Pillow) for lossless pixel-art rotation.
+    try:
+        # Pillow >=9: Image.Transpose.ROTATE_90, older: Image.ROTATE_90
+        rot = getattr(Image, "Transpose", Image).ROTATE_90 if hasattr(Image, "Transpose") else Image.ROTATE_90
+        if hasattr(Image, "Transpose"):
+            rot = Image.Transpose.ROTATE_90
+        else:
+            rot = Image.ROTATE_90
+        trimmed = trimmed.transpose(rot)
+    except Exception as e:
+        # fallback: rotate with NEAREST to keep pixel-art
+        trimmed = trimmed.rotate(90, expand=True, resample=Image.NEAREST)
+    print(f"trimmed logo frog after 90° CCW {trimmed.size} (corrected orientation)")
     return trimmed
 
 def extract_frog_xgame_flipped():

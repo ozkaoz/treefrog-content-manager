@@ -46,8 +46,8 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **TreeFrog Content Manager — Phase 2E.1 Branding & Windows icon correction (hotfix, no new modules, no SD writes):** Fix vertically inverted frog (root cause: `xgame-logo.bmp` 87×99 low-res boot asset stored for handheld rotated display, used without flip + NEAREST scaling → solid green square at 32×32 and upside-down header). Corrected canonical to `logo.png` 1536×1024 high-res desktop upright (frog left, 314×280, no flip) via updated `scripts/generate_branding.py` (is_bg `r<20`, x-gap 517–549, NEAREST, 314×314 square upscaled to 512 for icons). Regenerated icons `32x32.png` 1686B, `64x64.png`, `128x128.png`, `256x256.png`, `512x512.png`, `icon.ico` 103442B (6 sizes 16/32/48/64/128/256, was 641B placeholder), `icon.icns` 927052B; `frog-only.png` 314×280 + `frog-square.png` 314×314 transparent, provenance `src/assets/branding/README.md` updated (no redraw, no CSS rotate workaround). Header now `[frog 32×32 upright, not mirrored/stretched/blurred] TreeFrog Content Manager`; same transparent frog works in Light (`#ffffff`) and Dark (`#0f172a`). Installer `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` now carries correct ICO for Desktop/Start Menu/taskbar/window.
-- **TreeFrog Content Manager — Phase 2E preserved:** native dialogs (`dialog.ts`), Windows theme (`prefers-color-scheme` + CSS vars), navigation 8 tabs, SourcePicker, EmptyState, BIOS/LGPT functional; 160 tests (151+9 branding fix).
+- **TreeFrog Content Manager — Phase 2E.2 Correct frog orientation + real Windows icon + portable EXE (hotfix, no new modules, no SD writes):** Fix sideways frog (user reports header shows frog rotated sideways; requires 90° LEFT/CCW relative to 2E.1 asset). Root cause: `logo.png` frog extracted as `314×280` wide (horizontal) but displayed as sideways header (280 tall expected). Corrected `scripts/generate_branding.py` to `ROTATE_90` (CCW) after crop → `frog-only.png` `280×314` upright (taller than wide, eyes top, belly bottom) + `frog-square.png` `314×314`; all icons regenerated from correctly oriented frog via `NEAREST` (32 1717B, 64 5387B, 128 19186B, 256 65841B, 512 117415B, `icon.ico` 103360B 6 sizes was 641B, `icon.icns` 911013B). Verified header `[frog 32×32 upright, not sideways/upside-down/mirrored/stretched/blurred]` + window/taskbar/Desktop/Start Menu/installer all frog via fresh install after `generate_branding.py` (no CSS rotate). Added **portable** `TreeFrog-Content-Manager-<version>-Windows-x64.exe` (14.28 MB, profile `1.1.0` embedded via `include_str!` in `profile.rs:72` + `current_exe` fallback, no external `profiles/` needed, WebView2 only, launches from clean dir `--self-check PASS`). Distribution now two artifacts: portable (primary, double-click) + Setup installer (optional, NSIS). Build `scripts/build_windows.ps1` now copies both to Desktop with `.sha256` and tests portable from clean dir.
+- **TreeFrog Content Manager — Phase 2E.1/2E preserved:** native dialogs, Windows theme, navigation 8 tabs, SourcePicker, EmptyState, BIOS/LGPT functional; 165 tests (151+9+5 portable/release).
 - **Release golden preserved:** `Bacon-1.5` `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation; `git diff -- sd_root` = NO).
 - **Idle baseline:** No active runtime beyond manager — await next milestone.
 
@@ -57,8 +57,8 @@ Do not trust hardcoded historical state.
 - `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
 - `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
 - `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
-- `MANAGER 2E.1`: `frog corrected` (logo.png 314×280 high-res upright, was xgame 87×99 inverted + solid green at 32) + `icons corrected` (32 1686B, 64,128,256,512, ico 103442 6 sizes was 641, icns 927k) + `header/taskbar/Desktop/StartMenu/installer` all frog via fresh install after `generate_branding.py` (NEAREST) + `native dialogs` + `theme Light/Dark` + `8 tabs` + `160 tests PASS` (151+9) + `Windows exe 14.08 MB` launch PASS + `MANUAL_QA_2E.md` updated + zero SD writes
-- `MANAGER 2E` preserved: `151 tests` + `Windows Desktop copy` + `self-check PASS`
+- `MANAGER 2E.2`: `frog corrected 90° CCW` (logo.png 314×280 → 280×314 upright, was 314×280 sideways, was xgame 87×99 inverted + solid green) + `icons corrected` (32 1717B, 64 5387B, 128 19186B, 256 65841B, 512 117415B, ico 103360B 6 sizes was 641, icns 911k) + `header [frog upright]` + `window/taskbar/Desktop (`,0` exe icon)/StartMenu/installer` all frog via fresh install + `portable` `TreeFrog-Content-Manager-0.1.0-Windows-x64.exe` 14.28 MB 3dc7e229... + `installer` 3.48 MB 89adb9a3... both on Desktop with `.sha256`, `profile embedded` (`include_str!` + `current_exe` fallback) → clean dir `--self-check PASS` (no external profiles needed) + `165 tests PASS` (160+5 portable/release) + `MANUAL_QA_2E.md` + zero SD writes
+- `MANAGER 2E.1/2E` preserved: `160 tests` + `Windows Desktop copy` + `self-check PASS`
 
 ## Known Issues / Risks
 
@@ -68,11 +68,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- Content Manager 2E.1: awaiting review — then Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). No SD writes, no new modules.
+- Content Manager 2E.2: awaiting review — then Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). No SD writes, no new modules.
 
 ## Next Exact Action
 
-- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (160 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify Windows build `scripts/build_windows.ps1` + Desktop `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` + fresh install + `MANUAL_QA_2E.md` steps 1-9 (Desktop/StartMenu/taskbar/window/header) + Light/Dark + Browse + BIOS + LGPT.
+- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (165 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify Windows build `scripts/build_windows.ps1` + Desktop `TreeFrog-Content-Manager-0.1.0-Windows-x64.exe` (portable, clean dir --self-check) + `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` (installer, fresh install) + `MANUAL_QA_2E.md` (portable + installed, frog orientation, icons, Light/Dark, Browse, BIOS, LGPT).
 
 ## Stop Conditions
 

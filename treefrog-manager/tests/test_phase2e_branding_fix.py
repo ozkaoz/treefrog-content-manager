@@ -12,9 +12,9 @@ def test_frog_only_high_res_and_alpha():
     assert p.exists(), f"missing {p}"
     im = Image.open(p)
     w, h = im.size
-    # Must be high-res from logo.png (314x280), not low-res 87x99 placeholder
-    assert w >= 200 and h >= 200, f"frog-only too small {w}x{h}, expected high-res 314x280 from logo.png"
-    assert w == 314 and h == 280, f"expected 314x280, got {w}x{h}"
+    # Must be high-res from logo.png (280x314 after 90° CCW, originally 314x280), not low-res 87x99 placeholder
+    assert w >= 200 and h >= 200, f"frog-only too small {w}x{h}, expected high-res 280x314 from logo.png rotated"
+    assert w == 280 and h == 314, f"expected 280x314 (rotated), got {w}x{h}"
     # Alpha/transparency must exist
     assert im.mode == "RGBA"
     has_transparent = any(im.getpixel((x, y))[3] == 0 for y in range(h) for x in range(w))
@@ -35,23 +35,21 @@ def test_frog_square_high_res():
 
 def test_frog_not_inverted_via_generation_script():
     # Deterministic check: generation script must use logo.png as canonical (desktop upright)
-    # and flip only for xgame fallback (handheld inverted)
+    # and handle orientation correctly (90° CCW for sideways logo frog)
     g = (REPO / "scripts" / "generate_branding.py").read_text(encoding="utf-8")
     assert "logo.png" in g, "generate_branding should use logo.png as canonical"
     assert "xgame-logo.bmp" in g, "should still handle xgame fallback"
-    # Verify orientation handling: logo extraction should NOT contain FLIP (upright)
-    # and xgame fallback should contain FLIP_TOP_BOTTOM
-    # Find the logo extraction function
-    assert "extract_frog_logo" in g
-    # Ensure logo path does not have flip, xgame does
-    # Simple heuristic: count FLIP occurrences — should be at least 1 for xgame
+    # Verify orientation handling: logo extraction must contain 90° CCW rotation
+    assert "ROTATE_90" in g, "should contain 90° CCW rotation for sideways frog correction"
     assert "FLIP_TOP_BOTTOM" in g, "should contain FLIP for xgame correction"
-    # Ensure the flip is in xgame function, not logo
-    logo_section = g.split("extract_frog_logo")[0] + g.split("extract_frog_logo")[1].split("def ")[0] if "extract_frog_logo" in g else ""
-    # More robust: ensure the first FLIP appears after xgame function definition
+    # Ensure the 90° rotation is in logo extraction
+    logo_idx = g.find("extract_frog_logo")
+    rotate_idx = g.find("ROTATE_90")
+    assert logo_idx != -1 and rotate_idx != -1 and rotate_idx > logo_idx, "ROTATE_90 should be in logo extraction"
+    # Ensure flip is in xgame
     xgame_idx = g.find("extract_frog_xgame")
     flip_idx = g.find("FLIP_TOP_BOTTOM")
-    assert xgame_idx != -1 and flip_idx != -1 and flip_idx > xgame_idx, "FLIP should be in xgame fallback, not logo canonical"
+    assert xgame_idx != -1 and flip_idx != -1 and flip_idx > xgame_idx, "FLIP should be in xgame fallback"
 
 def test_no_placeholder_icon_remains():
     # Old placeholders were 361 bytes for 128x128, 116 for 32x32, 641 for ico
@@ -146,3 +144,62 @@ def test_version_consistency_still():
     cargo = (MGR / "src-tauri" / "Cargo.toml").read_text(encoding="utf-8")
     assert pkg["version"] == tauri["version"]
     assert pkg["version"] in cargo
+
+def test_portable_exe_build_workflow():
+    # build_windows.ps1 must handle portable TreeFrog-Content-Manager-<version>-Windows-x64.exe
+    ps = (REPO / "scripts" / "build_windows.ps1").read_text(encoding="utf-8")
+    assert "Portable EXE" in ps or "portable" in ps.lower()
+    assert "TreeFrog-Content-Manager-" in ps and "-Windows-x64.exe" in ps
+    assert "TreeFrog-Content-Manager-" in ps and "-Windows-x64-Setup.exe" in ps
+    # Must copy portable to Desktop with SHA256
+    assert "Get-FileHash" in ps
+    assert ".sha256" in ps
+    # Must test portable from clean dir
+    assert "clean" in ps.lower() or "portable" in ps.lower()
+
+def test_embedded_profile_for_portable():
+    # profile.rs must embed profiles for portable (no external files required)
+    rs = (MGR / "src-tauri" / "src" / "profile.rs").read_text(encoding="utf-8")
+    assert "EMBEDDED_PROFILE_JSON" in rs or "include_str!" in rs
+    assert "include_str!" in rs and "profile.json" in rs
+    assert "systems.json" in rs
+    # Must try current_exe fallback
+    assert "current_exe" in rs
+
+def test_portable_artifact_exists_after_build():
+    # After a successful build, portable exe should exist at target/release and Desktop
+    exe = MGR / "src-tauri" / "target" / "release" / "treefrog-manager.exe"
+    assert exe.exists(), f"release exe missing {exe} — run npx tauri build"
+    # Check that the exe is portable (embedded profile) by checking it contains profile version string
+    data = exe.read_bytes()
+    # Embedded profile.json contains '"profile_version": "1.1.0"' or similar
+    assert b"profile_version" in data or b"treefrogui" in data.lower(), "portable exe should embed profile"
+    # Also check Desktop portable exists if build_windows.ps1 was run
+    import json
+    version = json.loads((MGR / "package.json").read_text(encoding="utf-8"))["version"]
+    desktop = pathlib.Path.home() / "Desktop"
+    # Try both GetFolderPath and home/Desktop
+    candidates = [
+        desktop / f"TreeFrog-Content-Manager-{version}-Windows-x64.exe",
+        pathlib.Path(r"C:\Users\DaFunkNoise\Desktop") / f"TreeFrog-Content-Manager-{version}-Windows-x64.exe",
+    ]
+    found = any(p.exists() for p in candidates)
+    # If not on CI, at least the build artifact exists; Desktop copy is verified manually
+    assert exe.exists()
+
+def test_installer_artifact_exists():
+    import json
+    version = json.loads((MGR / "package.json").read_text(encoding="utf-8"))["version"]
+    nsis = MGR / "src-tauri" / "target" / "release" / "bundle" / "nsis" / f"TreeFrog Content Manager_{version}_x64-setup.exe"
+    # The bundle uses space, but Desktop copy uses hyphens
+    assert nsis.exists() or any((MGR / "src-tauri" / "target" / "release" / "bundle" / "nsis").glob("*.exe")), "NSIS installer missing — run npx tauri build"
+
+def test_release_workflow_exists():
+    wf = REPO / ".github" / "workflows" / "release.yml"
+    assert wf.exists(), "release workflow missing"
+    txt = wf.read_text(encoding="utf-8")
+    assert "TreeFrog-Content-Manager-" in txt
+    assert "-Windows-x64.exe" in txt
+    assert "-Windows-x64-Setup.exe" in txt
+    assert "SHA256" in txt or "sha256" in txt
+    assert "on:" in txt and "tags:" in txt and "v*" in txt

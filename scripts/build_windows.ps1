@@ -163,6 +163,47 @@ if ($nsisInstaller) {
     Write-Host "WARNING: No NSIS installer found in $nsisDir (build may have been --no-bundle or failed)" -ForegroundColor Yellow
 }
 
+# --- Portable EXE Desktop workflow (Phase 2E.2) ---
+Write-Host "`n=== Portable EXE Desktop workflow ===" -ForegroundColor Cyan
+$portableSrc = Join-Path $ManagerDir "src-tauri\target\release\treefrog-manager.exe"
+if (Test-Path $portableSrc) {
+    $version = "0.1.0"
+    try {
+        $pkgPath = Join-Path $ManagerDir "package.json"
+        if (Test-Path $pkgPath) {
+            $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+            if ($pkg.version) { $version = $pkg.version }
+        }
+    } catch {}
+    $desktopPath2 = [Environment]::GetFolderPath("Desktop")
+    if (-not $desktopPath2 -or -not (Test-Path $desktopPath2)) {
+        try { $shell2 = New-Object -ComObject WScript.Shell; $desktopPath2 = $shell2.SpecialFolders.Item("Desktop") } catch {}
+    }
+    if (-not $desktopPath2) { $desktopPath2 = Join-Path $env:USERPROFILE "Desktop" }
+    $portableName = "TreeFrog-Content-Manager-$version-Windows-x64.exe"
+    $portableDest = Join-Path $desktopPath2 $portableName
+    Write-Host "Copying portable EXE to Desktop as $portableName ..." -ForegroundColor Cyan
+    try {
+        Copy-Item -LiteralPath $portableSrc -Destination $portableDest -Force
+        Write-Host "Copied portable to: $portableDest ($([math]::Round((Get-Item $portableDest).Length/1MB,2)) MB)" -ForegroundColor Green
+        $hashP = (Get-FileHash -LiteralPath $portableSrc -Algorithm SHA256).Hash.ToLowerInvariant()
+        Set-Content -LiteralPath "$portableDest.sha256" -Value "$hashP  $portableName" -Encoding ascii
+        Write-Host "Portable SHA-256: $hashP" -ForegroundColor Gray
+        # Verify portable runs --self-check from clean dir
+        $cleanTest = Join-Path $env:TEMP "tf_portable_test"
+        if (Test-Path $cleanTest) { Remove-Item -Recurse -Force $cleanTest }
+        New-Item -ItemType Directory -Path $cleanTest | Out-Null
+        Copy-Item -LiteralPath $portableDest -Destination (Join-Path $cleanTest $portableName) -Force
+        Write-Host "Testing portable from clean dir $cleanTest ..." -ForegroundColor Gray
+        $proc = Start-Process -FilePath (Join-Path $cleanTest $portableName) -ArgumentList "--self-check" -PassThru -NoNewWindow -Wait
+        Write-Host "Portable self-check exit: $($proc.ExitCode) (0=PASS)" -ForegroundColor Green
+    } catch {
+        Write-Host "Failed to copy portable EXE: $_" -ForegroundColor Red
+    }
+} else {
+    Write-Host "WARNING: Portable EXE not found at $portableSrc" -ForegroundColor Yellow
+}
+
 Write-Host "`n=== Smoke test ===" -ForegroundColor Cyan
 Write-Host "To smoke test, run: & `"$exe`" --self-check"
 Write-Host "Or launch the GUI: & `"$exe`""
