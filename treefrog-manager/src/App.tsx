@@ -3,6 +3,7 @@ import SourcePicker from "./components/SourcePicker";
 import SdPicker from "./components/SdPicker";
 import DryRunPreview from "./components/DryRunPreview";
 import BiosManager from "./components/BiosManager";
+import LgptManager from "./components/LgptManager";
 
 export default function App() {
   const [sourcePath, setSourcePath] = useState<string>("");
@@ -10,7 +11,7 @@ export default function App() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"overview" | "bios">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "bios" | "lgpt">("overview");
 
   async function handlePreview() {
     setError("");
@@ -49,6 +50,7 @@ export default function App() {
       <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "1px solid #ddd", paddingBottom: 8 }}>
         <button onClick={() => setActiveTab("overview")} style={{ background: activeTab === "overview" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "overview" ? 600 : 400 }}>Overview</button>
         <button onClick={() => setActiveTab("bios")} style={{ background: activeTab === "bios" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "bios" ? 600 : 400 }}>BIOS</button>
+        <button onClick={() => setActiveTab("lgpt")} style={{ background: activeTab === "lgpt" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "lgpt" ? 600 : 400 }}>LGPT</button>
       </div>
 
       {activeTab === "overview" && (
@@ -108,6 +110,8 @@ export default function App() {
       )}
 
       {activeTab === "bios" && <BiosManager />}
+
+      {activeTab === "lgpt" && <LgptManager />}
     </div>
   );
 }

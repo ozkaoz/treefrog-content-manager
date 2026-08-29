@@ -46,10 +46,10 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **TreeFrog Content Manager — Phase BIOS-B (BIOS Manager UI + planner integration):** BIOS tab in main navigation (Overview/Scan/Requirements/Details) with TreeFrogUI-global profile-driven BIOS, user-friendly labels (`Verified`/`Missing`/`Needs verification`/`Invalid`/`Duplicate`/`Conflict`), scanner via existing `scanner→archive→hash→validator` (recursive, temp workspace, hash where needed, alias/pattern/size/hash validation, duplicate/conflict/unknown detection), multiple variants (any one `scph5501.bin` satisfies `ps1_bios`), conditional `psx_content_present` → “Required because PlayStation content was detected”, detail panel (system, logical name, requirement, accepted filenames, selected variant, source path, expected destination `cubegm/bios`, expected size, SHA-256 known/actual, reason), read-only actions (`import/copy`, `skip`, `replace`, `conflict`, `duplicate`, `manual_review` via existing `apply_resolutions`), global `DeploymentPlan` integration (`BIOS: source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy`), `DryRunPreview` BIOS filtering, system-health summary (`BIOS ⚠ 2 required BIOS missing`), no BIOS downloads, zero SD writes, `cargo check` and `npm run build` still pass, Windows exe remains buildable.
-- **TreeFrog Content Manager — Phase BIOS-A preserved:** Formal `bios.json` 1.1.0 with `bios_definitions`, 7 states, no invented hashes.
+- **TreeFrog Content Manager — LGPT Manager (Samples + Projects):** One desktop app, not separate LGPT app; LGPT is profile/integration within existing manager (`TreeFrog Content Manager → TreeFrogUI content → BIOS → LGPT → Samples/Projects`), reuse scanner/logical-unit/archive/SHA-256/conflict resolver/deployment planner/dry-run UI; `lgpt.json` profile-driven destinations `lgpt/samples` + `lgpt/projects` (verified `sd_root/lgpt/*`), R36SX is target, not manager identity; Samples: recursive scan, WAV baseline, SHA-256 duplicate, same-name diff hash → conflict, alias duplicate, unchanged, archive via Phase 2A, deterministic, dry-run, no SD writes; Projects: directory logical units (e.g., `lgptsav.dat` + `project.lgpt` + `sample.wav`), not flattened, duplicate/conflict/unchanged via deterministic project hash, nested content, archive/container handling, deterministic planning, dry-run, no SD writes; UI: `LGPT` tab with `Samples`/`Projects` subtabs, source folder pickers, scanning, counts, dry-run actions (`New`/`Unchanged`/`Duplicate`/`Conflict`/`Manual review`/`Unsupported`), filtering, inspecting conflicts/duplicates; Global DryRun shows `LGPT Sample source → lgpt/samples/...` and `LGPT Project source → lgpt/projects/...` alongside ROM/Music/Video/BIOS; Health summary includes LGPT; no audio waveform/preview yet; fixtures synthetic `tests/fixtures/lgpt/samples` + `projects/ProjectA`/`ProjectB`; Windows installer copied to Desktop as `TreeFrog-Content-Manager-Setup.exe` + `.sha256`, build remains reproducible.
+- **TreeFrog Content Manager — Phase BIOS-B preserved:** BIOS Manager UI + planner integration, 7 states, conditional, multiple variants, no invented hashes.
 - **Release golden preserved:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation in this phase; verify `git diff -- sd_root` = NO).
-- **Idle baseline:** No active LGPT runtime task beyond content-manager BIOS-B — Await explicit user-approved objective for next milestone — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
+- **Idle baseline:** No active LGPT runtime task beyond content-manager LGPT — Await explicit user-approved objective for next milestone — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
 
 ## Last Relevant Validation
 
@@ -57,7 +57,8 @@ Do not trust hardcoded historical state.
 - `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
 - `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
 - `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
-- `MANAGER Phase BIOS-B`: `bios.json 1.1.0 PASS` + `bios validation + UI PASS` (17+13 tests) + `107 tests PASS` (94+13) + `Windows exe 12.21 MB still buildable PASS` ( `cargo check` + `npm run build` PASS) + `BiosManager` + `DryRunPreview` BIOS filtering + `DeploymentPlan` BIOS integration + `context-contract PASS` + `preflight PASS` + `sd_root clean` + `no invented hashes` + `smoke dataset` (valid, wrong-hash, duplicate, unknown, missing, multi-variant) `PASS` + `zero SD writes`
+- `MANAGER LGPT`: `lgpt.json` profile-driven `lgpt/samples` + `lgpt/projects` PASS + `samples` (WAV baseline) + `projects` (logical units) + `131 tests PASS` (107+24 LGPT) + `Windows exe 12.21 MB + MSI/NSIS + Desktop copy` + `self-check PASS` + `LGPT UI` + `global DryRun` + `health` + `fixtures synthetic` + `zero SD writes`
+- `MANAGER Phase BIOS-B` preserved: `bios validation + UI` + `107 tests`
 - `MANAGER Phase BIOS-A/2C` preserved: `video presets PROVISIONAL_UNVALIDATED` + `Windows exe` + `self-check`
 
 ## Known Issues / Risks
@@ -68,11 +69,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- Content Manager BIOS-B: awaiting review — then Phase BIOS-C or Phase 2D SD writes (not in this task). No SD writes, no BIOS UI beyond read-only planning.
+- Content Manager LGPT: awaiting review — then Phase 2D SD writes (not in this task). No SD writes.
 
 ## Next Exact Action
 
-- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (107 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify `cargo check` + `npm run build` + `npx tauri build` still produce Windows exe, verify `treefrog-manager.exe --self-check` and BIOS UI smoke test.
+- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (131 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify Windows build `scripts/build_windows.ps1` + Desktop `TreeFrog-Content-Manager-Setup.exe` + `treefrog-manager.exe --self-check` + LGPT UI + DryRun LGPT.
 
 ## Stop Conditions
 

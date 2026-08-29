@@ -99,22 +99,21 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 - **Tests:** `test_bios_manager.py` 13 tests covering BIOS source scan, valid shown, missing conditional, invalid, duplicate, conflict, multiple variants, requirement activation/inactive, deployment plan entry, DryRunPreview filtering, zero SD writes, smoke dataset (valid, wrong-hash, duplicate, unknown, missing, multi-variant) — **pytest 107 PASS (94+13)**
 - **Gate:** `pytest 107 PASS`, `cargo check` PASS, `npm run build` PASS, `context-contract PASS`, `preflight PASS`, `git diff -- sd_root` empty, `Windows exe 12.21 MB` + `self-check PASS`, no SD writes
 
-### Phase 3 — Music / Images / Ebooks (next, after BIOS-A)
+### Phase LGPT — Samples + Projects (current, LGPT Manager)
+
+- LGPT profile `lgpt.json` with `lgpt/samples` + `lgpt/projects` (verified `sd_root/lgpt/*`), profile-driven, R36SX is target, not manager identity; reuse scanner/logical-unit/archive/SHA-256/conflict resolver/deployment planner/dry-run UI; Samples: recursive scan, WAV baseline, SHA-256 duplicate, alias/conflict/unchanged, archive via Phase 2A, deterministic, dry-run, no SD writes; Projects: directory logical units (e.g., `lgptsav.dat` + `project.lgpt`), not flattened, duplicate/conflict/unchanged via deterministic project hash, nested content, archive/container handling, deterministic planning, dry-run, no SD writes; UI: `LGPT` tab with `Samples`/`Projects` subtabs, source folder pickers, scanning, counts, dry-run actions (`New`/`Unchanged`/`Duplicate`/`Conflict`/`Manual review`/`Unsupported`), filtering, inspecting conflicts/duplicates; Global DryRun shows `LGPT Sample source → lgpt/samples/...` and `LGPT Project source → lgpt/projects/...` alongside ROM/Music/Video/BIOS; Health summary includes LGPT; fixtures synthetic `tests/fixtures/lgpt/samples` + `projects/ProjectA`/`ProjectB`; Windows installer copied to Desktop as `TreeFrog-Content-Manager-Setup.exe` + `.sha256`, build remains reproducible.
+- **Tests:** `test_lgpt_manager.py` 24 tests covering samples (normal, recursive, duplicate, alias, conflict, unchanged, archive, unsafe, deterministic) + projects (logical unit, duplicate, conflict, unchanged, deterministic identity, nested, container) + planner (deployment entries, correct destinations, duplicate/conflict actions, dry-run, zero SD writes) + build script (installer discovery, Desktop resolution) — **pytest 131 PASS (107+24)**
+- **Gate:** `pytest 131 PASS`, `context-contract PASS`, `preflight PASS`, `Windows exe` + `Desktop installer` + `self-check PASS`, `git diff -- sd_root` empty
+
+### Phase 3 — Music / Images / Ebooks (next)
 
 - Music/images/ebooks: use profile media destinations/formats; preserve music subfolders; MuPDF ebook per-book `.positions` ignore
 - **Gate:** fixture tests, no claim without evidence
 
-### Phase 4 — BIOS Manager
+### Phase 4 — BIOS Manager (done: BIOS-A + BIOS-B)
 
-- Profile defines system/core, destination, accepted patterns, expected size/hash when known, required/recommended, region variants (profile `bios.json`)
-- UI: discover, verify, import, replace, backup current, reveal destination
-- BIOS user-supplied only
-- **Gate:** BIOS verification tests (size/hash/pattern), import/replace with backup tests
-
-### Phase 5 — LGPT Samples/Projects
-
-- Global LGPT profile (`lgpt.json`): samples → `lgpt/samples`, projects → `lgpt/projects` (verified against Bacon release); do not hardcode in UI; projects as groups/directories, samples with audio metadata/preview + exact duplicate detection
-- **Gate:** LGPT group copy tests, sample preview/metadata tests
+- BIOS Manager UI + planner integration already done (see above); profile defines system/core, destination, accepted patterns, expected size/hash when known, required/recommended, region variants (profile `bios.json` 1.1.0 formal)
+- **Gate:** BIOS verification + UI tests done
 
 ### Phase 6 — Mini Scraper Launcher + Artwork Verification
 
@@ -172,10 +171,11 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ## Next Exact Action (2026-08-28)
 
-- Phase BIOS-B complete: BIOS Manager UI + planner integration — next is Phase BIOS-C or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (107 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` + `npm run build` to verify.
+- Phase LGPT complete: Samples + Projects manager with global planner + Windows Desktop build (installer copied to Desktop) — next is Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (131 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` + `npm run build` + verify `TreeFrog-Content-Manager-Setup.exe` on Desktop.
 
-## Unresolved for real-device validation (updated for BIOS-B)
+## Unresolved for real-device validation (updated for LGPT)
 
 - Arcade payload `.zip` handling (cps1/neogeo/m2k) is profile-driven as `payload` per `archive_policy.json` but has not been physically validated on R36SX/SF3000 hardware that those cores require the zip to stay compressed. The same for 7z payload when handler becomes available.
 - Video preset remains `PROVISIONAL_UNVALIDATED`; no claim of hardware decoder support without device probe.
 - Large-library performance (10k+ files, hash caching) not yet exercised on real SD; per-job limit 10k is conservative.
+- LGPT hardware validation remaining: sample path behavior (`lgpt/samples` vs `lgpt/samples/records`), project path behavior (`lgpt/projects` with `lgptsav.dat` + `project.lgpt`), supported sample formats (WAV baseline, FLAC/OGG), project structure (directory + `lgptsav.dat` + `sample.wav`), filename/path constraints if any — requires real R36SX/LGPT installation.

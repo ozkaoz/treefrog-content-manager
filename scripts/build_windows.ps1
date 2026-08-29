@@ -105,6 +105,50 @@ Get-ChildItem (Join-Path $ManagerDir "src-tauri\target\release\bundle") -Recurse
     Write-Host "Bundle: $($_.FullName) ($([math]::Round($_.Length/1MB,2)) MB)" -ForegroundColor Green
 }
 
+# --- Windows installer Desktop workflow (LGPT milestone) ---
+Write-Host "`n=== Desktop installer workflow ===" -ForegroundColor Cyan
+$nsisDir = Join-Path $ManagerDir "src-tauri\target\release\bundle\nsis"
+$nsisInstaller = Get-ChildItem -Path $nsisDir -Filter "*.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($nsisInstaller) {
+    Write-Host "Found NSIS installer: $($nsisInstaller.FullName) ($([math]::Round($nsisInstaller.Length/1MB,2)) MB)" -ForegroundColor Green
+    # Resolve Desktop path reliably (handles OneDrive redirection)
+    $desktopPath = [Environment]::GetFolderPath("Desktop")
+    if (-not $desktopPath -or -not (Test-Path $desktopPath)) {
+        # Fallback via Shell
+        try {
+            $shell = New-Object -ComObject WScript.Shell
+            $desktopPath = $shell.SpecialFolders.Item("Desktop")
+        } catch {}
+    }
+    if (-not $desktopPath) {
+        $desktopPath = Join-Path $env:USERPROFILE "Desktop"
+    }
+    Write-Host "Desktop resolved to: $desktopPath" -ForegroundColor Gray
+    if (Test-Path $desktopPath) {
+        $friendlyName = "TreeFrog-Content-Manager-Setup.exe"
+        $dest = Join-Path $desktopPath $friendlyName
+        $checksumDest = "$dest.sha256"
+        Write-Host "Copying installer to Desktop as $friendlyName ..." -ForegroundColor Cyan
+        try {
+            Copy-Item -LiteralPath $nsisInstaller.FullName -Destination $dest -Force
+            Write-Host "Copied to: $dest" -ForegroundColor Green
+            # Create SHA-256 checksum file
+            $hash = (Get-FileHash -LiteralPath $nsisInstaller.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $checksumLine = "$hash  $friendlyName"
+            Set-Content -LiteralPath $checksumDest -Value $checksumLine -Encoding ascii
+            Write-Host "Checksum created: $checksumDest" -ForegroundColor Green
+            Write-Host "SHA-256: $hash" -ForegroundColor Gray
+            Write-Host "Original bundle remains at: $($nsisInstaller.FullName)" -ForegroundColor Gray
+        } catch {
+            Write-Host "Failed to copy installer to Desktop: $_" -ForegroundColor Red
+        }
+    } else {
+        Write-Host "WARNING: Could not resolve Desktop path, skipping copy. Installer remains at $($nsisInstaller.FullName)" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "WARNING: No NSIS installer found in $nsisDir (build may have been --no-bundle or failed)" -ForegroundColor Yellow
+}
+
 Write-Host "`n=== Smoke test ===" -ForegroundColor Cyan
 Write-Host "To smoke test, run: & `"$exe`" --self-check"
 Write-Host "Or launch the GUI: & `"$exe`""

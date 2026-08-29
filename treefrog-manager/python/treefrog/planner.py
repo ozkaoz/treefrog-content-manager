@@ -171,6 +171,33 @@ def _content_type_for_classification(c, profile):
         return "archive"
     return "unknown"
 
+def _hash_lgpt_project(path: pathlib.Path) -> str:
+    """Deterministic hash for LGPT project logical unit (directory or file)."""
+    if path.is_file():
+        return hmod.sha256_file(path)
+    elif path.is_dir():
+        # For directory, hash the sorted list of file hashes and relative paths
+        # This ensures deterministic project identity
+        h = hashlib.sha256()
+        # Collect all files recursively, sorted
+        files = sorted([p for p in path.rglob("*") if p.is_file()], key=lambda p: p.relative_to(path).as_posix())
+        for f in files:
+            # Include relative path and file hash
+            rel = f.relative_to(path).as_posix()
+            h.update(rel.encode())
+            try:
+                fh = hmod.sha256_file(f)
+                h.update(fh.encode())
+            except:
+                # If file can't be hashed, include its size
+                try:
+                    h.update(str(f.stat().st_size).encode())
+                except:
+                    pass
+        return h.hexdigest()
+    else:
+        raise FileNotFoundError(f"LGPT project not found: {path}")
+
 # Phase 2B resolution model
 VALID_RESOLUTIONS = {"skip", "replace", "keep_both", "keep_destination", "keep_source"}
 
@@ -574,9 +601,15 @@ def plan(scanned, sd_root: str, profile):
             else:
                 dest_rel = f"{dest_base}/{file_name}"
         elif kind in ("lgpt_project",):
-            stem = sf["source_path"].stem
+            # Projects are logical units (directories). Use directory name as stem.
+            # For file-based projects (e.g., .lgpt), use file stem; for directory, use directory name
+            if sf["source_path"].is_dir():
+                stem = sf["source_path"].name
+            else:
+                stem = sf["source_path"].stem
             dest_rel = f"lgpt/projects/{stem}"
         elif kind in ("lgpt_sample",):
+            # Samples: profile-driven, WAV baseline
             dest_rel = f"lgpt/samples/{file_name}"
         elif kind in ("bios",):
             dest_rel = f"{dest_base}/{file_name}"
@@ -861,15 +894,44 @@ def plan(scanned, sd_root: str, profile):
         src_hash = None
         dst_hash = None
 
+        # Helper to get hash for source (handles LGPT project directories)
+        def _get_src_hash(p):
+            if c["kind"] == "lgpt_project" and p.is_dir():
+                try:
+                    return _hash_lgpt_project(p)
+                except:
+                    return None
+            else:
+                try:
+                    return hmod.sha256_file(p)
+                except:
+                    return None
+        def _get_dst_hash(p):
+            if c["kind"] == "lgpt_project" and p.is_dir():
+                try:
+                    return _hash_lgpt_project(p)
+                except:
+                    return None
+            else:
+                try:
+                    return hmod.sha256_file(p) if p.is_file() else None
+                except:
+                    return None
+
         if exists:
             try:
-                src_hash = hmod.sha256_file(sf["source_path"])
-                dst_hash = hmod.sha256_file(dest_abs) if dest_abs.is_file() else None
+                src_hash = _get_src_hash(sf["source_path"])
+                dst_hash = _get_dst_hash(dest_abs)
                 # Sizes differ => cannot be same hash, but still provide hashes for UI
-                if dest_abs.is_file() and dest_abs.stat().st_size != sf["size"]:
-                    same_hash = False
+                # For directories, size is sum of files, so check differently
+                if c["kind"] == "lgpt_project":
+                    # For projects, compare hashes directly, not sizes
+                    same_hash = (src_hash == dst_hash) if src_hash and dst_hash else False
                 else:
-                    same_hash = (src_hash == dst_hash) if dst_hash else False
+                    if dest_abs.is_file() and dest_abs.stat().st_size != sf["size"]:
+                        same_hash = False
+                    else:
+                        same_hash = (src_hash == dst_hash) if src_hash and dst_hash else False
             except:
                 same_hash = False
             cls = hmod.classify_duplicate(True, same_hash, True)
@@ -881,13 +943,17 @@ def plan(scanned, sd_root: str, profile):
                 new+=1; action="copy"; reason="new path + new hash -> copy"
         else:
             try:
-                src_hash = hmod.sha256_file(sf["source_path"])
-                if src_hash in sd_hash_map:
+                src_hash = _get_src_hash(sf["source_path"])
+                if src_hash is None:
+                    # Fallback to file hash if project hash failed
+                    src_hash = hmod.sha256_file(sf["source_path"]) if sf["source_path"].is_file() else None
+                if src_hash and src_hash in sd_hash_map:
                     duplicate+=1; action="skip_duplicate"; reason="different path + same hash -> duplicate content default skip"
-                elif src_hash in hash_to_dest:
+                elif src_hash and src_hash in hash_to_dest:
                     duplicate+=1; action="skip_duplicate"; reason="different path + same hash -> duplicate content default skip"
                 else:
-                    hash_to_dest[src_hash] = dest_rel
+                    if src_hash:
+                        hash_to_dest[src_hash] = dest_rel
                     new+=1; action="copy"; reason=f"new path + new hash -> {dest_base}"
             except:
                 new+=1; action="copy"; reason=f"new path + new hash -> {dest_base}"

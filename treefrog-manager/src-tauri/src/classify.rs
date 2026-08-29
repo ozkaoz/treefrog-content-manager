@@ -40,6 +40,71 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         };
     }
 
+    // LGPT - profile-driven destinations, WAV baseline (check before generic music)
+    let lgpt_samples = "lgpt/samples";
+    let lgpt_projects = "lgpt/projects";
+    if lower_name.ends_with(".wav") || lower_name.ends_with(".flac") || lower_name.ends_with(".aiff") || lower_name.ends_with(".aif") || lower_name.ends_with(".mp3") || lower_name.ends_with(".ogg") {
+        if path.to_string_lossy().to_lowercase().contains("lgpt") {
+            return Classification {
+                kind: Kind::LgptSample,
+                system_id: None,
+                destination: lgpt_samples.into(),
+                archive_valid: false,
+                multi_file: false,
+            };
+        }
+        if path.to_string_lossy().to_lowercase().contains("samples") && ext == ".wav" {
+            return Classification {
+                kind: Kind::LgptSample,
+                system_id: None,
+                destination: lgpt_samples.into(),
+                archive_valid: false,
+                multi_file: false,
+            };
+        }
+    }
+    if path.is_dir() {
+        if let Ok(entries) = std::fs::read_dir(path) {
+            let count = entries.count();
+            if count > 1 && path.to_string_lossy().to_lowercase().contains("project") {
+                return Classification {
+                    kind: Kind::LgptProject,
+                    system_id: None,
+                    destination: lgpt_projects.into(),
+                    archive_valid: false,
+                    multi_file: true,
+                };
+            }
+            if path.join("lgptsav.dat").exists() || path.join("project.lgpt").exists() {
+                return Classification {
+                    kind: Kind::LgptProject,
+                    system_id: None,
+                    destination: lgpt_projects.into(),
+                    archive_valid: false,
+                    multi_file: true,
+                };
+            }
+        }
+    }
+    if ext == ".lgpt" {
+        return Classification {
+            kind: Kind::LgptProject,
+            system_id: None,
+            destination: lgpt_projects.into(),
+            archive_valid: false,
+            multi_file: true,
+        };
+    }
+    if path.to_string_lossy().to_lowercase().contains("projects") && path.is_dir() {
+        return Classification {
+            kind: Kind::LgptProject,
+            system_id: None,
+            destination: lgpt_projects.into(),
+            archive_valid: false,
+            multi_file: true,
+        };
+    }
+
     // Media by extension (music handled via media.json formats, but we mirror here)
     let music_exts = [".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus"];
     if music_exts.contains(&ext.as_str()) {
@@ -89,30 +154,6 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: "roms/Ebook".into(),
             archive_valid: false,
             multi_file: false,
-        };
-    }
-
-    // LGPT hints
-    if lower_name.ends_with(".wav") || lower_name.ends_with(".flac") || lower_name.ends_with(".aiff") {
-        // Could be lgpt sample if path contains lgpt/samples — but generic music already handled
-        // keep as music unless parent indicates lgpt
-        if path.to_string_lossy().to_lowercase().contains("lgpt") {
-            return Classification {
-                kind: Kind::LgptSample,
-                system_id: None,
-                destination: "lgpt/samples".into(),
-                archive_valid: false,
-                multi_file: false,
-            };
-        }
-    }
-    if ext == ".lgpt" || (path.parent().map(|p| p.to_string_lossy().to_lowercase().contains("projects")).unwrap_or(false)) {
-        return Classification {
-            kind: Kind::LgptProject,
-            system_id: None,
-            destination: "lgpt/projects".into(),
-            archive_valid: false,
-            multi_file: true,
         };
     }
 
