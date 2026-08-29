@@ -1,8 +1,462 @@
 {
-  "schema_version": "1.0.0",
-  "profile_version": "1.0.0",
-  "description": "BIOS / firmware files — declarative rules for discovery, verification, import, backup, reveal. User-supplied only; never download/bundle copyrighted BIOS.",
+  "schema_version": "1.1.0",
+  "profile_version": "1.1.0",
+  "description": "TreeFrogUI BIOS definitions — formal, testable, TreeFrogUI-global, profile-driven. User-supplied only; never download/bundle copyrighted BIOS. Hashes are authoritative only when known; filename alone never validates when hash exists.",
   "destination_root": "cubegm/bios",
+  "global_settings": {
+    "hash_algorithm": "SHA-256",
+    "verification_states": ["missing", "found_valid", "found_invalid", "found_unknown", "duplicate", "conflict", "not_required"],
+    "archive_handling": "reuse Phase 2A archive infrastructure (inspect, payload vs container, temp workspace)"
+  },
+  "bios_definitions": [
+    {
+      "id": "ps1_bios",
+      "system_id": "psx",
+      "system_name": "PlayStation 1",
+      "name": "PlayStation BIOS (SCPH)",
+      "description": "Any 512 KiB PS1 BIOS; required when PS1 content present or PS1 core enabled. Multiple variants satisfy requirement.",
+      "required": "conditional",
+      "requirement": {
+        "scope": "conditional",
+        "mandatory_when": "psx_content_present OR psx_system_enabled",
+        "condition": "content for system psx/ps1/ps1r present in source or SD, or system enabled in profile",
+        "fallback": "recommended if PS1 content will be used; HLE fallback has glitches"
+      },
+      "variants": [
+        {
+          "id": "ps1_scph1001",
+          "filenames": ["scph1001.bin"],
+          "aliases": ["SCPH1001.BIN", "scph1001.BIN"],
+          "expected_size": 524288,
+          "hashes_sha256": [],
+          "notes": "Variant A - any valid dump satisfies PS1 requirement"
+        },
+        {
+          "id": "ps1_scph5501",
+          "filenames": ["scph5501.bin"],
+          "aliases": ["SCPH5501.BIN"],
+          "expected_size": 524288,
+          "hashes_sha256": [],
+          "notes": "Variant B"
+        },
+        {
+          "id": "ps1_scph5500",
+          "filenames": ["scph5500.bin"],
+          "aliases": ["SCPH5500.BIN"],
+          "expected_size": 524288,
+          "hashes_sha256": [],
+          "notes": "Variant C - Japanese"
+        }
+      ],
+      "accepted_filenames": ["scph1001.bin", "scph5501.bin", "scph5500.bin", "scph5502.bin", "scph7001.bin", "scph*.bin"],
+      "accepted_patterns": ["scph*.bin", "*.bin"],
+      "destinations": ["cubegm/bios", "cubegm/bios/", "cubegm/cores/.pcsx4all/bios", "cubegm/.pcsx4all/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": 524288,
+      "hashes_sha256": [],
+      "hash_required": false,
+      "aliases": ["SCPH1001.BIN", "SCPH5501.BIN", "scph*.bin"],
+      "archive": {
+        "mode": "payload",
+        "description": "PS1 BIOS is never inside an archive that should be extracted; .zip containing BIOS is payload or manual_review. If BIOS is inside a container ZIP, planner will treat as container per archive_policy.",
+        "payload_extensions": [".bin"],
+        "container_handling": "manual_review"
+      },
+      "verification": {
+        "states": ["missing", "found_valid", "found_invalid", "found_unknown", "duplicate", "conflict", "not_required"],
+        "matching_order": ["exact filename + known hash", "alias + known hash", "filename + size when no hash", "known filename wrong content -> found_invalid", "unknown -> found_unknown"]
+      },
+      "core": "pcsx_rearmed_libretro.so / cubegm/pcsx4all",
+      "folders": ["PS", "ps1", "psx", "ps1r"],
+      "guide": "docs/cores/ps1.md"
+    },
+    {
+      "id": "gba_bios",
+      "system_id": "gba",
+      "system_name": "Game Boy Advance",
+      "name": "GBA BIOS",
+      "description": "Official Nintendo GBA BIOS, required for gpsp core.",
+      "required": "conditional",
+      "requirement": {
+        "scope": "conditional",
+        "mandatory_when": "gba_content_present",
+        "condition": "GBA content present"
+      },
+      "variants": [
+        {
+          "id": "gba_bios_single",
+          "filenames": ["gba_bios.bin"],
+          "aliases": ["GBA_BIOS.BIN", "gba_bios.BIN"],
+          "expected_size": 16384,
+          "hashes_sha256": ["a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436"],
+          "notes": "Single authoritative variant"
+        }
+      ],
+      "accepted_filenames": ["gba_bios.bin"],
+      "accepted_patterns": ["gba_bios.bin"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": 16384,
+      "hashes_sha256": ["a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436"],
+      "hash_required": true,
+      "aliases": ["GBA_BIOS.BIN"],
+      "archive": {
+        "mode": "payload",
+        "payload_extensions": [".bin"]
+      },
+      "verification": {
+        "matching_order": ["exact filename + known hash", "alias + known hash", "filename + size fallback", "wrong hash -> found_invalid"]
+      },
+      "core": "gpsp_libretro.so",
+      "folders": ["GBA", "gba", "mgba", "gbaf"]
+    },
+    {
+      "id": "o2em_bios",
+      "system_id": "o2em",
+      "system_name": "Odyssey² / Videopac",
+      "name": "O2EM BIOS",
+      "description": "O2EM BIOS, required for Odyssey².",
+      "required": "conditional",
+      "requirement": {
+        "scope": "conditional",
+        "mandatory_when": "o2em_content_present"
+      },
+      "variants": [
+        {
+          "id": "o2em_o2rom",
+          "filenames": ["o2rom.bin"],
+          "aliases": ["O2ROM.BIN"],
+          "expected_size": 1024,
+          "hashes_sha256": [],
+          "expected_md5": "562d5ebf9e030a40d6fabfc2f33139fd",
+          "notes": "Size + MD5 authoritative; SHA-256 not provided, so size-only validation"
+        }
+      ],
+      "accepted_filenames": ["o2rom.bin"],
+      "accepted_patterns": ["o2rom.bin"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": 1024,
+      "hashes_sha256": [],
+      "expected_md5": "562d5ebf9e030a40d6fabfc2f33139fd",
+      "hash_required": false,
+      "aliases": ["O2ROM.BIN"],
+      "archive": { "mode": "payload" },
+      "core": "o2em_libretro.so",
+      "folders": ["o2em"]
+    },
+    {
+      "id": "fds_bios",
+      "system_id": "fds",
+      "system_name": "Famicom Disk System",
+      "name": "FDS BIOS",
+      "description": "FDS BIOS disksys.rom",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "fds_content_present" },
+      "variants": [
+        {
+          "id": "fds_disksys",
+          "filenames": ["disksys.rom"],
+          "aliases": ["DISKSYS.ROM"],
+          "expected_size": 8192,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["disksys.rom"],
+      "accepted_patterns": ["disksys.rom"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": 8192,
+      "hashes_sha256": [],
+      "aliases": ["DISKSYS.ROM"],
+      "archive": { "mode": "payload" },
+      "core": "fceumm_libretro.so (fds)",
+      "folders": ["fds"]
+    },
+    {
+      "id": "neogeo_bios",
+      "system_id": "neogeo",
+      "system_name": "Neo Geo (geolith/neogeo)",
+      "name": "Neo Geo BIOS",
+      "description": "Neo Geo BIOS neogeo.zip — must remain as payload archive, do not unpack.",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "neogeo_content_present" },
+      "variants": [
+        {
+          "id": "neogeo_zip",
+          "filenames": ["neogeo.zip"],
+          "aliases": ["NEOGEO.ZIP"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["neogeo.zip"],
+      "accepted_patterns": ["neogeo.zip"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["NEOGEO.ZIP"],
+      "archive": {
+        "mode": "payload",
+        "description": "neogeo.zip is the payload itself; archive_policy would treat .zip as payload for neogeo system, not container. If BIOS is inside a container ZIP, that container would be manual_review."
+      },
+      "core": "geolith_libretro.so / fbalpha2012_neogeo_libretro.so",
+      "folders": ["geolith", "neogeo"]
+    },
+    {
+      "id": "segacd_bios",
+      "system_id": "segacd",
+      "system_name": "Sega CD / Mega CD",
+      "name": "Sega CD BIOS",
+      "description": "Region BIOS files for Sega CD.",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "segacd_content_present", "note": "at least one region variant satisfies requirement; all three may be present" },
+      "variants": [
+        {
+          "id": "segacd_u",
+          "filenames": ["bios_CD_U.bin"],
+          "aliases": ["BIOS_CD_U.BIN"],
+          "expected_size": null,
+          "hashes_sha256": []
+        },
+        {
+          "id": "segacd_e",
+          "filenames": ["bios_CD_E.bin"],
+          "aliases": ["BIOS_CD_E.BIN"],
+          "expected_size": null,
+          "hashes_sha256": []
+        },
+        {
+          "id": "segacd_j",
+          "filenames": ["bios_CD_J.bin"],
+          "aliases": ["BIOS_CD_J.BIN"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["bios_CD_U.bin", "bios_CD_E.bin", "bios_CD_J.bin"],
+      "accepted_patterns": ["bios_CD_U.bin", "bios_CD_E.bin", "bios_CD_J.bin"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["BIOS_CD_U.BIN", "BIOS_CD_E.BIN", "BIOS_CD_J.BIN"],
+      "archive": { "mode": "payload" },
+      "core": "genesis_plus_gx_libretro.so (segacd)",
+      "folders": ["segacd"],
+      "region_variants": ["bios_CD_U.bin (USA)", "bios_CD_E.bin (EU)", "bios_CD_J.bin (JP)"]
+    },
+    {
+      "id": "pcfx_bios",
+      "system_id": "pcfx",
+      "system_name": "PC-FX",
+      "name": "PC-FX BIOS",
+      "description": "PC-FX BIOS pcfx.rom",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "pcfx_content_present" },
+      "variants": [
+        {
+          "id": "pcfx_rom",
+          "filenames": ["pcfx.rom"],
+          "aliases": ["PCFX.ROM"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["pcfx.rom"],
+      "accepted_patterns": ["pcfx.rom"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["PCFX.ROM"],
+      "archive": { "mode": "payload" },
+      "core": "mednafen_pcfx_libretro.so",
+      "folders": ["pcfx"]
+    },
+    {
+      "id": "pc88_bios",
+      "system_id": "pc88",
+      "system_name": "PC-88",
+      "name": "PC-88 BIOS",
+      "description": "NEC PC-88 BIOS files (quasi88 expects multiple).",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "pc88_content_present" },
+      "variants": [
+        {
+          "id": "pc88_roms",
+          "filenames": ["*.rom"],
+          "aliases": [],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["*.rom"],
+      "accepted_patterns": ["*.rom"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": [],
+      "archive": { "mode": "payload" },
+      "core": "quasi88_libretro.so",
+      "folders": ["pc8800"]
+    },
+    {
+      "id": "amiga_kickstart",
+      "system_id": "amiga",
+      "system_name": "Amiga",
+      "name": "Amiga Kickstart",
+      "description": "Amiga Kickstart — prefer kick13.rom, kick20 optional; 3.0/3.1 not supported.",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "amiga_content_present" },
+      "variants": [
+        {
+          "id": "amiga_kick13",
+          "filenames": ["kick13.rom"],
+          "aliases": ["KICK13.ROM"],
+          "expected_size": null,
+          "hashes_sha256": []
+        },
+        {
+          "id": "amiga_kick20",
+          "filenames": ["kick20.rom"],
+          "aliases": ["KICK20.ROM"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["kick13.rom", "kick20.rom"],
+      "accepted_patterns": ["kick13.rom", "kick20.rom"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["KICK13.ROM", "KICK20.ROM"],
+      "archive": { "mode": "payload" },
+      "core": "uae_libretro.so",
+      "folders": ["amiga"],
+      "guide": "docs/cores/amiga.md"
+    },
+    {
+      "id": "atarist_tos",
+      "system_id": "atarist",
+      "system_name": "Atari ST",
+      "name": "Atari ST TOS",
+      "description": "Atari ST TOS ROM image",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "atarist_content_present" },
+      "variants": [
+        {
+          "id": "atarist_tos_any",
+          "filenames": ["tos*.img", "tos*.rom"],
+          "aliases": ["TOS*.IMG", "TOS*.ROM"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["tos*.img", "tos*.rom"],
+      "accepted_patterns": ["tos*.img", "tos*.rom"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["TOS*.IMG", "TOS*.ROM"],
+      "archive": { "mode": "payload" },
+      "core": "castaway_libretro.so",
+      "folders": ["atari-st"]
+    },
+    {
+      "id": "pico286_bios",
+      "system_id": "pico286",
+      "system_name": "DOS / pico286",
+      "name": "FreeDOS x86BOOT",
+      "description": "FreeDOS + CuteMouse boot image, bundled at cubegm/bios/x86BOOT.img",
+      "required": "optional",
+      "requirement": { "scope": "optional", "mandatory_when": "pico286_content_present", "fallback": "bundled FreeDOS, so not strictly required" },
+      "variants": [
+        {
+          "id": "pico286_boot",
+          "filenames": ["x86BOOT.img"],
+          "aliases": ["X86BOOT.IMG"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["x86BOOT.img"],
+      "accepted_patterns": ["x86BOOT.img"],
+      "destinations": ["cubegm/bios"],
+      "primary_destination": "cubegm/bios",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["X86BOOT.IMG"],
+      "archive": { "mode": "payload" },
+      "core": "cubegm/pico286",
+      "folders": ["pico286"]
+    },
+    {
+      "id": "c64_jiffydos",
+      "system_id": "c64",
+      "system_name": "C64 optional JiffyDOS",
+      "name": "C64 JiffyDOS",
+      "description": "VICE core includes standard C64 ROM data; optional JiffyDOS files belong in cubegm/bios/vice/",
+      "required": "optional",
+      "requirement": { "scope": "optional", "mandatory_when": "c64_content_present", "note": "VICE core works without, JiffyDOS is optional" },
+      "variants": [
+        {
+          "id": "c64_jiffy_any",
+          "filenames": ["*.bin"],
+          "aliases": [],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["*.bin"],
+      "accepted_patterns": ["*.bin"],
+      "destinations": ["cubegm/bios/vice"],
+      "primary_destination": "cubegm/bios/vice",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": [],
+      "archive": { "mode": "payload" },
+      "core": "vice_x64_libretro.so (c64)",
+      "folders": ["c64", "c64sc"]
+    },
+    {
+      "id": "wolf3d_pk3",
+      "system_id": "wolf3d",
+      "system_name": "Wolfenstein 3D",
+      "name": "Wolfenstein ecwolf.pk3",
+      "description": "Game data + ecwolf.pk3",
+      "required": "conditional",
+      "requirement": { "scope": "conditional", "mandatory_when": "wolf3d_content_present" },
+      "variants": [
+        {
+          "id": "wolf3d_ecwolf",
+          "filenames": ["ecwolf.pk3"],
+          "aliases": ["ECWOLF.PK3"],
+          "expected_size": null,
+          "hashes_sha256": []
+        }
+      ],
+      "accepted_filenames": ["ecwolf.pk3"],
+      "accepted_patterns": ["ecwolf.pk3"],
+      "destinations": ["roms/wolf3d"],
+      "primary_destination": "roms/wolf3d",
+      "expected_size": null,
+      "hashes_sha256": [],
+      "aliases": ["ECWOLF.PK3"],
+      "archive": { "mode": "payload" },
+      "core": "ecwolf_libretro.so",
+      "folders": ["wolf3d"]
+    }
+  ],
+  "ui_requirements": {
+    "supported_actions": ["discover", "verify", "import", "replace", "backup_current", "reveal_destination"],
+    "never_download_copyrighted": true,
+    "states_exposed": ["missing", "found_valid", "found_invalid", "found_unknown", "duplicate", "conflict", "not_required"]
+  },
   "bios_rules": [
     {
       "system": "PlayStation 1",
@@ -14,9 +468,7 @@
       "required": "recommended (strongly recommended; HLE fallback causes glitches/broken saves)",
       "hash_optional": true,
       "region_variants": ["scph1001.bin", "scph5500.bin", "scph5501.bin", "scph5502.bin", "scph7001.bin"],
-      "notes": "Any 512 KiB PS1 BIOS auto-detected; case-insensitive, prefers scph* prefix. Legacy paths: cubegm/cores/.pcsx4all/ etc (old cards) — prefer cubegm/bios/.",
-      "legacy_alternates": ["cubegm/cores/.pcsx4all/", "cubegm/cores/.pcsx4all/bios/", "cubegm/.pcsx4all/", "cubegm/.pcsx4all/bios/"],
-      "guide": "docs/cores/ps1.md"
+      "notes": "Any 512 KiB PS1 BIOS auto-detected; case-insensitive, prefers scph* prefix. Legacy paths: cubegm/cores/.pcsx4all/ etc (old cards) — prefer cubegm/bios/."
     },
     {
       "system": "GBA (gpsp)",
@@ -28,114 +480,7 @@
       "required": "required for gpsp core",
       "hash_known": "a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436",
       "notes": "Official Nintendo GBA BIOS — user-supplied only"
-    },
-    {
-      "system": "Odyssey² / Videopac",
-      "core": "o2em_libretro.so",
-      "folders": ["o2em"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["o2rom.bin"],
-      "expected_size": 1024,
-      "expected_md5": "562d5ebf9e030a40d6fabfc2f33139fd",
-      "required": "required",
-      "notes": "Exact filename o2rom.bin"
-    },
-    {
-      "system": "Famicom Disk System",
-      "core": "fceumm_libretro.so (fds)",
-      "folders": ["fds"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["disksys.rom"],
-      "expected_size": 8192,
-      "required": "required",
-      "notes": "FDS BIOS disksys.rom"
-    },
-    {
-      "system": "Neo Geo (geolith/neogeo)",
-      "core": "geolith_libretro.so / fbalpha2012_neogeo_libretro.so",
-      "folders": ["geolith", "neogeo"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["neogeo.zip"],
-      "required": "required",
-      "notes": "neogeo.zip BIOS — do not unpack"
-    },
-    {
-      "system": "Sega CD / Mega CD",
-      "core": "genesis_plus_gx_libretro.so (segacd)",
-      "folders": ["segacd"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["bios_CD_U.bin", "bios_CD_E.bin", "bios_CD_J.bin"],
-      "required": "required (region-specific)",
-      "region_variants": ["bios_CD_U.bin (USA)", "bios_CD_E.bin (EU)", "bios_CD_J.bin (JP)"],
-      "notes": "Region BIOS files"
-    },
-    {
-      "system": "PC-FX",
-      "core": "mednafen_pcfx_libretro.so",
-      "folders": ["pcfx"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["pcfx.rom"],
-      "required": "required",
-      "notes": "PC-FX BIOS"
-    },
-    {
-      "system": "PC-88",
-      "core": "quasi88_libretro.so",
-      "folders": ["pc8800"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["*.rom"],
-      "required": "required",
-      "notes": "NEC PC-88 BIOS files (quasi88 expects multiple)"
-    },
-    {
-      "system": "Amiga",
-      "core": "uae_libretro.so",
-      "folders": ["amiga"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["kick13.rom", "kick20.rom"],
-      "required": "required",
-      "notes": "Kickstart ROM — prefer kick13.rom (1.3 recommended), kick20.rom optional; Kickstart 3.0/3.1 not supported",
-      "guide": "docs/cores/amiga.md"
-    },
-    {
-      "system": "Atari ST",
-      "core": "castaway_libretro.so",
-      "folders": ["atari-st"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["tos*.img", "tos*.rom"],
-      "required": "required",
-      "notes": "TOS ROM image"
-    },
-    {
-      "system": "DOS / pico286",
-      "core": "cubegm/pico286",
-      "folders": ["pico286"],
-      "destination": "cubegm/bios/",
-      "accepted_patterns": ["x86BOOT.img"],
-      "required": "recommended (bundled FreeDOS)",
-      "notes": "FreeDOS + CuteMouse boot image (GPLv2). Bundled at cubegm/bios/x86BOOT.img; if missing user can copy 144m/x86BOOT.img from FreeDOS 1.4 Floppy Edition"
-    },
-    {
-      "system": "C64 optional JiffyDOS",
-      "core": "vice_x64_libretro.so (c64)",
-      "folders": ["c64", "c64sc"],
-      "destination": "cubegm/bios/vice/",
-      "accepted_patterns": ["*.bin"],
-      "required": "optional",
-      "notes": "VICE core includes standard C64 ROM data; optional JiffyDOS files belong in cubegm/bios/vice/"
-    },
-    {
-      "system": "Wolfenstein 3D",
-      "core": "ecwolf_libretro.so",
-      "folders": ["wolf3d"],
-      "destination": "roms/wolf3d/",
-      "accepted_patterns": ["ecwolf.pk3"],
-      "required": "required",
-      "notes": "Game data + ecwolf.pk3 — see docs/cores/wolf3d.md"
     }
   ],
-  "ui_requirements": {
-    "supported_actions": ["discover", "verify", "import", "replace", "backup_current", "reveal_destination"],
-    "never_download_copyrighted": true
-  }
+  "notes": "No invented hashes. Only GBA BIOS SHA-256 and O2ROM MD5 are authoritative from project data; all other BIOS leave hashes absent and rely on filename + size or unknown. Destinations are profile-driven; do not hardcode cubegm/bios in application logic. bios_rules retained for backward compatibility with legacy tests; canonical is bios_definitions."
 }

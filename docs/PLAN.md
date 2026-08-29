@@ -75,19 +75,26 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 - **Tests:** `test_phase2b_duplicate_resolution.py` 13 tests covering identical, alias, conflict, grouped, archive vs extracted, unchanged, explicit replace/keep_destination/keep_both/skip, deterministic, metadata, zero SD writes — **all run without SD, zero writes**.
 - **Gate:** `pytest 66 PASS` (53+13), `context-contract PASS`, `preflight PASS`, `git diff -- sd_root` empty
 
-### Phase 2C — SD Detection + Sync Execution + Progress + Resume (next)
+### Phase 2C — Video conversion + Windows desktop build (done)
 
-- SD detection via markers (`cubegm/` + `roms/` etc profile `sd_markers.json`), optional capability checks, mount health/writable probes, filesystem portable layer
-- Sync execution: staging + atomic rename where supported, progress events, cancellable without corrupt finals, conflict handling via `resolved_action` from planner (skip/replace/keep_both), resume/consistent state on interrupt
-- Normal Sync must not delete destination files; deletion explicit separate action
-- SQLite deployments/history + tool/profile versioning
-- **Gate:** integration tests with temp SD fixtures, interruption tests, `git diff -- sd_root` still NO for manager ops outside target
+- Video inspection via `ffprobe` authoritative, compatibility evaluation (`compatible`/`conversion_required`/`unsupported`/`inspection_error`) data-driven from `profiles/treefrogui/video_presets.json` (`PROVISIONAL_UNVALIDATED`, container/video/audio codec, resolution, pix_fmt, fps, sample rate, max size, streams)
+- Dedicated conversion service: never modifies source, temp workspace only, deterministic `*.converted.mp4`, overwrite protection, capture FFmpeg stderr, re-probe validation, clean temp, no SD writes, planner single source (`convert_then_copy`)
+- Planner integration: video branch in `planner.rs`/`planner.py` with `convert_then_copy`/`conversion_error`, dry-run UI shows `status`/`preset`/`converted_name`, temp validated
+- Windows x64 desktop build: Tauri 2, Rust 1.98, Node 20.19, Tauri CLI 2.11, MSVC 14.51, WebView2 151, FFmpeg 7, reproducible via `scripts/build_windows.ps1` (PowerShell) and `build_windows.sh` (WSL wrapper), artifacts `treefrog-manager.exe` 12.21 MB + MSI/NSIS, `--self-check` smoke test
+- **Tests:** `test_phase2c_video_conversion.py` 11 tests covering ffprobe parsing, compatible, incompatible, unsupported, inspection failure, command generation, deterministic, temp output, validation success/failure, FFmpeg failure, source preservation, planner action, metadata, missing diagnostics — **pytest 77 PASS (66+11)**
+- **Gate:** `pytest 77 PASS`, `context-contract PASS`, `preflight PASS`, `Windows x64 exe` + `self-check PASS`, `git diff -- sd_root` empty
 
-### Phase 3 — Music / Images / Ebooks + Video Probe/Conversion
+### Phase BIOS-A — Formal BIOS profile and validation model (current)
+
+- Extend `profiles/treefrogui/bios.json` to 1.1.0 formal with `bios_definitions` (system/Bios identity, human-readable name, required/conditional semantics, `mandatory_when`, accepted filenames/patterns/aliases, destinations profile-driven, expected size, SHA-256 authoritative only, variants any one satisfies, archive payload/container via existing archive/hash, verification states `missing`/`found_valid`/`found_invalid`/`found_unknown`/`duplicate`/`conflict`/`not_required`, planner-compatible)
+- Validation states explicit, matching order: exact filename+hash, alias+hash, size fallback, wrong content→`found_invalid`, unknown→`found_unknown`; multiple variants; conditional `psx_content_present` etc.; destinations profile-driven; reuse `archive`/`hash` infrastructure; `get_valid_destinations()`; no invented hashes (only GBA `a860a8...` and O2ROM MD5)
+- **Tests:** `test_bios_validation.py` 17 tests covering valid by filename+hash, alias+hash, invalid wrong hash, size-only, unknown, missing, duplicate identical, conflict same filename diff content, multiple variants, conditional triggered/not required, archive payload/container/unsupported, deterministic, schema, no invented hashes — **pytest 94 PASS (77+17)**
+- **Gate:** `pytest 94 PASS`, `cargo check` PASS (with `bios.rs` + `regex`), `context-contract PASS`, `preflight PASS`, `git diff -- sd_root` empty, no SD writes, desktop still buildable
+
+### Phase 3 — Music / Images / Ebooks (next, after BIOS-A)
 
 - Music/images/ebooks: use profile media destinations/formats; preserve music subfolders; MuPDF ebook per-book `.positions` ignore
-- Video: ffprobe adapter (container, video codec, profile/level, pix_fmt/bitdepth, dimensions, fps, audio codec, stream count), compatible → copy, incompatible → auto-convert via FFmpeg with temp staging, re-probe, validate, batch + cancel, declarative presets (conservative default `PROVISIONAL_UNVALIDATED`)
-- **Gate:** ffprobe mock + fixture videos, conversion staging tests, no claim of hardware compatibility without physical evidence
+- **Gate:** fixture tests, no claim without evidence
 
 ### Phase 4 — BIOS Manager
 
@@ -157,7 +164,7 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ## Next Exact Action (2026-08-28)
 
-- Phase 2B complete: deterministic duplicate/conflict resolution with explicit overrideable decisions — next is Phase 2C SD detection + sync execution (staging, progress, resume) — not in this task. Run `python3 -m pytest treefrog-manager/tests -v` + `bash scripts/agent_preflight.sh --allow-dirty` to verify.
+- Phase BIOS-A complete: formal BIOS profile and validation model — next is Phase BIOS-B UI or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (94 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` to verify.
 
 ## Unresolved for real-device validation
 

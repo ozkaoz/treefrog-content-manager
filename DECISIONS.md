@@ -298,6 +298,26 @@
 
 ---
 
+## DEC-2026-08-28-04 — BIOS-A formal TreeFrogUI BIOS profile and validation model
+
+**Date:** 2026-08-28
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / BIOS / profiles / validation
+
+**Context:** BIOS support must be TreeFrogUI-global, not R36SX-specific. Existing `bios.json` was informal (simple `bios_rules` list). Need formal, testable model with conditional requirements, multiple variants, hash/size validation, archive reuse, and explicit states, without inventing hashes.
+
+**Decision:** Formalize `profiles/treefrogui/bios.json` to 1.1.0 with `bios_definitions` array, each definition having `id` (e.g., `ps1_bios`), `system_id` (`psx`), `name`, `description`, `required` (`conditional`/`optional`/`required`), `requirement {scope, mandatory_when, condition}`, `variants` (any one satisfies, e.g., PS1 `scph1001`/`scph5501`/`scph5500`), `accepted_filenames`/`accepted_patterns`/`aliases`, `destinations`/`primary_destination` (profile-driven, not hardcoded `cubegm/bios`), `expected_size`, `hashes_sha256` (authoritative only, e.g., GBA BIOS `a860a8...` 16384, others empty), `expected_md5` where needed (O2EM), `archive {mode: payload}` (reuse Phase 2A archive infrastructure, payload vs container vs grouped vs unsupported, profile-driven), `verification {matching_order, states}`, plus `global_settings {verification_states, hash_algorithm}`. Keep `destination_root` and `bios_rules` for backward compatibility (legacy tests). Validation states are `missing`, `found_valid`, `found_invalid`, `found_unknown`, `duplicate`, `conflict`, `not_required` (not just boolean). Matching order: 1 exact filename + known hash, 2 alias + known hash, 3 filename + size when no hash, 4 known filename wrong content → `found_invalid`, 5 unknown → `found_unknown`; filename alone never validates when hash exists. `get_valid_destinations()` returns profile-driven destinations. Hashing reuses existing `hash::sha256_file` / `archive::inspect_*` and `safe_extract_to_temp` for BIOS archives (payload/container) with temp workspace, no SD writes, no second hash implementation, cached where possible.
+
+**Reason:** Formal, testable, TreeFrogUI-global, profile-driven BIOS model allows conditional requirements ("PS1 BIOS missing because PS1 content present" vs not required when no PS1 content), multiple variants, correct hash/size validation, and reuse of existing archive/hash/planner services. Not inventing hashes preserves authoritative trust; only GBA BIOS SHA-256 and O2ROM MD5 are from project data.
+
+**Consequences:** `bios.json` 1.1.0 is now formal and testable; `treefrog-manager/python/treefrog/bios.py` and `src-tauri/src/bios.rs` implement validation with 7 states, deterministic, profile-driven with `validate_bios_file` and `validate_all_bios` (conditional `system_content_present` map), archive reuse, SHA-256 reuse, destinations profile-driven. Planner remains single source for deployment, but BIOS validation integrates cleanly (future UI can call `validate_all_bios` to explain missing BIOS). Tests cover 17 cases.
+
+**Evidence:** `profiles/treefrogui/bios.json` 1.1.0 (13 BIOS definitions, 3 PS1 variants, GBA hash, O2EM size, neogeo payload, segacd 3 variants, etc., no invented hashes), `treefrog-manager/python/treefrog/bios.py`, `src-tauri/src/bios.rs`, `tests/test_bios_validation.py` 17 PASS, `pytest 94 PASS`, `cargo check` PASS (with `regex` added), `git diff -- sd_root` empty, `desktop` still buildable (`cargo check` PASS, previous Windows exe 12.21 MB).
+
+**Related:** `profiles/treefrogui/bios.json`, `treefrog-manager/python/treefrog/bios.py`, `treefrog-manager/src-tauri/src/bios.rs`, `treefrog-manager/python/treefrog/archive.py`, `treefrog-manager/python/treefrog/hash.py`, `docs/ARCHITECTURE.md`, `docs/PLAN.md`, `DEC-2026-08-28-03`
+
+---
+
 ### Removed / migrated (not durable — history stays in Git)
 
 - Operational pushes `999A2B27`, `3423e35`, `bdbda77`, `f3273f6`, `588270c`, `c74bd86`, `21bee8d`, `8cc0a47`, `10C9B608`, `38F8CF02`, `E9B23E36`, `DBAD57A7` etc. (DEC-2026-08-21-13..27, DEC-2026-08-21-29) — Git log is authority.

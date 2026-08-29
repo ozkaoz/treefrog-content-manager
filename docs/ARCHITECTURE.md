@@ -2,7 +2,7 @@
 
 **Version:** 1.1.0  
 **Date:** 2026-08-28  
-**Scope:** Phase 2B duplicate & conflict resolution (deterministic, single source of truth) — read-only planner architecture, zero SD writes
+**Scope:** Phase BIOS-A formal BIOS profile and validation + Phase 2C video/desktop (global TreeFrogUI, no SD writes)
 
 ---
 
@@ -14,7 +14,7 @@ Stack: Tauri 2 + Rust backend + React TS frontend + SQLite + serde versioned JSO
 
 Filesystem layer is portable; Windows first.
 
-Invariant: **no SD writes in Phase 0-2B**. All archive work and duplicate checks happen in memory/temp (`tempfile::TempDir` / `SHA-256`), never to SD, never overwriting source, never silently replacing conflicting content.
+Invariant: **no SD writes in Phase 0-BIOS-A**. All archive/BIOS/video work and duplicate checks happen in memory/temp (`tempfile::TempDir` / `SHA-256`), never to SD, never overwriting source, never silently replacing conflicting content. Desktop build is part of Definition of Done from Phase 2C onward.
 
 ---
 
@@ -113,6 +113,14 @@ All `hash_to_dest` and `sd_hash_map` are keyed by SHA-256, not filename. Cheap m
 
 ---
 
+## 5b. BIOS — formal TreeFrogUI-global profile and validation
+
+`profiles/treefrogui/bios.json` 1.1.0 `bios_definitions` — each definition: `id` (`ps1_bios`), `system_id` (`psx`), `name`, `required` (`conditional`/`optional`/`required`), `requirement {scope, mandatory_when}` (e.g., `psx_content_present`), `variants` (any one satisfies, e.g., PS1 `scph1001`/`scph5501`/`scph5500`, GBA single `gba_bios.bin` with SHA-256 `a860a8...`, O2EM `o2rom.bin` 1024 + MD5, neogeo `neogeo.zip` payload, segacd 3 region variants), `accepted_filenames`/`accepted_patterns`/`aliases` (fnmatch, case-insensitive), `destinations`/`primary_destination` (profile-driven, not hardcoded `cubegm/bios`), `expected_size`, `hashes_sha256` (authoritative only, no invented; PS1 empty, GBA single, others empty), `expected_md5` where needed, `archive {mode: payload}` (reuse Phase 2A `ArchiveHandler`, payload for `neogeo.zip`, container via temp extract, unsupported for 7z), `verification {states, matching_order}`. Global `verification_states` = `missing`, `found_valid`, `found_invalid`, `found_unknown`, `duplicate`, `conflict`, `not_required`.
+
+Matching order: 1 exact filename + known hash, 2 alias + known hash, 3 filename + size when no hash, 4 known filename wrong hash → `found_invalid`, 5 unknown → `found_unknown`; filename alone never validates when hash exists. `get_valid_destinations()` returns profile-driven destinations. Hashing reuses `hash::sha256_file` and `archive::inspect_*`/`safe_extract_to_temp` (temp workspace, no SD). `validate_bios_file` and `validate_all_bios(source_files, definitions, system_content_present)` are deterministic, profile-driven, handle multiple variants (any one `found_valid` satisfies), conditional `not_required` vs `missing`, duplicate (same hash different path) vs conflict (same filename different hash). No invented hashes; only GBA SHA-256 and O2ROM MD5 are authoritative.
+
+---
+
 ## 6. Why profile-driven instead of globally extracting every archive
 
 *Decision:* `DEC-2026-08-28-02`
@@ -129,11 +137,12 @@ See `archive_policy.json:rationale`.
 
 ## 7. Testing
 
-`treefrog-manager/tests/` 66 tests:
+`treefrog-manager/tests/` 94 tests:
 
 - 31 original: profile_loader, scanner_classification, archive_inspection, duplicate_engine, dry_run_planner, sd_detection, bios_and_lgpt
 - 22 Phase 2A (`test_phase2a_archive_ingestion.py`): valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS colon, collision, expansion limit, member count limit, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven
 - 13 Phase 2B (`test_phase2b_duplicate_resolution.py`): identical loose files, identical different filenames, same filename diff content, grouped CUE/BIN duplicates, archive vs extracted duplicates, destination unchanged, explicit replace/keep_destination/keep_both/skip, deterministic, collision/resolution metadata, zero SD writes
+- 17 Phase BIOS-A (`test_bios_validation.py`): valid by filename+hash, alias+hash, invalid wrong hash, size-only, unknown, missing, duplicate identical, conflict same filename diff content, multiple variants, conditional triggered/not required, archive payload/container/unsupported, deterministic, schema, no invented hashes
 
 All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `cubegm/`+`roms/` markers). No test writes to real SD.
 
@@ -141,7 +150,11 @@ All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `c
 
 ---
 
-## 8. Planner as single source of truth
+## 8. Desktop build (Definition of Done) + Planner as single source
+
+**Desktop (from Phase 2C):** Windows x64 via Tauri 2 + Rust stable + Node 20 + MSVC + WebView2 + FFmpeg/ffprobe. Reproducible via `scripts/build_windows.ps1` (PowerShell) and `scripts/build_windows.sh` (WSL wrapper documenting cross-compile limitation). Artifacts `treefrog-manager.exe` + MSI/NSIS, `--self-check` verifies profile 1.1.0/75, video provisional, ffmpeg, dry-run. No milestone complete without tested desktop build (AGENTS.md §15).
+
+**Planner as single source of truth**
 
 **Rule:** *The deployment planner is the single source of truth for content decisions; future SD writers must execute its output rather than independently reclassifying content.*
 
@@ -151,15 +164,23 @@ All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `c
 
 ## 9. Git discipline and next
 
-- `sd_root/` untouched (`git diff -- sd_root` empty)
+- `sd_root/` untouched (`git diff -- sd_root` empty) — confirmed for BIOS-A
 - Content manager repo independent from LGPT runtime payload
-- Phase 2C (SD detection, sync execution with staging, progress, resume, SQLite) is next and **not** in this task. Phase 2B remains read-only (no `video conversion`, `BIOS UI`, `7z/RAR` implementation).
+- Phase BIOS-A is backend/profile validation only (no SD writes, no BIOS UI, no 7z/RAR, no video conversion). Next is Phase BIOS-B UI or Phase 2C SD writes (not in this task).
+
+## 10. BIOS is TreeFrogUI-global, not R36SX-specific
+
+- `bios.json` is TreeFrogUI-global; R36SX may later provide device override, but BIOS model remains TreeFrogUI-global per `DEC-2026-08-28-04`.
+- Destinations are profile-driven; no `cubegm/bios` hardcoding in `bios.rs`/`bios.py`.
+- Reuses existing `archive`/`hash`/`planner` services; no second extraction/hash engine.
+- Video preset remains `PROVISIONAL_UNVALIDATED`; conversion never modifies source; planner remains single source.
 
 ---
 
-## 10. Unresolved requiring real-device validation
+## 11. Unresolved requiring real-device validation
 
 - Arcade `.zip` payload handling is profile-driven as `payload` but not physically validated on R36SX that those cores require the zip to stay compressed (plausible per upstream docs/cores/arcade.md, but needs device).
 - 7z/RAR payload handling when handlers become available.
 - Video preset still `PROVISIONAL_UNVALIDATED`.
+- BIOS `PROVISIONAL` validation (no hardware test of actual BIOS on R36SX; hashes are authoritative only for GBA).
 

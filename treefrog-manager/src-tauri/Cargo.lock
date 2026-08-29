@@ -4155,6 +4155,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "hex",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

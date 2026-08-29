@@ -1,4 +1,5 @@
 pub mod archive;
+pub mod bios;
 pub mod classify;
 pub mod db;
 pub mod hash;
