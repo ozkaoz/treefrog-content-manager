@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -51,6 +51,21 @@ const STATUS_LABEL: Record<string, string> = {
   found_valid_variant: "Verified",
 };
 
+type PlanEntry = {
+  source: string;
+  destination: string;
+  action: string;
+  reason: string;
+  content_type?: string;
+  size?: number;
+};
+
+type Plan = {
+  summary: { new: number; changed: number; unchanged: number; duplicate_content: number; conflicts: number; deletions: number; manual_review?: number; unsupported_archive?: number };
+  entries: PlanEntry[];
+  warnings: string[];
+};
+
 const STATUS_COLOR: Record<string, string> = {
   missing: "var(--danger)",
   found_valid: "var(--success)",
@@ -61,7 +76,15 @@ const STATUS_COLOR: Record<string, string> = {
   not_required: "var(--text-muted)",
 };
 
-export default function BiosManager({ onNext }: { onNext?: () => void }) {
+export default function BiosManager({ 
+  onSourceChange,
+  onPlanChange,
+  onNext 
+}: { 
+  onSourceChange?: (v: string) => void;
+  onPlanChange?: (plan: Plan | null) => void;
+  onNext?: () => void 
+}) {
   const [biosSource, setBiosSource] = useState<string>("");
   const [results, setResults] = useState<BiosValidation[] | null>(null);
   const [selected, setSelected] = useState<BiosValidation | null>(null);
@@ -123,7 +146,10 @@ export default function BiosManager({ onNext }: { onNext?: () => void }) {
   async function handleBrowse() {
     try {
       const sel = await pickFolder({ title: "Select BIOS source folder" });
-      if (sel) setBiosSource(sel);
+      if (sel) {
+        setBiosSource(sel);
+        onSourceChange?.(sel);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -153,6 +179,44 @@ export default function BiosManager({ onNext }: { onNext?: () => void }) {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!results || results.length === 0) {
+      onPlanChange?.(null);
+      return;
+    }
+    
+    // Convert BIOS validation results to Plan format
+    const entries: PlanEntry[] = results.map(r => {
+      const action = r.state === 'found_valid' ? 'copy' : 
+                     r.state === 'missing' ? 'manual_review' :
+                     r.state === 'found_invalid' ? 'conflict' :
+                     r.state === 'duplicate' ? 'skip_duplicate' : 'manual_review';
+      
+      return {
+        source: r.file || '',
+        destination: `cubegm/bios/${r.file?.split(/[/\\]/).pop() || ''}`,
+        action,
+        reason: r.reason,
+        content_type: 'bios',
+        size: r.size || 0,
+      };
+    });
+    
+    const summary = {
+      new: entries.filter(e => e.action === 'copy').length,
+      changed: 0,
+      unchanged: 0,
+      duplicate_content: entries.filter(e => e.action === 'skip_duplicate').length,
+      conflicts: entries.filter(e => e.action === 'conflict').length,
+      deletions: 0,
+      manual_review: entries.filter(e => e.action === 'manual_review').length,
+      unsupported_archive: 0,
+    };
+    
+    const plan: Plan = { entries, summary, warnings: [] };
+    onPlanChange?.(plan);
+  }, [results, onPlanChange]);
 
   if (definitions.length === 0) {
     setTimeout(() => loadDefinitions(), 0);

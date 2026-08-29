@@ -19,7 +19,17 @@ type Plan = {
   entries: PlanEntry[];
 };
 
-export default function VideosPanel({ globalSdPath, onSourceChange, onNext }: { globalSdPath: string; onSourceChange?: (v: string) => void; onNext?: () => void }) {
+export default function VideosPanel({ 
+  globalSdPath, 
+  onSourceChange, 
+  onPlanChange,
+  onNext 
+}: { 
+  globalSdPath: string; 
+  onSourceChange?: (v: string) => void; 
+  onPlanChange?: (plan: Plan | null) => void;
+  onNext?: () => void 
+}) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,6 +77,7 @@ export default function VideosPanel({ globalSdPath, onSourceChange, onNext }: { 
         };
       }
       setPlan(result);
+      onPlanChange?.(result);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -104,7 +115,7 @@ export default function VideosPanel({ globalSdPath, onSourceChange, onNext }: { 
         <button className="primary" onClick={handlePreview} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Videos"}
         </button>
-        <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
+        <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
           Omitir → BIOS
         </button>

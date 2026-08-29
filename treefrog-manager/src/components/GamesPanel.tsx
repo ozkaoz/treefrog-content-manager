@@ -19,7 +19,17 @@ type Plan = {
   warnings: string[];
 };
 
-export default function GamesPanel({ globalSdPath, onSourceChange, onNext }: { globalSdPath: string; onSourceChange?: (v: string) => void; onNext?: () => void }) {
+export default function GamesPanel({ 
+  globalSdPath, 
+  onSourceChange, 
+  onPlanChange,
+  onNext 
+}: { 
+  globalSdPath: string; 
+  onSourceChange?: (v: string) => void; 
+  onPlanChange?: (plan: Plan | null) => void;
+  onNext?: () => void 
+}) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,7 +78,9 @@ export default function GamesPanel({ globalSdPath, onSourceChange, onNext }: { g
       }
       // Filter for ROMs only (rom/ and grouped)
       const romEntries = result.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped") || e.content_type === "archive-payload");
-      setPlan({ ...result, entries: romEntries });
+      const filteredPlan = { ...result, entries: romEntries };
+      setPlan(filteredPlan);
+      onPlanChange?.(filteredPlan);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -102,7 +114,7 @@ export default function GamesPanel({ globalSdPath, onSourceChange, onNext }: { g
         <button className="primary" onClick={handlePreview} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Games"}
         </button>
-        <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
+        <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
           Omitir → Music
         </button>

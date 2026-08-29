@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import Header from "./components/Header";
 import EmptyState from "./components/EmptyState";
@@ -63,13 +63,78 @@ export default function App() {
   const [gamesSource, setGamesSource] = useState("");
   const [musicSource, setMusicSource] = useState("");
   const [videosSource, setVideosSource] = useState("");
+  const [biosSource, setBiosSource] = useState("");
+  const [lgptSamplesSource, setLgptSamplesSource] = useState("");
+  const [lgptProjectsSource, setLgptProjectsSource] = useState("");
+  void biosSource; void lgptSamplesSource; void lgptProjectsSource;
 
-  // Global plan for Overview (aggregated)
-  const [globalPlan, setGlobalPlan] = useState<Plan | null>(null);
-  const [globalSpace, setGlobalSpace] = useState<any | null>(null);
+  // Individual plans per content type
+  const [gamesPlan, setGamesPlan] = useState<Plan | null>(null);
+  const [musicPlan, setMusicPlan] = useState<Plan | null>(null);
+  const [videosPlan, setVideosPlan] = useState<Plan | null>(null);
+  const [biosPlan, setBiosPlan] = useState<Plan | null>(null);
+  const [lgptPlan, setLgptPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+
+  // Build aggregated plan from all individual plans
+  const globalPlan = useMemo(() => {
+    const allEntries = [
+      ...(gamesPlan?.entries || []),
+      ...(musicPlan?.entries || []),
+      ...(videosPlan?.entries || []),
+      ...(biosPlan?.entries || []),
+      ...(lgptPlan?.entries || []),
+    ];
+    
+    if (allEntries.length === 0) return null;
+    
+    const summary = {
+      new: allEntries.filter(e => e.action === 'copy' || e.action === 'extract').length,
+      changed: allEntries.filter(e => e.action === 'convert_then_copy').length,
+      unchanged: allEntries.filter(e => e.action === 'skip_unchanged').length,
+      duplicate_content: allEntries.filter(e => e.action === 'skip_duplicate').length,
+      conflicts: allEntries.filter(e => e.action === 'conflict').length,
+      deletions: 0,
+      manual_review: allEntries.filter(e => e.action === 'manual_review').length,
+      unsupported_archive: allEntries.filter(e => e.action === 'unsupported_archive').length,
+    };
+    
+    return { entries: allEntries, summary, warnings: [] };
+  }, [gamesPlan, musicPlan, videosPlan, biosPlan, lgptPlan]);
+
+  // Calculate global space from aggregated plan
+  const globalSpace = useMemo(() => {
+    if (!globalPlan || !sdAnalysis) return null;
+    
+    let to_copy = 0;
+    let to_extract = 0;
+    let to_generate = 0;
+    let to_skip = 0;
+    
+    for (const e of globalPlan.entries) {
+      const size = (e as any).size || 0;
+      if (e.action === 'copy') to_copy += size;
+      else if (e.action === 'extract') to_extract += size;
+      else if (e.action === 'convert_then_copy') to_generate += size;
+      else if (['skip_unchanged', 'skip_duplicate', 'skip'].includes(e.action)) to_skip += size;
+    }
+    
+    const required = to_copy + to_extract + to_generate;
+    const available = (sdAnalysis as any).free_bytes || 0;
+    const status = required > available ? 'insufficient_space' : 'ok';
+    
+    return {
+      bytes_to_copy: to_copy,
+      bytes_to_extract: to_extract,
+      bytes_to_generate: to_generate,
+      bytes_to_skip: to_skip,
+      required_bytes: required,
+      available_bytes: available,
+      status,
+    };
+  }, [globalPlan, sdAnalysis]);
 
   useEffect(() => {
     const cleanup = initTheme();
@@ -217,21 +282,12 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
+      // Solo analizar la SD, NO requiere fuentes
       const target = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
       setSdAnalysis(target);
       
-      const sources = [gamesSource, musicSource, videosSource].filter(Boolean);
-      const sourcePath = sources[0] || gamesSource || musicSource || videosSource;
-      
-      if (sourcePath) {
-        const result = (await invoke("dry_run_with_target", { sourcePath, sdPath })) as any;
-        setGlobalPlan(result);
-        setGlobalSpace(result.space);
-        setSdAnalysis(result.target);
-      } else {
-        setGlobalPlan(null);
-        setGlobalSpace(null);
-      }
+      // NO generar plan aquí, se construye progresivamente en cada panel
+      // globalPlan y globalSpace se calculan vía useMemo
     } catch (e) {
       setError(String(e));
     } finally {
@@ -470,12 +526,12 @@ export default function App() {
             <button className="primary" onClick={handleAnalyze} disabled={loading || !sdPath}>
               {loading ? "Analizando…" : "ANALIZAR"}
             </button>
-            {globalPlan ? (
+            {sdAnalysis ? (
               <button className="primary" onClick={() => setActiveTab("games")}>
                 TRANSFERIR ARCHIVOS →
               </button>
             ) : (
-              <button disabled title="Primero Analizar para ver el estado real">TRANSFERIR ARCHIVOS</button>
+              <button disabled title="Primero Analizar la SD">TRANSFERIR ARCHIVOS</button>
             )}
             <button className="primary" onClick={handleSync} disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading} style={{ display: "none" }}>
               SINCRONIZAR
@@ -485,11 +541,45 @@ export default function App() {
         </div>
       )}
 
-      {activeTab === "games" && <GamesPanel globalSdPath={sdPath} onSourceChange={setGamesSource} onNext={() => setActiveTab("music")} />}
-      {activeTab === "music" && <MusicPanel globalSdPath={sdPath} onSourceChange={setMusicSource} onNext={() => setActiveTab("videos")} />}
-      {activeTab === "videos" && <VideosPanel globalSdPath={sdPath} onSourceChange={setVideosSource} onNext={() => setActiveTab("bios")} />}
-      {activeTab === "bios" && <BiosManager onNext={() => setActiveTab("lgpt")} />}
-      {activeTab === "lgpt" && <LgptManager onNext={() => setActiveTab("sdcard")} />}
+      {activeTab === "games" && (
+        <GamesPanel 
+          globalSdPath={sdPath} 
+          onSourceChange={setGamesSource} 
+          onPlanChange={setGamesPlan as any}
+          onNext={() => setActiveTab("music")} 
+        />
+      )}
+      {activeTab === "music" && (
+        <MusicPanel 
+          globalSdPath={sdPath} 
+          onSourceChange={setMusicSource} 
+          onPlanChange={setMusicPlan as any}
+          onNext={() => setActiveTab("videos")} 
+        />
+      )}
+      {activeTab === "videos" && (
+        <VideosPanel 
+          globalSdPath={sdPath} 
+          onSourceChange={setVideosSource} 
+          onPlanChange={setVideosPlan as any}
+          onNext={() => setActiveTab("bios")} 
+        />
+      )}
+      {activeTab === "bios" && (
+        <BiosManager 
+          onSourceChange={setBiosSource}
+          onPlanChange={setBiosPlan as any}
+          onNext={() => setActiveTab("lgpt")} 
+        />
+      )}
+      {activeTab === "lgpt" && (
+        <LgptManager 
+          onSamplesSourceChange={setLgptSamplesSource}
+          onProjectsSourceChange={setLgptProjectsSource}
+          onPlanChange={setLgptPlan as any}
+          onNext={() => setActiveTab("sdcard")} 
+        />
+      )}
       {activeTab === "sdcard" && (
         <SdCardPanel 
           sdPath={sdPath} 

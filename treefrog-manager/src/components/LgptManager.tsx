@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -11,7 +11,32 @@ type LgptScanResult = {
   } | null;
 };
 
-export default function LgptManager({ onNext }: { onNext?: () => void }) {
+type PlanEntry = {
+  source: string;
+  destination: string;
+  action: string;
+  reason: string;
+  content_type?: string;
+  size?: number;
+};
+
+type Plan = {
+  summary: { new: number; changed: number; unchanged: number; duplicate_content: number; conflicts: number; deletions: number; manual_review?: number; unsupported_archive?: number };
+  entries: PlanEntry[];
+  warnings: string[];
+};
+
+export default function LgptManager({ 
+  onSamplesSourceChange,
+  onProjectsSourceChange,
+  onPlanChange,
+  onNext 
+}: { 
+  onSamplesSourceChange?: (v: string) => void;
+  onProjectsSourceChange?: (v: string) => void;
+  onPlanChange?: (plan: Plan | null) => void;
+  onNext?: () => void 
+}) {
   const [samplesSource, setSamplesSource] = useState<string>("");
   const [projectsSource, setProjectsSource] = useState<string>("");
   const [activeSubTab, setActiveSubTab] = useState<"samples" | "projects">("samples");
@@ -24,7 +49,10 @@ export default function LgptManager({ onNext }: { onNext?: () => void }) {
   async function handlePickSamples() {
     try {
       const sel = await pickFolder({ title: "Select LGPT Samples folder (lgpt/samples)" });
-      if (sel) setSamplesSource(sel);
+      if (sel) {
+        setSamplesSource(sel);
+        onSamplesSourceChange?.(sel);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -33,7 +61,10 @@ export default function LgptManager({ onNext }: { onNext?: () => void }) {
   async function handlePickProjects() {
     try {
       const sel = await pickFolder({ title: "Select LGPT Projects folder (lgpt/projects)" });
-      if (sel) setProjectsSource(sel);
+      if (sel) {
+        setProjectsSource(sel);
+        onProjectsSourceChange?.(sel);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -96,6 +127,43 @@ export default function LgptManager({ onNext }: { onNext?: () => void }) {
       }
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
+
+  useEffect(() => {
+    const allEntries: PlanEntry[] = [];
+    
+    if (samplesResult?.plan?.entries) {
+      allEntries.push(...samplesResult.plan.entries.map(e => ({
+        ...e,
+        content_type: 'lgpt/sample',
+      })));
+    }
+    
+    if (projectsResult?.plan?.entries) {
+      allEntries.push(...projectsResult.plan.entries.map(e => ({
+        ...e,
+        content_type: 'lgpt/project',
+      })));
+    }
+    
+    if (allEntries.length === 0) {
+      onPlanChange?.(null);
+      return;
+    }
+    
+    const summary = {
+      new: allEntries.filter(e => e.action === 'copy' || e.action === 'extract').length,
+      changed: 0,
+      unchanged: allEntries.filter(e => e.action === 'skip_unchanged').length,
+      duplicate_content: allEntries.filter(e => e.action === 'skip_duplicate').length,
+      conflicts: allEntries.filter(e => e.action === 'conflict').length,
+      deletions: 0,
+      manual_review: allEntries.filter(e => e.action === 'manual_review').length,
+      unsupported_archive: 0,
+    };
+    
+    const plan: Plan = { entries: allEntries, summary, warnings: [] };
+    onPlanChange?.(plan);
+  }, [samplesResult, projectsResult, onPlanChange]);
 
   const currentResult = activeSubTab === "samples" ? samplesResult : projectsResult;
   const currentPlan = currentResult?.plan;
