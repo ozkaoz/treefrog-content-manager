@@ -82,7 +82,9 @@ pub fn run() {
             list_volumes,
             analyze_target,
             dry_run_with_target,
-            deploy_to_sd
+            deploy_to_sd,
+            lgpt_scan_samples,
+            lgpt_scan_projects
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -296,4 +298,35 @@ async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>)
     out["space"] = serde_json::to_value(&space).unwrap();
     out["plan"] = serde_json::to_value(&plan).unwrap();
     Ok(out)
+}
+
+#[tauri::command]
+async fn lgpt_scan_samples(samples_source: String, sd_path: String) -> Result<serde_json::Value, String> {
+    let profile = profile::load_profile().map_err(|e| e.to_string())?;
+    let scanned = scanner::scan(&samples_source, &profile).map_err(|e| e.to_string())?;
+    // Forzar contexto LGPT samples: WAV/sonidos -> lgpt/samples/
+    let scanned: Vec<scanner::ScannedFile> = scanned.into_iter().map(|mut sf| {
+        if sf.classification.kind == crate::classify::Kind::Music
+            || sf.classification.kind == crate::classify::Kind::Unknown
+        {
+            sf.classification.kind = crate::classify::Kind::LgptSample;
+            sf.classification.destination = "lgpt/samples".to_string();
+        }
+        sf
+    }).collect();
+    let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "samples": [], "projects": [], "plan": plan }))
+}
+
+#[tauri::command]
+async fn lgpt_scan_projects(projects_source: String, sd_path: String) -> Result<serde_json::Value, String> {
+    let profile = profile::load_profile().map_err(|e| e.to_string())?;
+    let scanned = scanner::scan(&projects_source, &profile).map_err(|e| e.to_string())?;
+    let scanned: Vec<scanner::ScannedFile> = scanned.into_iter().map(|mut sf| {
+        sf.classification.kind = crate::classify::Kind::LgptProject;
+        sf.classification.destination = "lgpt/projects".to_string();
+        sf
+    }).collect();
+    let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "samples": [], "projects": [], "plan": plan }))
 }

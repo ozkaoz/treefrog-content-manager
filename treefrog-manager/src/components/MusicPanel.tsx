@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -48,32 +49,21 @@ export default function MusicPanel({
 
   async function handlePreview() {
     if (!source) {
-      setError("Selecciona la carpeta de origen de Music");
+      setError("Selecciona la carpeta de origen");
       return;
     }
     if (!globalSdPath) {
-      setError("No hay SD seleccionada — ve a SD Card para seleccionar automáticamente");
+      setError("No hay SD seleccionada — ve a Overview");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      let result: Plan;
-      if (tauri) {
-        const raw = (await tauri.invoke("dry_run_preview", { sourcePath: source, sdPath: globalSdPath })) as any;
-        // Filter for music only (perfil verifica extensión y copia automáticamente a roms/music/)
-        const musicEntries = (raw.entries as PlanEntry[]).filter((e) => e.content_type === "music" || e.destination.includes("roms/music"));
-        result = { summary: raw.summary, entries: musicEntries };
-      } else {
-        result = {
-          summary: { new: 3, unchanged: 10, duplicate_content: 1, conflicts: 0 },
-          entries: [
-            { source: `${source}/My Playlist/song1.mp3`, destination: "roms/music/My Playlist/song1.mp3", action: "copy", reason: "new", content_type: "music", size: 5000000 },
-            { source: `${source}/My Playlist/song2.flac`, destination: "roms/music/My Playlist/song2.flac", action: "copy", reason: "new", content_type: "music", size: 20000000 },
-          ],
-        };
-      }
+      // Escaneo REAL de la carpeta seleccionada contra la SD seleccionada
+      const result = (await invoke("dry_run_with_target", {
+        sourcePath: source,
+        sdPath: globalSdPath,
+      })) as any;
       setPlan(result);
       onPlanChange?.(result);
     } catch (e) {

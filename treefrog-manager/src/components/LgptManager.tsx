@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -76,59 +77,21 @@ export default function LgptManager({
 
   async function handleScanSamples() {
     if (!samplesSource) { setError("Select Samples source folder"); return; }
-    setLoading(true);
-    setError("");
+    if (!globalSdPath) { setError("No hay SD seleccionada — ve a Overview"); return; }
+    setLoading(true); setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        const res = await tauri.invoke("lgpt_scan_samples", { samplesSource }) as LgptScanResult;
-        setSamplesResult(res);
-      } else {
-        setSamplesResult({
-          samples: [
-            { path: `${samplesSource}/kick.wav`, hash: "aaa111", size: 10244 },
-            { path: `${samplesSource}/snare.wav`, hash: "bbb222", size: 20480 },
-            { path: `${samplesSource}/duplicate/kick-copy.wav`, hash: "aaa111", size: 10244 },
-          ],
-          projects: [],
-          plan: {
-            entries: [
-              { source: `${samplesSource}/kick.wav`, destination: "lgpt/samples/kick.wav", action: "copy", reason: "new sample" },
-              { source: `${samplesSource}/snare.wav`, destination: "lgpt/samples/snare.wav", action: "copy", reason: "new sample" },
-              { source: `${samplesSource}/duplicate/kick-copy.wav`, destination: "lgpt/samples/kick-copy.wav", action: "skip_duplicate", reason: "identical SHA-256 -> duplicate" },
-            ],
-            summary: { new: 2, duplicate: 1, unchanged: 0, conflict: 0 },
-          },
-        });
-      }
+      const res = (await invoke("lgpt_scan_samples", { samplesSource, sdPath: globalSdPath })) as LgptScanResult;
+      setSamplesResult(res);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
 
   async function handleScanProjects() {
     if (!projectsSource) { setError("Select Projects source folder"); return; }
-    setLoading(true);
-    setError("");
+    if (!globalSdPath) { setError("No hay SD seleccionada — ve a Overview"); return; }
+    setLoading(true); setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        const res = await tauri.invoke("lgpt_scan_projects", { projectsSource }) as LgptScanResult;
-        setProjectsResult(res);
-      } else {
-        setProjectsResult({
-          samples: [],
-          projects: [
-            { path: `${projectsSource}/ProjectA`, members: ["project.lgpt", "sample1.wav"], hash: "ccc333" },
-            { path: `${projectsSource}/ProjectB`, members: ["project.lgpt"], hash: "ddd444" },
-          ],
-          plan: {
-            entries: [
-              { source: `${projectsSource}/ProjectA`, destination: "lgpt/projects/ProjectA", action: "copy", reason: "new project logical unit" },
-              { source: `${projectsSource}/ProjectB`, destination: "lgpt/projects/ProjectB", action: "skip_duplicate", reason: "identical project hash" },
-            ],
-            summary: { new: 1, duplicate: 1 },
-          },
-        });
-      }
+      const res = (await invoke("lgpt_scan_projects", { projectsSource, sdPath: globalSdPath })) as LgptScanResult;
+      setProjectsResult(res);
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
 

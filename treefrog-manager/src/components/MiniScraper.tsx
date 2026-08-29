@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 
 export default function MiniScraper({ sdPath }: { sdPath: string }) {
@@ -6,17 +7,9 @@ export default function MiniScraper({ sdPath }: { sdPath: string }) {
 
   async function handleOpen() {
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      // Use opener plugin to open URL
-      if (tauri) {
-        // Try to use opener plugin via invoke
-        try {
-          await (tauri as any).invoke("plugin:opener|open_url", { url: "https://github.com/tzubertowski/mini-scraper-cfw/releases" });
-        } catch {
-          // Fallback to window.open
-          window.open("https://github.com/tzubertowski/mini-scraper-cfw/releases", "_blank");
-        }
-      } else {
+      try {
+        await invoke("plugin:opener|open_url", { url: "https://github.com/tzubertowski/mini-scraper-cfw/releases" });
+      } catch {
         window.open("https://github.com/tzubertowski/mini-scraper-cfw/releases", "_blank");
       }
     } catch (e) {
@@ -32,17 +25,8 @@ export default function MiniScraper({ sdPath }: { sdPath: string }) {
     setChecking(true);
     setResult("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        // Use fs to check for .res folders
-        // For now, just call analyze_target and check for roms with .res
-        const analysis = (await tauri.invoke("analyze_target", { path: sdPath })) as any;
-        // Simple check: look for roms subdirs with .res
-        // This is a placeholder for real .res verification
-        setResult(`SD has ${analysis.existing_count} files, ${analysis.rom_dirs.length} ROM systems. Check .res manually: look for roms/<system>/.res/<game>.png`);
-      } else {
-        setResult("Verification requires Tauri (desktop). In web preview, manually check for roms/<system>/.res/<game>.png, also Imgs/, images/ compat, and title suffixes -title/-screenshot.");
-      }
+      const analysis = (await invoke("analyze_target", { path: sdPath })) as any;
+      setResult(`SD has ${analysis.existing_count} files, ${analysis.rom_dirs.length} ROM systems. Check .res manually: look for roms/<system>/.res/<game>.png`);
     } catch (e) {
       setResult(String(e));
     } finally {

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
 import { getSystemTheme } from "../services/theme";
 
@@ -26,14 +27,8 @@ export default function SettingsPanel() {
   useEffect(() => {
     async function load() {
       try {
-        const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-        if (tauri) {
-          const res = (await tauri.invoke("verify_profile")) as { profile_version: string };
-          // Also fetch systems count via profile (we can approximate)
-          setProfile({ profile_version: res.profile_version, systems: 75 });
-        } else {
-          setProfile({ profile_version: "1.1.0", systems: 75 });
-        }
+        const res = (await invoke("verify_profile")) as { profile_version: string };
+        setProfile({ profile_version: res.profile_version, systems: 75 });
       } catch (e) {
         setError(String(e));
       }

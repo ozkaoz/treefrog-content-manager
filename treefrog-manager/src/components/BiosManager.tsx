@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -98,50 +99,8 @@ export default function BiosManager({
 
   async function loadDefinitions() {
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      if (tauri) {
-        const res = (await tauri.invoke("bios_profile")) as { definitions: BiosDefinition[] };
-        setDefinitions(res.definitions || []);
-      } else {
-        const mock: BiosDefinition[] = [
-          {
-            id: "ps1_bios",
-            system_id: "psx",
-            system_name: "PlayStation 1",
-            name: "PlayStation BIOS (SCPH)",
-            description: "Any 512 KiB PS1 BIOS",
-            required: "conditional",
-            requirement: { scope: "conditional", mandatory_when: "psx_content_present" },
-            variants: [
-              { id: "ps1_scph1001", filenames: ["scph1001.bin"], aliases: ["SCPH1001.BIN"], expected_size: 524288, hashes_sha256: [] },
-              { id: "ps1_scph5501", filenames: ["scph5501.bin"], aliases: ["SCPH5501.BIN"], expected_size: 524288, hashes_sha256: [] },
-            ],
-            accepted_filenames: ["scph1001.bin", "scph5501.bin", "scph*.bin"],
-            destinations: ["cubegm/bios"],
-            primary_destination: "cubegm/bios",
-            expected_size: 524288,
-            hashes_sha256: [],
-            aliases: ["SCPH1001.BIN"],
-          },
-          {
-            id: "gba_bios",
-            system_id: "gba",
-            system_name: "Game Boy Advance",
-            name: "GBA BIOS",
-            description: "Official Nintendo GBA BIOS",
-            required: "conditional",
-            requirement: { scope: "conditional", mandatory_when: "gba_content_present" },
-            variants: [{ id: "gba_bios_single", filenames: ["gba_bios.bin"], aliases: ["GBA_BIOS.BIN"], expected_size: 16384, hashes_sha256: ["a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436"] }],
-            accepted_filenames: ["gba_bios.bin"],
-            destinations: ["cubegm/bios"],
-            primary_destination: "cubegm/bios",
-            expected_size: 16384,
-            hashes_sha256: ["a860a8c0b6d573d191e4ec7db1b33b04ccf2454a7df67b3a6de030423b6a436"],
-            aliases: ["GBA_BIOS.BIN"],
-          },
-        ];
-        setDefinitions(mock);
-      }
+      const res = (await invoke("bios_profile")) as { definitions: BiosDefinition[] };
+      setDefinitions(res.definitions || []);
     } catch (e) {
       setError(String(e));
     }
@@ -167,16 +126,9 @@ export default function BiosManager({
     setLoading(true);
     setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      let res: unknown;
-      if (tauri) {
-        res = await tauri.invoke("bios_scan", { biosSource });
-      } else {
-        res = mockBiosScan(biosSource);
-      }
-      const data = res as { results: BiosValidation[] };
-      setResults(data.results);
-      if (data.results.length > 0) setSelected(data.results[0]);
+      const res = (await invoke("bios_scan", { biosSource })) as { results: BiosValidation[] };
+      setResults(res.results);
+      if (res.results.length > 0) setSelected(res.results[0]);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -366,12 +318,3 @@ export default function BiosManager({
   );
 }
 
-function mockBiosScan(_source: string) {
-  return {
-    results: [
-      { bios_id: "ps1_bios", system_id: "psx", state: "found_valid", reason: "exact filename + known hash", required: true, file: "C:\\BIOS\\scph5501.bin", hash: "abc123...", size: 524288, variant: "scph5501.bin" },
-      { bios_id: "gba_bios", system_id: "gba", state: "found_valid", reason: "exact filename + known hash", required: true, file: "C:\\BIOS\\gba_bios.bin", hash: "a860a8...", size: 16384, variant: "gba_bios.bin" },
-      { bios_id: "o2em_bios", system_id: "o2em", state: "missing", reason: "BIOS o2em_bios missing but required when o2em_content_present", required: true, file: null, hash: null, size: null },
-    ],
-  };
-}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -52,32 +53,21 @@ export default function VideosPanel({
 
   async function handlePreview() {
     if (!source) {
-      setError("Selecciona la carpeta de origen de Videos");
+      setError("Selecciona la carpeta de origen");
       return;
     }
     if (!globalSdPath) {
-      setError("No hay SD seleccionada — ve a SD Card para seleccionar automáticamente");
+      setError("No hay SD seleccionada — ve a Overview");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      let result: Plan;
-      if (tauri) {
-        const raw = (await tauri.invoke("dry_run_preview", { sourcePath: source, sdPath: globalSdPath })) as any;
-        const videoEntries = (raw.entries as PlanEntry[]).filter((e) => e.content_type === "video" || e.destination.includes("roms/videos") || e.destination.includes("videos"));
-        result = { summary: raw.summary, entries: videoEntries };
-      } else {
-        result = {
-          summary: { new: 2, unchanged: 5, duplicate_content: 1, conflicts: 0, manual_review: 1 },
-          entries: [
-            { source: `${source}/good.mp4`, destination: "roms/videos/good.mp4", action: "copy", reason: "video compatible (h264 yuv420p 640x480 30fps aac) -> copy", content_type: "video", size: 50000000, preset: "treefrog_conservative_default", probe: { video_codec: "h264", container: "mp4", width: 640, height: 480 } as any },
-            { source: `${source}/bad.mkv`, destination: "roms/videos/bad.converted.mp4", action: "convert_then_copy", reason: "video incompatible (hevc 1920x1080 60fps) -> requires conversion", content_type: "video", size: 200000000, preset: "treefrog_conservative_default", probe: { video_codec: "hevc", container: "mkv", width: 1920, height: 1080 } as any, converted_name: "bad.converted.mp4" },
-            { source: `${source}/corrupt.avi`, destination: "roms/videos/corrupt.avi", action: "manual_review", reason: "video inspection error: ffprobe failed", content_type: "video", size: 10000000 },
-          ],
-        };
-      }
+      // Escaneo REAL de la carpeta seleccionada contra la SD seleccionada
+      const result = (await invoke("dry_run_with_target", {
+        sourcePath: source,
+        sdPath: globalSdPath,
+      })) as any;
       setPlan(result);
       onPlanChange?.(result);
     } catch (e) {

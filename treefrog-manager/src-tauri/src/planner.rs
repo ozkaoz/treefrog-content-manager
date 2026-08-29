@@ -96,23 +96,30 @@ fn decide_archive_mode(archive_path: &Path, inner: &[archive::ArchiveEntry], pro
     }
     let known: Vec<String> = systems_for_members.iter().filter_map(|o| o.clone()).filter(|s| s != "grouped_hint").collect();
     if known.is_empty() {
-        // no known -> payload if any system has payload for this ext
-        if let Some(per) = policy.get("per_system").and_then(|v| v.as_object()) {
-            for (_sys, modes) in per {
-                if let Some(m) = modes.get(&ext).and_then(|v| v.as_str()) {
-                    if m == "payload" { return "payload".to_string(); }
-                }
-            }
-        }
-        return "payload".to_string();
+        // Unknown inner extensions: still try to extract (members will be
+        // classified individually; unknown ones go to roms/UNKNOWN for review).
+        return "extract_and_classify".to_string();
     }
     let unique: HashSet<String> = known.iter().cloned().collect();
     if unique.len() == 1 {
         let sys_id = unique.iter().next().unwrap();
+        // Arcade-class systems keep the archive as payload (MAME/FBA/NeoGeo need the zip intact).
+        // Every other system: EXTRACT and classify each ROM into its correct folder.
+        const PAYLOAD_SYSTEMS: &[&str] = &[
+            "mame", "mame2000", "mame2003", "mame2010", "mame2016",
+            "fbneo", "fba", "cps1", "cps2", "cps3", "neogeo", "arcade",
+        ];
+        let is_arcade = PAYLOAD_SYSTEMS.contains(&sys_id.as_str());
         if let Some(per) = policy.get("per_system").and_then(|v| v.as_object()).and_then(|m| m.get(sys_id)) {
             if let Some(mode) = per.get(&ext).and_then(|v| v.as_str()) {
+                if mode == "payload" && !is_arcade {
+                    return "extract_and_classify".to_string();
+                }
                 return mode.to_string();
             }
+        }
+        if is_arcade {
+            return "payload".to_string();
         }
         if systems_for_members.iter().any(|s| s.as_deref() == Some("grouped_hint")) {
             return "grouped".to_string();

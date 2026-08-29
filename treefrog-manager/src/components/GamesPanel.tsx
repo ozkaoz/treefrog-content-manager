@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -52,37 +53,23 @@ export default function GamesPanel({
 
   async function handlePreview() {
     if (!source) {
-      setError("Selecciona la carpeta de origen de Games");
+      setError("Selecciona la carpeta de origen");
       return;
     }
     if (!globalSdPath) {
-      setError("No hay SD seleccionada — ve a SD Card para seleccionar automáticamente");
+      setError("No hay SD seleccionada — ve a Overview");
       return;
     }
     setLoading(true);
     setError("");
     try {
-      const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
-      let result: Plan;
-      if (tauri) {
-        result = (await tauri.invoke("dry_run_preview", { sourcePath: source, sdPath: globalSdPath })) as Plan;
-      } else {
-        // Mock for web
-        result = {
-          summary: { new: 12, unchanged: 45, changed: 2, duplicate_content: 3, conflicts: 1, deletions: 0, manual_review: 1, unsupported_archive: 0 },
-          entries: [
-            { source: `${source}/GBA/game1.gba`, destination: "roms/GBA/game1.gba", action: "copy", reason: "new", content_type: "rom/GBA", size: 8000000 },
-            { source: `${source}/SFC/game2.smc`, destination: "roms/SFC/game2.smc", action: "copy", reason: "new", content_type: "rom/SFC", size: 4000000 },
-            { source: `${source}/PS/game.cue`, destination: "roms/PS/game", action: "extract", reason: "grouped CUE/BIN", content_type: "grouped/CUE_BBIN", group: ["game.cue", "game.bin"] },
-          ],
-          warnings: [],
-        };
-      }
-      // Filter for ROMs only (rom/ and grouped)
-      const romEntries = result.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped") || e.content_type === "archive-payload");
-      const filteredPlan = { ...result, entries: romEntries };
-      setPlan(filteredPlan);
-      onPlanChange?.(filteredPlan);
+      // Escaneo REAL de la carpeta seleccionada contra la SD seleccionada
+      const result = (await invoke("dry_run_with_target", {
+        sourcePath: source,
+        sdPath: globalSdPath,
+      })) as any;
+      setPlan(result);
+      onPlanChange?.(result);
     } catch (e) {
       setError(String(e));
     } finally {
