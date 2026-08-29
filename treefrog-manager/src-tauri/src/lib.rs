@@ -2,6 +2,7 @@ pub mod archive;
 pub mod bios;
 pub mod classify;
 pub mod db;
+pub mod deploy;
 pub mod hash;
 pub mod planner;
 pub mod profile;
@@ -74,7 +75,8 @@ pub fn run() {
             bios_scan,
             list_volumes,
             analyze_target,
-            dry_run_with_target
+            dry_run_with_target,
+            deploy_to_sd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -244,5 +246,37 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
     out["target"] = serde_json::to_value(&target).unwrap();
     out["space"] = serde_json::to_value(&space).unwrap();
     out["collisions"] = serde_json::to_value(&collisions).unwrap();
+    Ok(out)
+}
+
+#[tauri::command]
+async fn deploy_to_sd(source_path: String, sd_path: String) -> Result<serde_json::Value, String> {
+    let profile = profile::load_profile().map_err(|e| e.to_string())?;
+    let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
+    if target.status == "inaccessible" {
+        return Err(format!("Target inaccessible: {}", sd_path));
+    }
+    if !target.is_treefrog {
+        return Err(format!("Target is not a valid TreeFrogUI SD (status: {}): {}", target.status, sd_path));
+    }
+    let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
+    let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    for e in &plan.entries {
+        sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
+    }
+    let space = sd_target::calculate_space(&plan, target.free_bytes);
+    if space.status == "insufficient_space" {
+        return Err(format!("Insufficient space: required {} available {}", space.required_bytes, space.available_bytes.unwrap_or(0)));
+    }
+    let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
+    let collisions = sd_target::check_case_collision(&dests);
+    if !collisions.is_empty() {
+        return Err(format!("Case collision detected: {} collides with {}", collisions[0].0, collisions[0].1));
+    }
+    let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile).map_err(|e| e.to_string())?;
+    let mut out = serde_json::to_value(&result).unwrap();
+    out["target"] = serde_json::to_value(&target).unwrap();
+    out["space"] = serde_json::to_value(&space).unwrap();
+    out["plan"] = serde_json::to_value(&plan).unwrap();
     Ok(out)
 }

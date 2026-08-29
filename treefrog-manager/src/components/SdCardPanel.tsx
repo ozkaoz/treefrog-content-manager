@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
+import MiniScraper from "./MiniScraper";
 
 type VolumeInfo = {
   path: string;
@@ -255,12 +256,62 @@ export default function SdCardPanel({ sdPath, onChange }: { sdPath: string; onCh
         </div>
       )}
 
-      <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-        <button disabled title="Sync not implemented in this read-only milestone">
-          Sync (not implemented)
-        </button>
-        <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>Read-only — no writes will occur. Sync is disabled until the writer milestone.</span>
+      <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={async () => {
+              if (!sdPath || !sourcePath) {
+                setError("Select source and SD target first, then Analyze and Dry-run");
+                return;
+              }
+              if (!plan || !space) {
+                setError("Run Dry-run with target first to validate space and collisions");
+                return;
+              }
+              if (space.status === "insufficient_space") {
+                setError("Not enough space on target — free more space or reduce source");
+                return;
+              }
+              if (!analysis?.is_treefrog) {
+                setError("Target is not a valid TreeFrogUI SD — check markers");
+                return;
+              }
+              const confirmed = confirm(`Sync ${plan.summary.new} new + ${plan.summary.changed} changed to ${sdPath}?\n\nThis will copy files to the SD card (staging + atomic rename). Continue?`);
+              if (!confirmed) return;
+              setLoading(true);
+              setError("");
+              try {
+                const tauri = (window as unknown as { __TAURI__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } }).__TAURI__;
+                if (tauri) {
+                  const res = (await tauri.invoke("deploy_to_sd", { sourcePath, sdPath })) as any;
+                  alert(`Sync complete: ${res.deployed} deployed, ${res.skipped} skipped, ${res.failed} failed.\n${res.warnings?.join("\n") || ""}`);
+                  // Re-analyze after sync
+                  await handleAnalyze();
+                } else {
+                  alert("Deploy not available in web preview");
+                }
+              } catch (e) {
+                setError(String(e));
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading || !plan || space?.status === "insufficient_space"}
+            className="primary"
+            title={plan ? `Sync ${plan.summary.new} new to ${sdPath}` : "Run Dry-run first"}
+          >
+            {loading ? "Syncing…" : "Sync to SD"}
+          </button>
+          <span style={{ fontSize: 11, color: "var(--text-muted)", alignSelf: "center" }}>
+            {plan ? `Ready to sync ${plan.summary.new} new, ${plan.summary.duplicate_content} duplicate skipped` : "Run Dry-run to enable Sync"}
+          </span>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+          Progress: {plan ? `${plan.summary.new} new, ${plan.summary.unchanged} unchanged, ${plan.summary.conflicts} conflicts` : "—"} | Staging: copy to <code>.treefrog_staging_*.tmp</code> then atomic <code>rename</code>, resume on interrupt, no silent overwrite. Large libraries (&gt;10k files) are limited per job and will show `manual_review`.
+        </div>
       </div>
+
+      <MiniScraper sdPath={sdPath} />
     </div>
   );
 }
