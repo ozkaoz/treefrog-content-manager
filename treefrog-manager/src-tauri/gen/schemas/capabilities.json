@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Default capabilities for TreeFrog Content Manager","local":true,"windows":["main"],"permissions":["core:default","core:event:allow-emit","core:event:allow-listen","core:window:allow-create","core:window:allow-show","core:window:allow-set-title","core:app:allow-app-show","dialog:allow-open","dialog:allow-save","dialog:allow-message","fs:allow-read","fs:allow-exists","fs:allow-stat","fs:allow-read-dir","opener:allow-open-url","opener:allow-open-path"]}}

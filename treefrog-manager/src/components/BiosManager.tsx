@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { pickFolder } from "../services/dialog";
+import EmptyState from "./EmptyState";
 
 type BiosVariant = {
   id: string;
@@ -50,13 +52,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  missing: "#c62828",
-  found_valid: "#2e7d32",
-  found_invalid: "#c62828",
-  found_unknown: "#ef6c00",
-  duplicate: "#1565c0",
-  conflict: "#c62828",
-  not_required: "#757575",
+  missing: "var(--danger)",
+  found_valid: "var(--success)",
+  found_invalid: "var(--danger)",
+  found_unknown: "var(--warning)",
+  duplicate: "var(--accent)",
+  conflict: "var(--danger)",
+  not_required: "var(--text-muted)",
 };
 
 export default function BiosManager() {
@@ -74,7 +76,6 @@ export default function BiosManager() {
         const res = (await tauri.invoke("bios_profile")) as { definitions: BiosDefinition[] };
         setDefinitions(res.definitions || []);
       } else {
-        // Fallback: fetch via profile (mock)
         const mock: BiosDefinition[] = [
           {
             id: "ps1_bios",
@@ -119,6 +120,15 @@ export default function BiosManager() {
     }
   }
 
+  async function handleBrowse() {
+    try {
+      const sel = await pickFolder({ title: "Select BIOS source folder" });
+      if (sel) setBiosSource(sel);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function handleScan() {
     if (!biosSource) {
       setError("Select a BIOS source directory (e.g., C:\\BIOS)");
@@ -132,7 +142,6 @@ export default function BiosManager() {
       if (tauri) {
         res = await tauri.invoke("bios_scan", { biosSource });
       } else {
-        // Mock for web dev
         res = mockBiosScan(biosSource);
       }
       const data = res as { results: BiosValidation[] };
@@ -145,46 +154,55 @@ export default function BiosManager() {
     }
   }
 
-  // Load definitions on mount
   if (definitions.length === 0) {
-    // Use effect-like pattern without useEffect to keep simple
     setTimeout(() => loadDefinitions(), 0);
   }
 
   return (
     <div className="card">
       <h3>BIOS Manager — TreeFrogUI profile-driven, no downloads</h3>
-      <p style={{ fontSize: 12, color: "#555" }}>
+      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
         BIOS files are <strong>user-supplied only</strong> — never downloaded. Workflow: user provides file → manager scans (scanner → archive inspector → hash → validator) → validates → plans deployment. R36SX is a target, not the manager identity; all BIOS logic is TreeFrogUI-global via <code>profiles/treefrogui/bios.json</code>.
       </p>
 
-      <div className="row" style={{ marginBottom: 12 }}>
-        <input
-          value={biosSource}
-          onChange={(e) => setBiosSource(e.target.value)}
-          placeholder="C:\BIOS or /path/to/bios"
-          style={{ flex: 1, padding: "6px 8px" }}
-        />
-        <button onClick={async () => {
-          const tauri = (window as unknown as { __TAURI__?: { dialog: { open: (opts: unknown) => Promise<string | null> } } }).__TAURI__;
-          if (tauri?.dialog) {
-            // @ts-ignore
-            const sel = await window.__TAURI__.dialog.open({ directory: true, title: "Select BIOS source folder" });
-            if (typeof sel === "string") setBiosSource(sel);
-          } else {
-            const v = prompt("Enter BIOS source path:", biosSource);
-            if (v) setBiosSource(v);
-          }
-        }}>Browse…</button>
-        <button onClick={handleScan} disabled={loading || !biosSource}>{loading ? "Scanning…" : "Scan Source"}</button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+        <label style={{ fontSize: 13, fontWeight: 600 }}>BIOS source folder</label>
+        <div className="row" style={{ alignItems: "stretch" }}>
+          <div
+            style={{
+              flex: 1,
+              padding: "8px 10px",
+              border: "1px solid var(--border)",
+              borderRadius: 6,
+              background: "var(--input)",
+              color: biosSource ? "var(--text)" : "var(--text-muted)",
+              fontSize: 13,
+              minHeight: 36,
+              display: "flex",
+              alignItems: "center",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={biosSource || "No folder selected"}
+          >
+            {biosSource || "No folder selected"}
+          </div>
+          <button onClick={handleBrowse}>Browse</button>
+          <button onClick={handleScan} disabled={loading || !biosSource} className="primary">
+            {loading ? "Scanning…" : "Scan Source"}
+          </button>
+        </div>
       </div>
-      {error && <p style={{ color: "crimson", fontSize: 12 }}>{error}</p>}
+      {error && <div className="status-error" style={{ fontSize: 12, marginBottom: 8 }}>{error}</div>}
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-        <div style={{ flex: 1 }}>
+      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ flex: 1, minWidth: 360 }}>
           <h4>Requirements {results && `(${results.length})`}</h4>
-          {!results && <p style={{ fontSize: 12, color: "#777" }}>Select a BIOS source and press Scan. The scan recursively inspects files, safely inspects archives (temp workspace), hashes where needed, matches filenames/patterns/aliases, validates hashes/size, and identifies duplicates/conflicts/unknown.</p>}
-          {results && (
+          {!results && !loading && <EmptyState kind="empty" title="No scan yet" description="Select a BIOS source and press Scan. The scan recursively inspects files, safely inspects archives (temp workspace), hashes where needed, matches filenames/patterns/aliases, validates hashes/size, and identifies duplicates/conflicts/unknown." />}
+          {loading && <EmptyState kind="loading" title="Scanning…" description="Recursive scan, archive inspection, hashing, validation." />}
+          {results && results.length === 0 && <EmptyState kind="empty" title="No BIOS found" description="No files matched BIOS patterns in the selected folder." />}
+          {results && results.length > 0 && (
             <table>
               <thead>
                 <tr>
@@ -204,10 +222,10 @@ export default function BiosManager() {
                   const statusLabel = STATUS_LABEL[r.state] || r.state;
                   const action = r.state === "found_valid" ? "copy" : r.state === "missing" ? "manual_review" : r.state === "found_invalid" ? "conflict" : r.state === "duplicate" ? "skip" : "manual_review";
                   return (
-                    <tr key={idx} onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.bios_id === r.bios_id ? "#e3f2fd" : undefined }}>
+                    <tr key={idx} onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.bios_id === r.bios_id ? "var(--surface)" : undefined }}>
                       <td style={{ fontSize: 11 }}>{def?.system_name || r.system_id || r.bios_id}</td>
                       <td style={{ fontSize: 11 }}>{def?.name || r.bios_id}</td>
-                      <td><span className="badge" style={{ background: STATUS_COLOR[r.state] || "#757575", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{statusLabel}</span></td>
+                      <td><span className="badge" style={{ background: STATUS_COLOR[r.state] || "var(--text-muted)", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{statusLabel}</span></td>
                       <td style={{ fontSize: 11 }}>{variantId || (def?.variants[0]?.filenames[0] || "-")}</td>
                       <td style={{ fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.file || ""}>{r.file ? r.file.split(/[\\/]/).pop() : "-"}</td>
                       <td style={{ fontSize: 10 }}>{def?.primary_destination || def?.destinations[0] || "-"}</td>
@@ -218,23 +236,23 @@ export default function BiosManager() {
               </tbody>
             </table>
           )}
-          {results && (
-            <p style={{ fontSize: 11, color: "#2e7d32", marginTop: 8 }}>
-              Any one valid variant satisfies the logical requirement (e.g., PS1: scph1001.bin <em>or</em> scph5501.bin). Conditional requirements: PS1 BIOS shows <em>Missing</em> only when PS1 content was detected; otherwise <em>Not Required</em> — “Required because PlayStation content was detected.”
+          {results && results.length > 0 && (
+            <p style={{ fontSize: 11, color: "var(--success)", marginTop: 8 }}>
+              Any one valid variant satisfies the logical requirement (e.g., PS1: scph1001.bin <em>or</em> scph5501.bin). Conditional requirements: PS1 BIOS shows <em>Missing</em> only when PS1 content was detected; otherwise <em>Not Required</em>.
             </p>
           )}
         </div>
 
-        <div style={{ flex: 1, minWidth: 280, border: "1px solid #ddd", borderRadius: 6, padding: 12, background: "#fafafa" }}>
+        <div style={{ flex: 1, minWidth: 280, border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--surface)" }}>
           <h4>Details {selected ? `— ${selected.bios_id}` : ""}</h4>
-          {!selected && <p style={{ fontSize: 12, color: "#777" }}>Select a BIOS requirement to see system, logical name, requirement status, accepted filenames, selected variant, source path, expected destination, expected size, SHA-256 when known, actual SHA-256, and validation reason. Hashes abbreviated in tables; full hash available here.</p>}
+          {!selected && <EmptyState kind="empty" title="No selection" description="Select a BIOS requirement to see system, logical name, requirement status, accepted filenames, selected variant, source path, expected destination, expected size, SHA-256 when known, actual SHA-256, and validation reason." />}
           {selected && (() => {
             const def = definitions.find((d) => d.id === selected.bios_id);
             return (
               <div style={{ fontSize: 12 }}>
                 <div><strong>System:</strong> {def?.system_name || selected.system_id} ({def?.system_id || selected.system_id})</div>
                 <div><strong>Logical BIOS:</strong> {def?.name || selected.bios_id}</div>
-                <div><strong>Status:</strong> <span style={{ color: STATUS_COLOR[selected.state] || "#000", fontWeight: 600 }}>{STATUS_LABEL[selected.state] || selected.state}</span> — {selected.reason}</div>
+                <div><strong>Status:</strong> <span style={{ color: STATUS_COLOR[selected.state] || "var(--text)", fontWeight: 600 }}>{STATUS_LABEL[selected.state] || selected.state}</span> — {selected.reason}</div>
                 <div><strong>Required:</strong> {selected.required ? "Yes" : "No"} {def?.requirement?.mandatory_when ? `(${def.requirement.mandatory_when})` : ""}</div>
                 <div><strong>Accepted filenames:</strong> {(def?.accepted_filenames || []).join(", ")}</div>
                 <div><strong>Aliases/patterns:</strong> {[...(def?.aliases || []), ...(def?.accepted_patterns || [])].join(", ")}</div>
@@ -246,12 +264,6 @@ export default function BiosManager() {
                 <div><strong>SHA-256 when known:</strong> <span style={{ wordBreak: "break-all", fontSize: 11 }}>{(def?.hashes_sha256?.[0] || def?.variants[0]?.hashes_sha256?.[0] || "none (size-only or unknown)")}</span></div>
                 <div><strong>Actual SHA-256:</strong> <span style={{ wordBreak: "break-all", fontSize: 11 }}>{selected.hash ? `${selected.hash.slice(0, 16)}… (${selected.hash})` : "-"}</span></div>
                 <div><strong>Validation reason:</strong> {selected.reason}</div>
-                <div style={{ marginTop: 8, fontSize: 11, color: "#555" }}>
-                  <strong>Actions (read-only planning):</strong> import/copy, skip, replace, conflict, duplicate, manual review — via existing <code>apply_resolutions</code> framework, not a BIOS-specific engine. No writes in this phase.
-                </div>
-                <div style={{ marginTop: 8, fontSize: 11, color: "#2e7d32" }}>
-                  <strong>Deployment plan:</strong> BIOS appears in global Dry Run as <code>BIOS: source C:\BIOS\scph5501.bin → cubegm/bios/scph5501.bin action copy reason required PS1 BIOS is valid</code> (or <code>manual_review</code> if missing).
-                </div>
               </div>
             );
           })()}
@@ -262,7 +274,6 @@ export default function BiosManager() {
 }
 
 function mockBiosScan(_source: string) {
-  // Mock for web dev without Tauri
   return {
     results: [
       { bios_id: "ps1_bios", system_id: "psx", state: "found_valid", reason: "exact filename + known hash", required: true, file: "C:\\BIOS\\scph5501.bin", hash: "abc123...", size: 524288, variant: "scph5501.bin" },

@@ -1,8 +1,8 @@
 # TreeFrog Content Manager — Architecture
 
 **Version:** 1.1.0  
-**Date:** 2026-08-28  
-**Scope:** Phase BIOS-B BIOS Manager UI + planner integration (global TreeFrogUI, no SD writes) + Phase 2C video/desktop
+**Date:** 2026-08-29  
+**Scope:** Phase 2E Desktop UX foundation (native dialogs, Windows theme, TreeFrogUI branding, navigation) + BIOS-B + Phase 2C video/desktop
 
 ---
 
@@ -135,14 +135,32 @@ See `archive_policy.json:rationale`.
 
 ---
 
+## 7. Desktop UX foundation (Phase 2E)
+
+**Native Windows dialogs:** `src/services/dialog.ts` wraps `@tauri-apps/plugin-dialog` `open()`. `pickFolder(opts)`, `pickFile(opts)`, `pickFiles()`, `pickFolders()` are the only way to select folders/files; all modules share the abstraction (`SourcePicker`, `SdPicker`, `BiosManager`, `LgptManager`, future SD target). Rust registers `tauri_plugin_dialog::init()` and `capabilities/default.json` grants `dialog:allow-open/save/message`; `tauri.conf.json` `plugins:{}` is sufficient. No `window.prompt()` or `text-only` dialogs in packaged app; manual typing only as hidden debug fallback (`debugAllowManual`). Tested via `test_phase2e_desktop_ux.py` static checks + manual QA `docs/MANUAL_QA_2E.md` steps 4-6,10-11 verify native Explorer picker opens.
+
+**Windows Light/Dark:** Centralized tokens in `src/styles.css` `:root` (`--bg`, `--surface`, `--surface-elevated`, `--text`, `--text-muted`, `--border`, `--accent`, `--success`, `--warning`, `--danger`, `--input`, `--focus` + `--focus-ring`, shadows, badge colors). Light defaults, `@media (prefers-color-scheme: dark)` and `[data-theme="dark"]` override; `src/services/theme.ts` (`getSystemTheme()`, `watchSystemTheme(cb)`, `applyTheme(theme)`, `initTheme()`) mirrors `window.matchMedia("(prefers-color-scheme: dark)")` and sets `data-theme` + `color-scheme` for dynamic updates without restart. `App.tsx` calls `initTheme()` on mount. No hard-coded `#ddd` scattered; components use `var(--border)`/`var(--surface)`; readable contrast both themes. Not TreeFrogUI device theme.
+
+**Branding:** Official `xgame-logo.bmp` (480×854, black bg, pixel-art frog + "treefrogui" wordmark) from `tzubertowski/TreeFrogUI` main. Primary mark is **frog ONLY** (no redraw, original pixel colors, NEAREST scaling to preserve crisp). Pipeline `scripts/generate_branding.py` (deterministic): near-black `r<20&&g<20&&b<20` → transparent, overall bbox `201,250,288,638`, split at 10px zero gap `349–358` into frog `201,250,288,353` → trimmed `87×99` `frog-only.png` → square `99×99` `frog-square.png`; icons `32x32.png`, `128x128.png`, `128x128@2x.png` (256), `256x256.png`, `512x512.png`, `icon.ico` (16/32/48/256), `icon.icns` (512) via NEAREST. Header (`Header.tsx`) uses 32×32 frog-square + "TreeFrog Content Manager"; window/taskbar/installer use Tauri icons; About/Credits shows full frog+wordmark secondary (`src/components/About.tsx`). Provenance/license documented in `src/assets/branding/README.md` (CC BY-NC-SA 4.0, FrogUI upstream). No newly generated logo, no unnecessary duplicated source `xgame-logo.bmp`/`logo.png` in repo beyond derived frog.
+
+**Navigation:** `src/App.tsx` 8 tabs `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` via `nav` + `active` class (variables). `Games/Music/Videos/Settings` are `Placeholder` ("Coming in a future release", `not_implemented` empty state). `SD Card` shows future SD target picker (native dialog) but notes read-only milestone. `BIOS` + `LGPT` remain functional, `Overview` functional.
+
+**Source picker:** `src/components/SourcePicker.tsx` (`label`, `value`, `onChange`, `title`, `placeholder`) — path visible/readable (`No folder selected` or actual path) + `[Browse]` opens native dialog; `SdPicker.tsx` same abstraction for legacy SD picker; `BiosManager`/`LgptManager` use `pickFolder()` consistently.
+
+**Empty/standard states:** `src/components/EmptyState.tsx` (`empty/loading/success/warning/error/not_implemented`) with icon + title + description + optional action; `Placeholder.tsx` wraps it for future modules; used in Overview (no folder → empty, scanning → loading), BIOS/LGPT (no scan → empty, scanning → loading, no files → empty), DryRunPreview (no scan → empty). Not over-designed.
+
+---
+
 ## 7. Testing
 
-`treefrog-manager/tests/` 94 tests:
+`treefrog-manager/tests/` 151 tests:
 
 - 31 original: profile_loader, scanner_classification, archive_inspection, duplicate_engine, dry_run_planner, sd_detection, bios_and_lgpt
 - 22 Phase 2A (`test_phase2a_archive_ingestion.py`): valid ZIP, nested dirs, traversal, absolute, drive-letter, symlink, hardlink/ADS colon, collision, expansion limit, member count limit, payload, container, grouped CUE/BIN, duplicate archive, duplicate extracted, nested bomb, unsupported (7z/rar), deterministic, temp workspace guard, no overwrite, profile-driven
 - 13 Phase 2B (`test_phase2b_duplicate_resolution.py`): identical loose files, identical different filenames, same filename diff content, grouped CUE/BIN duplicates, archive vs extracted duplicates, destination unchanged, explicit replace/keep_destination/keep_both/skip, deterministic, collision/resolution metadata, zero SD writes
 - 17 Phase BIOS-A (`test_bios_validation.py`): valid by filename+hash, alias+hash, invalid wrong hash, size-only, unknown, missing, duplicate identical, conflict same filename diff content, multiple variants, conditional triggered/not required, archive payload/container/unsupported, deterministic, schema, no invented hashes
+- 24 Phase LGPT (`test_lgpt_manager.py`): samples (normal, recursive, duplicate, alias, conflict, unchanged, archive, unsafe, deterministic) + projects (logical unit, duplicate, conflict, unchanged, deterministic identity, nested, container) + planner deployment entries + build script
+- 20 Phase 2E (`test_phase2e_desktop_ux.py`): dialog service, no prompt, source-picker, SD picker, theme tokens, theme init, frog-only asset, branding provenance, icons, no duplicated source, navigation entries, working modules, source-picker consistency, empty states, version consistency, Tauri build config, header/about branding, no SD writes
 
 All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `cubegm/`+`roms/` markers). No test writes to real SD.
 
@@ -150,7 +168,7 @@ All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `c
 
 ---
 
-## 8. Desktop build (Definition of Done) + Planner as single source
+## 8. Desktop UX + Desktop build (Definition of Done) + Planner as single source
 
 **Desktop (from Phase 2C):** Windows x64 via Tauri 2 + Rust stable + Node 20 + MSVC + WebView2 + FFmpeg/ffprobe. Reproducible via `scripts/build_windows.ps1` (PowerShell) and `scripts/build_windows.sh` (WSL wrapper documenting cross-compile limitation). Artifacts `treefrog-manager.exe` + MSI/NSIS, `--self-check` verifies profile 1.1.0/75, video provisional, ffmpeg, dry-run. No milestone complete without tested desktop build (AGENTS.md §15).
 
@@ -164,9 +182,9 @@ All run without SD (`tempfile.TemporaryDirectory` for source and fake SD with `c
 
 ## 9. Git discipline and next
 
-- `sd_root/` untouched (`git diff -- sd_root` empty) — confirmed for BIOS-A
+- `sd_root/` untouched (`git diff -- sd_root` empty) — confirmed for 2E (also 151 tests)
 - Content manager repo independent from LGPT runtime payload
-- Phase BIOS-A is backend/profile validation only (no SD writes, no BIOS UI, no 7z/RAR, no video conversion). Next is Phase BIOS-B UI or Phase 2C SD writes (not in this task).
+- Phase 2E is Desktop UX foundation (native dialogs, theme, branding, navigation, source picker, empty states) + still no SD writes, no 7z/RAR, no new backend content features. Next is Phase 3 Music/Images/Ebooks or SD writes.
 
 ## 10. BIOS is TreeFrogUI-global, not R36SX-specific
 

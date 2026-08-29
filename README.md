@@ -42,6 +42,8 @@ sample browser and chopper shortcuts.
 
 ## Download
 
+### LGPT for R36SX (Bacon-1.5) — Runtime
+
 Use the latest GitHub Release **Bacon-1.5** to install the precompiled port. The repository contains source code; release assets contain the compiled core and SD installer.
 
 **Download:**
@@ -58,6 +60,26 @@ Use the latest GitHub Release **Bacon-1.5** to install the precompiled port. The
 - [Troubleshooting — English](docs/TROUBLESHOOTING_EN.md)
 - [Solución de problemas — Español](docs/TROUBLESHOOTING_ES.md)
 
+### TreeFrog Content Manager (Desktop) — Manager
+
+**End-user installation (Windows x64):**
+
+- Download the latest **TreeFrog Content Manager** GitHub Release asset: `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` (NSIS installer, with `.sha256`). No manual `target/release` lookup — the build copies the installer to Desktop as `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe`.
+- Run the installer → Start Menu / Desktop shortcuts → launch **TreeFrog Content Manager**. Window/taskbar/installer icon is the TreeFrog frog pixel-art.
+
+**Developer build (from source):**
+
+```powershell
+# Prerequisites: Rust stable, Node 20, MSVC, WebView2 — see docs/BUILD_WINDOWS.md
+git clone https://github.com/ozkaoz/treefrog-content-manager.git
+cd treefrog-content-manager
+powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+# Artifacts: treefrog-manager/src-tauri/target/release/treefrog-manager.exe + bundle/msi + bundle/nsis
+# Manual QA: docs/MANUAL_QA_2E.md
+```
+
+Branding: Frog pixel-art from `xgame-logo.bmp` (TreeFrogUI upstream, CC BY-NC-SA 4.0) — frog-only as primary icon, transparent `src/assets/branding/frog-only.png` derived via `scripts/generate_branding.py`; full frog+wordmark retained only in About/Credits (`src/assets/branding/README.md`). No newly generated logo.
+
 ## Repository layout
 
 - `source/`: current LGPT/TreeFrog source.
@@ -65,9 +87,11 @@ Use the latest GitHub Release **Bacon-1.5** to install the precompiled port. The
 - `deployment/`: files installed on the SD card.
 - `recovery/`: validated UAC2 kernel module.
 - `kernel_module_tools/`: module rebuild and verification tools.
-- `scripts/`: build, audit, release, verification and legacy deployment utilities. `scripts/install.sh` and `scripts/verify.sh` are legacy U2523 and are **not** the canonical Bacon-1.5 installation path. Current installation: GitHub Bacon release ZIP → contents to SD root (see `docs/ai/RELEASE_CONTRACT.md`).
+- `scripts/`: build, audit, release, verification and legacy deployment utilities. `scripts/install.sh` and `scripts/verify.sh` are legacy U2523 and are **not** the canonical Bacon-1.5 installation path. Current installation: GitHub Bacon release ZIP → contents to SD root (see `docs/ai/RELEASE_CONTRACT.md`). `scripts/build_windows.ps1` + `scripts/generate_branding.py` for desktop.
 - `tests/`: current regression tests.
-- `docs/`: consolidated user and developer documentation.
+- `docs/`: consolidated user and developer documentation. `docs/BUILD_WINDOWS.md` (desktop build), `docs/MANUAL_QA_2E.md` (manual QA).
+- `profiles/treefrogui/`: versioned declarative TreeFrogUI profiles (systems, media, bios, lgpt, video, archive, sd markers).
+- `treefrog-manager/`: Tauri 2 desktop app (Rust + React + TypeScript, `src/services/dialog.ts` native dialogs, `src/services/theme.ts` Windows theme, `src/assets/branding/frog-only.png` frog icon, `src/components/` navigation/source-picker/empty-states).
 
 ## License
 

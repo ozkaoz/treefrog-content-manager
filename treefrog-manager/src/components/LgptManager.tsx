@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { pickFolder } from "../services/dialog";
+import EmptyState from "./EmptyState";
 
 type LgptScanResult = {
   samples: { path: string; hash: string; size: number }[];
@@ -19,15 +21,21 @@ export default function LgptManager() {
   const [error, setError] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "new" | "duplicate" | "conflict" | "unchanged">("all");
 
-  async function pickFolder(setter: (v: string) => void) {
-    const tauri = (window as unknown as { __TAURI__?: { dialog: { open: (opts: unknown) => Promise<string | null> } } }).__TAURI__;
-    if (tauri?.dialog) {
-      // @ts-ignore
-      const sel = await window.__TAURI__.dialog.open({ directory: true, title: "Select LGPT folder" });
-      if (typeof sel === "string") setter(sel);
-    } else {
-      const v = prompt("Enter folder path:");
-      if (v) setter(v);
+  async function handlePickSamples() {
+    try {
+      const sel = await pickFolder({ title: "Select LGPT Samples folder (lgpt/samples)" });
+      if (sel) setSamplesSource(sel);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function handlePickProjects() {
+    try {
+      const sel = await pickFolder({ title: "Select LGPT Projects folder (lgpt/projects)" });
+      if (sel) setProjectsSource(sel);
+    } catch (e) {
+      setError(String(e));
     }
   }
 
@@ -41,7 +49,6 @@ export default function LgptManager() {
         const res = await tauri.invoke("lgpt_scan_samples", { samplesSource }) as LgptScanResult;
         setSamplesResult(res);
       } else {
-        // Mock for web dev
         setSamplesResult({
           samples: [
             { path: `${samplesSource}/kick.wav`, hash: "aaa111", size: 10244 },
@@ -96,33 +103,40 @@ export default function LgptManager() {
   return (
     <div className="card">
       <h3>LGPT — Samples and Projects</h3>
-      <p style={{ fontSize: 12, color: "#555" }}>
+      <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
         LGPT is a profile/integration within TreeFrog Content Manager (<code>lgpt/samples</code> + <code>lgpt/projects</code> via <code>lgpt.json</code>, R36SX is a target, not the manager identity). Reuses scanner, logical-unit model, archive inspector, SHA-256, conflict resolver, deployment planner, dry-run UI. No SD writes in this milestone. WAV is the explicit baseline for samples.
       </p>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "1px solid #ddd", paddingBottom: 8 }}>
-        <button onClick={() => setActiveSubTab("samples")} style={{ background: activeSubTab === "samples" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeSubTab === "samples" ? 600 : 400 }}>Samples</button>
-        <button onClick={() => setActiveSubTab("projects")} style={{ background: activeSubTab === "projects" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeSubTab === "projects" ? 600 : 400 }}>Projects</button>
+      <div className="nav" style={{ marginBottom: 12 }}>
+        <button onClick={() => setActiveSubTab("samples")} className={activeSubTab === "samples" ? "active" : ""}>Samples</button>
+        <button onClick={() => setActiveSubTab("projects")} className={activeSubTab === "projects" ? "active" : ""}>Projects</button>
       </div>
 
       {activeSubTab === "samples" && (
         <div>
           <h4>Samples — lgpt/samples (profile-driven)</h4>
-          <div className="row" style={{ marginBottom: 8 }}>
-            <input value={samplesSource} onChange={(e) => setSamplesSource(e.target.value)} placeholder="C:\LGPT\Samples or /path/to/samples" style={{ flex: 1, padding: "6px 8px" }} />
-            <button onClick={() => pickFolder(setSamplesSource)}>Browse…</button>
-            <button onClick={handleScanSamples} disabled={loading || !samplesSource}>{loading ? "Scanning…" : "Scan"}</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+            <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Samples source folder</label>
+            <div className="row" style={{ alignItems: "stretch" }}>
+              <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: samplesSource ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
+                {samplesSource || "No folder selected"}
+              </div>
+              <button onClick={handlePickSamples}>Browse</button>
+              <button onClick={handleScanSamples} disabled={loading || !samplesSource} className="primary">{loading ? "Scanning…" : "Scan"}</button>
+            </div>
           </div>
-          <p style={{ fontSize: 11, color: "#777" }}>Recursive scan, WAV baseline, SHA-256 duplicate, same-name/different-content conflict, unchanged, archive via Phase 2A, deterministic, dry-run, no SD writes.</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Recursive scan, WAV baseline, SHA-256 duplicate, same-name/different-content conflict, unchanged, archive via Phase 2A, deterministic, dry-run, no SD writes.</p>
+          {!samplesResult && !loading && <EmptyState kind="empty" title="No scan yet" description="Select a Samples folder and press Scan. Click Browse to open the native Windows folder picker." />}
+          {loading && activeSubTab === "samples" && <EmptyState kind="loading" title="Scanning…" />}
           {samplesResult && (
             <>
               <div style={{ fontSize: 12, marginBottom: 6 }}>
                 <strong>Counts:</strong> {samplesResult.samples.length} samples scanned — {currentPlan?.summary.new ?? 0} new, {currentPlan?.summary.duplicate ?? 0} duplicate, {currentPlan?.summary.unchanged ?? 0} unchanged, {currentPlan?.summary.conflict ?? 0} conflict
               </div>
               <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
-                <span style={{ fontSize: 11 }}>Filter:</span>
+                <span style={{ fontSize: 11, color: "var(--text-muted)" }}>Filter:</span>
                 {(["all", "new", "duplicate", "conflict", "unchanged"] as const).map((f) => (
-                  <button key={f} onClick={() => setFilter(f)} style={{ padding: "2px 8px", fontSize: 11, background: filter === f ? "#e3f2fd" : "#f5f5f5" }}>{f}</button>
+                  <button key={f} onClick={() => setFilter(f)} style={{ padding: "2px 8px", fontSize: 11 }} className={filter === f ? "active" : ""}>{f}</button>
                 ))}
               </div>
               <table>
@@ -147,7 +161,7 @@ export default function LgptManager() {
                   ))}
                 </tbody>
               </table>
-              <p style={{ fontSize: 11, color: "#2e7d32" }}>No SD writes — dry-run only. Originals never modified, temp workspace only, deterministic ordering.</p>
+              {currentPlan?.entries.length === 0 && <EmptyState kind="empty" title="No files found" description="No WAV samples found in the selected folder." />}
             </>
           )}
         </div>
@@ -156,12 +170,19 @@ export default function LgptManager() {
       {activeSubTab === "projects" && (
         <div>
           <h4>Projects — lgpt/projects (logical units, not flattened)</h4>
-          <div className="row" style={{ marginBottom: 8 }}>
-            <input value={projectsSource} onChange={(e) => setProjectsSource(e.target.value)} placeholder="C:\LGPT\Projects or /path/to/projects" style={{ flex: 1, padding: "6px 8px" }} />
-            <button onClick={() => pickFolder(setProjectsSource)}>Browse…</button>
-            <button onClick={handleScanProjects} disabled={loading || !projectsSource}>{loading ? "Scanning…" : "Scan"}</button>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+            <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Projects source folder</label>
+            <div className="row" style={{ alignItems: "stretch" }}>
+              <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: projectsSource ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
+                {projectsSource || "No folder selected"}
+              </div>
+              <button onClick={handlePickProjects}>Browse</button>
+              <button onClick={handleScanProjects} disabled={loading || !projectsSource} className="primary">{loading ? "Scanning…" : "Scan"}</button>
+            </div>
           </div>
-          <p style={{ fontSize: 11, color: "#777" }}>Projects are logical units (directory + related files, not flattened). Recursive scan, project detection, duplicate/conflict/unchanged via deterministic content hash, deterministic planning, dry-run, no SD writes. If exact LGPT project structure is ambiguous, see docs/PLAN.md and lgpt.json notes.</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Projects are logical units (directory + related files, not flattened). Recursive scan, project detection, duplicate/conflict/unchanged via deterministic content hash, deterministic planning, dry-run, no SD writes.</p>
+          {!projectsResult && !loading && <EmptyState kind="empty" title="No scan yet" description="Select a Projects folder and press Scan. Click Browse to open the native Windows folder picker." />}
+          {loading && activeSubTab === "projects" && <EmptyState kind="loading" title="Scanning…" />}
           {projectsResult && (
             <>
               <div style={{ fontSize: 12, marginBottom: 6 }}>
@@ -176,22 +197,22 @@ export default function LgptManager() {
                     <tr key={idx}>
                       <td style={{ fontSize: 11 }}>{e.source.split(/[\\/]/).pop()}</td>
                       <td style={{ fontSize: 11 }}>{e.destination}</td>
-                      <td style={{ fontSize: 10, color: "#555" }}>{(projectsResult.projects[idx]?.members || []).join(", ") || "-"}</td>
+                      <td style={{ fontSize: 10, color: "var(--text-muted)" }}>{(projectsResult.projects[idx]?.members || []).join(", ") || "-"}</td>
                       <td><span className={`badge badge-${e.action === "copy" ? "copy" : e.action === "skip_duplicate" ? "skip" : "conflict"}`}>{e.action}</span></td>
                       <td style={{ fontSize: 11 }}>{e.reason}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <p style={{ fontSize: 11, color: "#2e7d32" }}>Projects remain grouped directories; dry-run only.</p>
+              {currentPlan?.entries.length === 0 && <EmptyState kind="empty" title="No projects found" description="No LGPT projects (directory with project.lgpt/lgptsav.dat) found." />}
             </>
           )}
         </div>
       )}
 
-      {error && <p style={{ color: "crimson", fontSize: 12 }}>{error}</p>}
+      {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
-      <p style={{ fontSize: 11, color: "#777", marginTop: 12 }}>
+      <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 12 }}>
         Audio waveform/preview is a future enhancement (not in this milestone). Archive handling reuses Phase 2A <code>ArchiveHandler</code> (temp workspace, traversal/symlink/collision/expansion protections).
       </p>
     </div>

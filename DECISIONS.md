@@ -338,6 +338,33 @@
 
 ---
 
+## DEC-2026-08-29-01 — Phase 2E Desktop UX foundation: native dialogs, Windows theme, TreeFrog branding, navigation
+
+**Date:** 2026-08-29
+**Status:** ACTIVE
+**Scope:** TreeFrog Content Manager / desktop UX / dialogs / theme / branding / navigation / frontend
+
+**Context:** Milestone 2E is DESKTOP UX FOUNDATION (no new backend content, no physical SD writes, no 7z/RAR, no new artwork backend). Prior Browse controls used `window.prompt("Enter source folder path:")` → `tauri.localhost` fake dialog, not native Windows picker. App had no system theme integration (hard-coded `#fff`/`#ddd`/`#555`), placeholder 32×32 icons (116 bytes, no frog), only 3 tabs (Overview/BIOS/LGPT), and source pickers scattered with `window.__TAURI__.dialog.open` fallbacks. Must establish native dialogs, Windows Light/Dark, TreeFrogUI frog branding (frog-only vs full wordmark), 8-tab navigation, consistent source-picker, empty states, while preserving BIOS/LGPT functionality.
+
+**Decision:** 
+- **Native dialogs:** Create reusable `src/services/dialog.ts` wrapping `@tauri-apps/plugin-dialog` `open({directory:true})` / `open({directory:false})` (`pickFolder()`, `pickFile()`, `pickFiles()`, `pickFolders()`). All modules share it: Games/Music/Video/BIOS/LGPT Samples/Projects/future SD target; `SourcePicker.tsx`/`SdPicker.tsx`/`BiosManager.tsx`/`LgptManager.tsx` + `App.tsx` `handlePickSd` call it; Rust `tauri_plugin_dialog::init()` + `capabilities/default.json` `dialog:allow-open` (already). No `window.prompt` in packaged app; hidden `debugAllowManual` fallback only for web dev. Tested via static `test_phase2e` + manual QA 2E steps 4-6,10-11.
+- **Windows theme:** Centralized tokens in `src/styles.css` `:root` (`--bg`, `--surface`, `--surface-elevated`, `--text`, `--text-muted`, `--border`, `--accent`, `--success`, `--warning`, `--danger`, `--input`, `--focus`) + `@media (prefers-color-scheme: dark)` + `[data-theme]` overrides; `src/services/theme.ts` (`getSystemTheme()`, `watchSystemTheme()`, `applyTheme()`, `initTheme()`) mirrors `matchMedia("(prefers-color-scheme: dark)")` and sets `data-theme`+`color-scheme` for dynamic OS change; `App.tsx` `useEffect(initTheme)`. Not TreeFrogUI device theme.
+- **Branding:** Use official `xgame-logo.bmp` 480×854 from `tzubertowski/TreeFrogUI` main (also inspected `logo.png` 1536×1024, `logo-readme.png` 1303×341). Frog ONLY as primary mark (no redraw): deterministic `scripts/generate_branding.py` (PIL, `r<20&&g<20&&b<20`→transparent, overall bbox 201,250,288,638, split at 10px zero gap 349–358, frog 201,250,288,353 → trimmed 87×99 `frog-only.png` → square 99×99 `frog-square.png`, NEAREST to keep pixel-art crisp). Icons `src-tauri/icons/32x32.png` (32), `128x128.png` (128), `128x128@2x.png` (256), `256x256.png`, `512x512.png`, `icon.ico` (16/32/48/256), `icon.icns` (512) via NEAREST. Header `Header.tsx` uses 32×32 frog-square + "TreeFrog Content Manager"; window/taskbar/installer use Tauri icons; About/Credits `About.tsx` shows full frog+wordmark secondary; provenance documented `src/assets/branding/README.md` (CC BY-NC-SA 4.0, FrogUI upstream); no newly generated logo; no unnecessary large `xgame-logo.bmp` duplicate.
+- **Navigation:** `src/App.tsx` 8 tabs `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` via `.nav`/`active`; `Games/Music/Videos/Settings` are `Placeholder.tsx` ("Coming in a future release", `not_implemented`), `SD Card` shows future SD target picker note read-only, `About` is `About.tsx`; BIOS/LGPT functional; Overview functional.
+- **Source picker:** Revised `SourcePicker.tsx` (`label`, `value`, `onChange`, `title`, `placeholder`) shows path (`No folder selected` or actual) + `[Browse]` native; consistent across all modules.
+- **Empty states:** `EmptyState.tsx` (`empty/loading/success/warning/error/not_implemented`) + `Placeholder.tsx`; used in Overview (no folder, scanning), BIOS/LGPT (no scan, scanning, no files), DryRunPreview.
+- **Verification:** `test_phase2e_desktop_ux.py` 20 tests; `docs/MANUAL_QA_2E.md` 16-step manual QA (light→dark→native picker→BIOS/LGPT→relaunch→icon).
+
+**Reason:** Native Explorer pickers are desktop expectation; `prompt()` is web-style and unacceptable. System `prefers-color-scheme` is Tauri WebView native, keeping minimal custom state. Frog-only keeps branding restrained/professional (not handheld UI mimic) while respecting CC BY-NC-SA 4.0 and avoiding duplicate large assets. 8-tab navigation prepares product without faking functionality; empty states give small consistent language.
+
+**Consequences:** Frontend now `src/services/dialog.ts` + `theme.ts`, `styles.css` tokens, `Header/About/EmptyState/Placeholder/SourcePicker` updated, icons regenerated, navigation expanded, docs (`PLAN`, `ARCHITECTURE`, `BUILD_WINDOWS`, `README`, `MANUAL_QA_2E`) updated, tests 151 PASS (131+20), desktop build still reproducible via `scripts/build_windows.ps1`, no SD writes (`git diff -- sd_root` empty).
+
+**Evidence:** `src/services/dialog.ts` (pickFolder/pickFile, plugin-dialog), `src/services/theme.ts` (prefers-color-scheme, data-theme), `src/styles.css` (tokens, media query), `src/assets/branding/frog-only.png` 87×99 + `frog-square.png` 99×99, `src-tauri/icons/*` regenerated (32x32 1791B vs 116B placeholder, icon.icns 320k), `src/components/*` (Header, About, EmptyState, Placeholder, SourcePicker, BiosManager, LgptManager), `src/App.tsx` (8 tabs, initTheme, pickFolder for SD), `tests/test_phase2e_desktop_ux.py` 20 PASS, `pytest 151 PASS`, `npm run build` PASS (184kB JS + frog assets), `cargo check` PASS, `git diff -- sd_root` empty, `scripts/generate_branding.py` deterministic, manual QA `MANUAL_QA_2E.md` steps 1-16 documented.
+
+**Related:** `src/services/dialog.ts`, `src/services/theme.ts`, `src/styles.css`, `src/assets/branding/README.md`, `scripts/generate_branding.py`, `src-tauri/icons/*`, `src/components/`, `docs/PLAN.md` Phase 2E, `docs/ARCHITECTURE.md` §7, `docs/MANUAL_QA_2E.md`, `docs/BUILD_WINDOWS.md`, `README.md`, `CURRENT.md`, `CONTEXT_MAP.md`.
+
+---
+
 ### Removed / migrated (not durable — history stays in Git)
 
 - Operational pushes `999A2B27`, `3423e35`, `bdbda77`, `f3273f6`, `588270c`, `c74bd86`, `21bee8d`, `8cc0a47`, `10C9B608`, `38F8CF02`, `E9B23E36`, `DBAD57A7` etc. (DEC-2026-08-21-13..27, DEC-2026-08-21-29) — Git log is authority.

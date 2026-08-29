@@ -125,17 +125,31 @@ if ($nsisInstaller) {
     }
     Write-Host "Desktop resolved to: $desktopPath" -ForegroundColor Gray
     if (Test-Path $desktopPath) {
-        $friendlyName = "TreeFrog-Content-Manager-Setup.exe"
+        # Read version from treefrog-manager/package.json or tauri.conf.json
+        $version = "0.1.0"
+        try {
+            $pkgPath = Join-Path $ManagerDir "package.json"
+            if (Test-Path $pkgPath) {
+                $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+                if ($pkg.version) { $version = $pkg.version }
+            }
+        } catch {}
+        $friendlyName = "TreeFrog-Content-Manager-$version-Windows-x64-Setup.exe"
         $dest = Join-Path $desktopPath $friendlyName
         $checksumDest = "$dest.sha256"
+        # Also keep legacy name for compatibility
+        $legacyDest = Join-Path $desktopPath "TreeFrog-Content-Manager-Setup.exe"
         Write-Host "Copying installer to Desktop as $friendlyName ..." -ForegroundColor Cyan
         try {
             Copy-Item -LiteralPath $nsisInstaller.FullName -Destination $dest -Force
+            Copy-Item -LiteralPath $nsisInstaller.FullName -Destination $legacyDest -Force
             Write-Host "Copied to: $dest" -ForegroundColor Green
-            # Create SHA-256 checksum file
+            Write-Host "Legacy copy to: $legacyDest" -ForegroundColor Gray
+            # Create SHA-256 checksum files
             $hash = (Get-FileHash -LiteralPath $nsisInstaller.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
             $checksumLine = "$hash  $friendlyName"
             Set-Content -LiteralPath $checksumDest -Value $checksumLine -Encoding ascii
+            Set-Content -LiteralPath "$legacyDest.sha256" -Value "$hash  TreeFrog-Content-Manager-Setup.exe" -Encoding ascii
             Write-Host "Checksum created: $checksumDest" -ForegroundColor Green
             Write-Host "SHA-256: $hash" -ForegroundColor Gray
             Write-Host "Original bundle remains at: $($nsisInstaller.FullName)" -ForegroundColor Gray

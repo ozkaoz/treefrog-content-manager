@@ -76,6 +76,14 @@ Remove-Item -Recurse -Force dist, node_modules, src-tauri/target
 
 **Not committed:** `dist/`, `target/`, `node_modules/`, `*.msi`, `*.exe` (in `target/`) are in `.gitignore`.
 
-**Verified on:** Windows 10.0.26200 x64, Rust 1.98.0, Node 20.19.0, Tauri CLI 2.11.4, WebView2 151, MSVC 14.51, FFmpeg 7 (WinGet).
+**Desktop UX verification (Phase 2E):**
+
+- Native dialogs: `src/services/dialog.ts` (`pickFolder`/`pickFile`) via `@tauri-apps/plugin-dialog` → native Explorer picker, not `window.prompt`. Manual QA steps in `docs/MANUAL_QA_2E.md` verify Browse → native picker in packaged app. Capabilities `dialog:allow-open/save/message` in `src-tauri/capabilities/default.json`.
+- Windows theme: App follows `prefers-color-scheme` → Light (`--bg:#fff`) / Dark (`--bg:#0f172a`) via `src/styles.css` tokens + `src/services/theme.ts` `watchSystemTheme`. Switch OS dark while running → app updates dynamically. Verified via manual steps 8-9 in `MANUAL_QA_2E.md`.
+- Branding: Frog-only pixel-art from `xgame-logo.bmp` (TreeFrogUI CC BY-NC-SA 4.0) → `src/assets/branding/frog-only.png` + `frog-square.png` → `src-tauri/icons/*` (`32x32.png`, `128x128.png`, `128x128@2x.png`, `icon.ico`, `icon.icns`). Header, window, installer, favicon use frog; About shows full frog+wordmark secondary. See `src/assets/branding/README.md` and `scripts/generate_branding.py`.
+- Navigation: `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` — `Games/Music/Videos/Settings` are placeholders ("Coming in a future release"), no fake functionality; BIOS/LGPT/Overview remain functional.
+- Installer identity: `TreeFrog Content Manager` with frog icon; `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` on Desktop (existing workflow) with `.sha256`.
+
+**Verified on:** Windows 10.0.26200 x64, Rust 1.98.0, Node 20.19.0, Tauri CLI 2.11.4, WebView2 151, MSVC 14.51, FFmpeg 7 (WinGet). Phase 2E icons + dialogs + theme verified 2026-08-29.
 
 **Reproducibility:** `Cargo.lock` and `package-lock.json` are committed; `npm install` and `cargo build` fetch exact versions.

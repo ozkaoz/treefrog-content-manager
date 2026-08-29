@@ -46,10 +46,10 @@ Do not trust hardcoded historical state.
 
 ## Current Objective
 
-- **TreeFrog Content Manager — LGPT Manager (Samples + Projects):** One desktop app, not separate LGPT app; LGPT is profile/integration within existing manager (`TreeFrog Content Manager → TreeFrogUI content → BIOS → LGPT → Samples/Projects`), reuse scanner/logical-unit/archive/SHA-256/conflict resolver/deployment planner/dry-run UI; `lgpt.json` profile-driven destinations `lgpt/samples` + `lgpt/projects` (verified `sd_root/lgpt/*`), R36SX is target, not manager identity; Samples: recursive scan, WAV baseline, SHA-256 duplicate, same-name diff hash → conflict, alias duplicate, unchanged, archive via Phase 2A, deterministic, dry-run, no SD writes; Projects: directory logical units (e.g., `lgptsav.dat` + `project.lgpt` + `sample.wav`), not flattened, duplicate/conflict/unchanged via deterministic project hash, nested content, archive/container handling, deterministic planning, dry-run, no SD writes; UI: `LGPT` tab with `Samples`/`Projects` subtabs, source folder pickers, scanning, counts, dry-run actions (`New`/`Unchanged`/`Duplicate`/`Conflict`/`Manual review`/`Unsupported`), filtering, inspecting conflicts/duplicates; Global DryRun shows `LGPT Sample source → lgpt/samples/...` and `LGPT Project source → lgpt/projects/...` alongside ROM/Music/Video/BIOS; Health summary includes LGPT; no audio waveform/preview yet; fixtures synthetic `tests/fixtures/lgpt/samples` + `projects/ProjectA`/`ProjectB`; Windows installer copied to Desktop as `TreeFrog-Content-Manager-Setup.exe` + `.sha256`, build remains reproducible.
-- **TreeFrog Content Manager — Phase BIOS-B preserved:** BIOS Manager UI + planner integration, 7 states, conditional, multiple variants, no invented hashes.
+- **TreeFrog Content Manager — Phase 2E Desktop UX foundation (native dialogs, Windows theme, branding, navigation):** Replace `window.prompt()` with native Windows folder/file pickers via `src/services/dialog.ts` (`pickFolder()`, `pickFile()`) using `@tauri-apps/plugin-dialog` `open({directory:true})`; reusable abstraction for Games/Music/Video/BIOS/LGPT Samples/Projects/future SD target; Windows Light/Dark follows `prefers-color-scheme` dynamically via `src/services/theme.ts` + centralized CSS variables (`--bg`, `--surface`, `--surface-elevated`, `--text`, `--text-muted`, `--border`, `--accent`, `--success`, `--warning`, `--danger`, `--input`, `--focus`) in `src/styles.css`; TreeFrogUI frog branding from `xgame-logo.bmp` (480×854, TreeFrogUI CC BY-NC-SA 4.0) — frog ONLY as primary mark (`src/assets/branding/frog-only.png` 87×99 transparent, `frog-square.png` 99×99) via `scripts/generate_branding.py` (NEAREST, gap split 349–358), icons `src-tauri/icons/*` (32, 128, 128@2x, 256, 512, ico, icns) for window/installer/favicon/header; identity restrained `TreeFrog Content Manager` + frog; navigation `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` (8 tabs) with placeholders "Coming in a future release" for not-yet-implemented; consistent `SourcePicker` (path visible + [Browse] native) + `EmptyState` (empty/loading/success/warning/error/not_implemented); LGPT + BIOS preserved functional.
+- **TreeFrog Content Manager — LGPT & BIOS preserved:** LGPT Samples/Projects + BIOS Manager remain functional (see previous objective).
 - **Release golden preserved:** `Bacon-1.5` TreeFrog Apps `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (no runtime/sd_root mutation in this phase; verify `git diff -- sd_root` = NO).
-- **Idle baseline:** No active LGPT runtime task beyond content-manager LGPT — Await explicit user-approved objective for next milestone — No active implementation/runtime task beyond manager — Await explicit user-approved objective for next runtime change.
+- **Idle baseline:** No active runtime beyond manager — await next milestone.
 
 ## Last Relevant Validation
 
@@ -57,9 +57,8 @@ Do not trust hardcoded historical state.
 - `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
 - `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
 - `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
-- `MANAGER LGPT`: `lgpt.json` profile-driven `lgpt/samples` + `lgpt/projects` PASS + `samples` (WAV baseline) + `projects` (logical units) + `131 tests PASS` (107+24 LGPT) + `Windows exe 12.21 MB + MSI/NSIS + Desktop copy` + `self-check PASS` + `LGPT UI` + `global DryRun` + `health` + `fixtures synthetic` + `zero SD writes`
-- `MANAGER Phase BIOS-B` preserved: `bios validation + UI` + `107 tests`
-- `MANAGER Phase BIOS-A/2C` preserved: `video presets PROVISIONAL_UNVALIDATED` + `Windows exe` + `self-check`
+- `MANAGER 2E`: `native dialogs` (dialog.ts + plugin) + `Windows theme` (prefers-color-scheme + CSS vars + dynamic watch) + `frog branding` (xgame-logo.bmp → frog-only 87×99 + icons 32/128/256/ico/icns, provenance `src/assets/branding/README.md` CC BY-NC-SA 4.0) + `navigation 8 tabs` (Overview/Games/Music/Videos/BIOS/LGPT/SD Card/Settings/About, placeholders) + `SourcePicker` consistent + `EmptyState` + `151 tests PASS` (131+20) + `Windows exe` launch PASS + native dialog PASS + light/dark PASS + icons PASS + `MANUAL_QA_2E.md` + zero SD writes
+- `MANAGER LGPT/BIOS` preserved: `131 tests` + `Windows Desktop copy` + `self-check PASS`
 
 ## Known Issues / Risks
 
@@ -69,11 +68,11 @@ Do not trust hardcoded historical state.
 
 ## Pending Validation
 
-- Content Manager LGPT: awaiting review — then Phase 2D SD writes (not in this task). No SD writes.
+- Content Manager 2E: awaiting review — then Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). No SD writes.
 
 ## Next Exact Action
 
-- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (131 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify Windows build `scripts/build_windows.ps1` + Desktop `TreeFrog-Content-Manager-Setup.exe` + `treefrog-manager.exe --self-check` + LGPT UI + DryRun LGPT.
+- Run `python3 tests/test_agent_context_contract.py`, `python3 tests/test_release_audio_bootstrap.py`, `python3 -m pytest treefrog-manager/tests -v` (151 tests), `bash scripts/agent_preflight.sh --allow-dirty`, verify `git diff -- sd_root`, verify Windows build `scripts/build_windows.ps1` + Desktop `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` + `treefrog-manager.exe --self-check` + native dialog + light/dark + icons + BIOS + LGPT per `docs/MANUAL_QA_2E.md`.
 
 ## Stop Conditions
 

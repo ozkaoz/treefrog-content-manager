@@ -1,9 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import SourcePicker from "./components/SourcePicker";
-import SdPicker from "./components/SdPicker";
 import DryRunPreview from "./components/DryRunPreview";
 import BiosManager from "./components/BiosManager";
 import LgptManager from "./components/LgptManager";
+import Header from "./components/Header";
+import Placeholder from "./components/Placeholder";
+import EmptyState from "./components/EmptyState";
+import About from "./components/About";
+import { initTheme } from "./services/theme";
+import { pickFolder } from "./services/dialog";
+
+type Tab = "overview" | "games" | "music" | "videos" | "bios" | "lgpt" | "sdcard" | "settings" | "about";
 
 export default function App() {
   const [sourcePath, setSourcePath] = useState<string>("");
@@ -11,7 +18,12 @@ export default function App() {
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
-  const [activeTab, setActiveTab] = useState<"overview" | "bios" | "lgpt">("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("overview");
+
+  useEffect(() => {
+    const cleanup = initTheme();
+    return cleanup;
+  }, []);
 
   async function handlePreview() {
     setError("");
@@ -42,46 +54,101 @@ export default function App() {
     setPlan(newPlan);
   }
 
+  async function handlePickSd() {
+    try {
+      const sel = await pickFolder({ title: "Select TreeFrogUI SD root (must contain cubegm/ + roms/)" });
+      if (sel) setSdPath(sel);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "games", label: "Games" },
+    { id: "music", label: "Music" },
+    { id: "videos", label: "Videos" },
+    { id: "bios", label: "BIOS" },
+    { id: "lgpt", label: "LGPT" },
+    { id: "sdcard", label: "SD Card" },
+    { id: "settings", label: "Settings" },
+    { id: "about", label: "About" },
+  ];
+
   return (
     <div className="container">
-      <h1>TreeFrog Content Manager</h1>
-      <p>Global TreeFrogUI content — one schema for all handhelds. Profiles drive folder mappings, not device forks. BIOS is TreeFrogUI-global, not R36SX-specific; video preset remains <code>PROVISIONAL_UNVALIDATED</code>.</p>
+      <Header />
+      <p style={{ color: "var(--text-muted)", fontSize: 13 }}>
+        Global TreeFrogUI content — one schema for all handhelds. Profiles drive folder mappings, not device forks. BIOS is TreeFrogUI-global, not R36SX-specific; video preset remains <code>PROVISIONAL_UNVALIDATED</code>.
+      </p>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, borderBottom: "1px solid #ddd", paddingBottom: 8 }}>
-        <button onClick={() => setActiveTab("overview")} style={{ background: activeTab === "overview" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "overview" ? 600 : 400 }}>Overview</button>
-        <button onClick={() => setActiveTab("bios")} style={{ background: activeTab === "bios" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "bios" ? 600 : 400 }}>BIOS</button>
-        <button onClick={() => setActiveTab("lgpt")} style={{ background: activeTab === "lgpt" ? "#e3f2fd" : "#f5f5f5", fontWeight: activeTab === "lgpt" ? 600 : 400 }}>LGPT</button>
-      </div>
+      <nav className="nav" aria-label="Main navigation">
+        {tabs.map((t) => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)} className={activeTab === t.id ? "active" : ""}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
 
       {activeTab === "overview" && (
         <>
           <div className="card">
             <h3>1. Select source folder (arbitrary library, recursive)</h3>
-            <SourcePicker value={sourcePath} onChange={setSourcePath} />
+            <SourcePicker label="Games source folder" value={sourcePath} onChange={setSourcePath} title="Select games source folder" />
+            <div style={{ marginTop: 10 }}>
+              <SourcePicker label="Music source folder" value={""} onChange={() => {}} title="Select music source folder (future)" />
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <SourcePicker label="Video source folder" value={""} onChange={() => {}} title="Select video source folder (future)" />
+            </div>
             <p className="warning">Scanned recursively; classified by profile + extension/content hints; multi-file sets (CUE/BIN etc) preserved as groups. Archives inspected in temp workspace. BIOS scanned via same pipeline.</p>
+            {!sourcePath && <EmptyState kind="empty" title="No folder selected" description="Click Browse to open the native Windows folder picker." />}
           </div>
 
           <div className="card">
             <h3>2. Select TreeFrogUI SD</h3>
-            <SdPicker value={sdPath} onChange={setSdPath} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 13, fontWeight: 600 }}>TreeFrogUI SD root</label>
+              <div className="row" style={{ alignItems: "stretch" }}>
+                <div
+                  style={{
+                    flex: 1,
+                    padding: "8px 10px",
+                    border: "1px solid var(--border)",
+                    borderRadius: 6,
+                    background: "var(--input)",
+                    color: sdPath ? "var(--text)" : "var(--text-muted)",
+                    fontSize: 13,
+                    minHeight: 36,
+                    display: "flex",
+                    alignItems: "center",
+                  }}
+                >
+                  {sdPath || "No SD selected — must contain cubegm/ + roms/"}
+                </div>
+                <button onClick={handlePickSd}>Browse</button>
+              </div>
+            </div>
             <p className="warning">Detection via markers <code>cubegm/</code> + <code>roms/</code> (profile <code>sd_markers.json</code>). SD health checked before blame. No writes in preview.</p>
+            {!sdPath && <EmptyState kind="empty" title="No SD selected" description="Click Browse to open the native Windows folder picker." />}
           </div>
 
           <div className="card">
             <h3>3. Preview (dry-run, no writes) — duplicate/conflict/video/BIOS</h3>
             <div className="row">
-              <button onClick={handlePreview} disabled={loading || !sourcePath || !sdPath}>
+              <button className="primary" onClick={handlePreview} disabled={loading || !sourcePath || !sdPath}>
                 {loading ? "Scanning…" : "Scan + Preview"}
               </button>
               <button onClick={() => setPlan(null)} disabled={!plan}>Clear</button>
             </div>
-            {error && <p style={{ color: "crimson" }}>{error}</p>}
-            {!plan && <p>Select folders and press Scan + Preview. Nothing will be written — this is a dry-run plan. Planner is single source of truth (BIOS, video, ROMs, archives). Filter BIOS via the table below.</p>}
-            {plan && <DryRunPreview plan={plan} onResolve={handleResolvedPlan} />}
+            {error && <div className="status-error" style={{ marginTop: 10 }}>{error}</div>}
+            {!plan && !loading && <EmptyState kind={sourcePath && sdPath ? "empty" : "not_implemented"} title="No scan yet" description="Select folders and press Scan + Preview. Nothing will be written — this is a dry-run plan. Planner is single source of truth (BIOS, video, ROMs, archives)." />}
+            {loading && <EmptyState kind="loading" title="Scanning…" description="Recursive scan, archive inspection in temp workspace, SHA-256, classification." />}
+            {plan && <div style={{ marginTop: 12 }}><DryRunPreview plan={plan} onResolve={handleResolvedPlan} /></div>}
           </div>
 
           {plan && (
-            <div className="card" style={{ background: "#f1f8e9" }}>
+            <div className="card" style={{ background: "var(--surface)" }}>
               <h4>TreeFrogUI Health</h4>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 12 }}>
                 <span>Games {plan.summary.new + plan.summary.unchanged > 0 ? "✓" : "—"} ({plan.summary.new} new, {plan.summary.unchanged} unchanged)</span>
@@ -98,20 +165,32 @@ export default function App() {
                 })()}</span>
                 <span>LGPT ✓</span>
               </div>
-              <p style={{ fontSize: 11, color: "#555", marginTop: 4 }}>BIOS status is profile-driven and conditional (e.g., PS1 BIOS required only when PS1 content was detected). No BIOS downloads — user provides file → manager validates → plans deployment.</p>
+              <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>BIOS status is profile-driven and conditional (e.g., PS1 BIOS required only when PS1 content was detected). No BIOS downloads — user provides file → manager validates → plans deployment.</p>
             </div>
           )}
 
           <div className="card">
             <h4>Artwork</h4>
-            <p>Mini Scraper remains external. <a href="https://github.com/tzubertowski/mini-scraper-cfw/releases" target="_blank" rel="noreferrer">Open Mini Scraper</a> — app can verify <code>.res</code> after scrape but must not build second backend.</p>
+            <p style={{ fontSize: 13 }}>Mini Scraper remains external. <a href="https://github.com/tzubertowski/mini-scraper-cfw/releases" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>Open Mini Scraper</a> — app can verify <code>.res</code> after scrape but must not build second backend.</p>
           </div>
         </>
       )}
 
+      {activeTab === "games" && <Placeholder title="Games" />}
+      {activeTab === "music" && <Placeholder title="Music" />}
+      {activeTab === "videos" && <Placeholder title="Videos" />}
       {activeTab === "bios" && <BiosManager />}
-
       {activeTab === "lgpt" && <LgptManager />}
+      {activeTab === "sdcard" && (
+        <div className="card">
+          <h3>SD Card</h3>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>Future SD target selection will use the native Windows folder picker (same dialog abstraction as source folders). This milestone is read-only — no physical SD writes.</p>
+          <SourcePicker label="SD target (future)" value={sdPath} onChange={setSdPath} title="Select TreeFrogUI SD target" />
+          <div style={{ marginTop: 12 }}><EmptyState kind="not_implemented" title="Coming in a future release" description="SD deployment (staging, atomic rename, resume) is not in this milestone." /></div>
+        </div>
+      )}
+      {activeTab === "settings" && <Placeholder title="Settings" />}
+      {activeTab === "about" && <About />}
     </div>
   );
 }

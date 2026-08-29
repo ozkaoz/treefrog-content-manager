@@ -1,9 +1,9 @@
 # TreeFrog Content Manager — Development Plan
 
 **Version:** 1.1.0  
-**Date:** 2026-08-28  
+**Date:** 2026-08-29  
 **Scope:** Global TreeFrogUI SD-card content manager (desktop) — not per-device fork  
-**Stack:** Tauri 2 + Rust backend + React + TypeScript frontend + SQLite + serde + versioned declarative JSON profiles 1.1.0 + SHA-256 + FFmpeg/ffprobe adapter + maintained archive libs (ZIP implemented, 7z/RAR stubs)
+**Stack:** Tauri 2 + Rust backend + React + TypeScript frontend + SQLite + serde + versioned declarative JSON profiles 1.1.0 + SHA-256 + FFmpeg/ffprobe adapter + maintained archive libs (ZIP implemented, 7z/RAR stubs) + native Windows dialogs + system theme + TreeFrogUI branding
 
 Windows is first supported desktop platform; core filesystem layer portable for later macOS/Linux.
 
@@ -105,6 +105,19 @@ Windows is first supported desktop platform; core filesystem layer portable for 
 - **Tests:** `test_lgpt_manager.py` 24 tests covering samples (normal, recursive, duplicate, alias, conflict, unchanged, archive, unsafe, deterministic) + projects (logical unit, duplicate, conflict, unchanged, deterministic identity, nested, container) + planner (deployment entries, correct destinations, duplicate/conflict actions, dry-run, zero SD writes) + build script (installer discovery, Desktop resolution) — **pytest 131 PASS (107+24)**
 - **Gate:** `pytest 131 PASS`, `context-contract PASS`, `preflight PASS`, `Windows exe` + `Desktop installer` + `self-check PASS`, `git diff -- sd_root` empty
 
+### Phase 2E — Desktop UX foundation: native dialogs, Windows theme, branding, navigation (current)
+
+- **Native Windows dialogs:** replace `window.prompt()` with Tauri `@tauri-apps/plugin-dialog` `open({directory:true})` / `open({directory:false})` via reusable `src/services/dialog.ts` (`pickFolder()`, `pickFile()`, `pickFiles()`, `pickFolders()`). All source folders (Games, Music, Video, BIOS, LGPT Samples/Projects, future SD target) share same abstraction; path returned cleanly to Rust/frontend state; manual QA verifies native picker in packaged Windows app.
+- **Windows Light/Dark:** follow `prefers-color-scheme`, dynamic `watchSystemTheme` via `window.matchMedia("(prefers-color-scheme: dark)")`; centralized CSS variable tokens (`--bg`, `--surface`, `--surface-elevated`, `--text`, `--text-muted`, `--border`, `--accent`, `--success`, `--warning`, `--danger`, `--input`, `--focus`) defined in `src/styles.css` for `light` and `dark` via `@media (prefers-color-scheme: dark)` and `[data-theme]`; readable contrast both themes; never make TreeFrogUI device theme.
+- **Branding:** use official `xgame-logo.bmp` (480×854, frog+wordmark, black background) from `tzubertowski/TreeFrogUI` main; frog ONLY as primary mark (no redraw), transparent crop `src/assets/branding/frog-only.png` (87×99) + `frog-square.png` (99×99) via deterministic `scripts/generate_branding.py` (NEAREST, `r<20&&g<20&&b<20` → transparent, split at 10px zero gap y≈349–358); generated icons `src-tauri/icons/32x32.png`, `128x128.png`, `128x128@2x.png`, `256x256.png`, `512x512.png`, `icon.ico` (16/32/48/256), `icon.icns` (512); full frog+wordmark retained only in About/Credits secondary; provenance documented in `src/assets/branding/README.md` (CC BY-NC-SA 4.0, frog from FrogUI); no newly generated logo; no unnecessary duplicated source assets.
+- **Identity:** `TreeFrog Content Manager` with frog icon as primary mark — window icon, desktop/Start Menu icon, installer icon, header branding (32×32 frog + wordmark), About section; restrained professional, not mimicking TreeFrogUI handheld frontend.
+- **Navigation foundation:** `Overview | Games | Music | Videos | BIOS | LGPT | SD Card | Settings | About` (8 tabs) in `src/App.tsx`; not-yet-implemented modules show `Placeholder` with "Coming in a future release" — no fake functionality; BIOS + LGPT remain functional, Overview functional.
+- **Source picker:** revised `src/components/SourcePicker.tsx` — `[Browse]` opens native picker, selected path visible/readable, no manual typing required except hidden debug fallback; consistent behavior across BIOS/LGPT/future Games/Music/Videos/SD.
+- **Empty/standard states:** `src/components/EmptyState.tsx` — consistent visual for `empty/loading/success/warning/error/not_implemented` (e.g., "No folder selected", "Scanning…", "No files found", "Requires attention"); not over-designed.
+- **Tests:** `test_phase2e_desktop_ux.py` 20 tests covering dialog service, prompt removal, source-picker state, theme tokens, theme init, branding assets, provenance, icons, navigation entries, working modules, source-picker consistency, placeholder, empty states, version consistency, header/about branding, no SD writes — **pytest 151 PASS (131+20)**.
+- **Desktop build:** still via `scripts/build_windows.ps1`; verifies installer builds, installer icon is frog, app icon correct, installs, launches, native Browse opens real dialog, light/dark reflected, BIOS/LGPT functional; installer copied to Desktop as `TreeFrog-Content-Manager-<version>-Windows-x64-Setup.exe` + `.sha256`; manual QA documented in `docs/MANUAL_QA_2E.md`.
+- **Gate:** `pytest 151 PASS` + `cargo check PASS` + `npm run build PASS` + `Windows exe` launch PASS + native dialog PASS + light/dark PASS + icons PASS + BIOS/LGPT PASS + `git diff -- sd_root` empty.
+
 ### Phase 3 — Music / Images / Ebooks (next)
 
 - Music/images/ebooks: use profile media destinations/formats; preserve music subfolders; MuPDF ebook per-book `.positions` ignore
@@ -169,9 +182,9 @@ Derive validation class from `docs/ai/VALIDATION.md`: Content Manager bootstrap 
 
 ---
 
-## Next Exact Action (2026-08-28)
+## Next Exact Action (2026-08-29)
 
-- Phase LGPT complete: Samples + Projects manager with global planner + Windows Desktop build (installer copied to Desktop) — next is Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (131 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` + `npm run build` + verify `TreeFrog-Content-Manager-Setup.exe` on Desktop.
+- Phase 2E complete: Desktop UX foundation (native dialogs, Windows theme, TreeFrog branding, navigation, source picker, empty states) + Windows build + manual QA — next is Phase 3 Music/Images/Ebooks or Phase 2D SD writes (not in this task). Run `python3 -m pytest treefrog-manager/tests -v` (151 tests) + `bash scripts/agent_preflight.sh --allow-dirty` + `cargo check` + `npm run build` + verify `TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe` on Desktop + manual QA `docs/MANUAL_QA_2E.md`.
 
 ## Unresolved for real-device validation (updated for LGPT)
 
