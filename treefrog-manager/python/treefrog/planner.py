@@ -1111,9 +1111,51 @@ def plan(scanned, sd_root: str, profile):
             e["members"] = sorted(e["members"])
             e["group"] = sorted(e["group"]) if e.get("group") else e["members"]
 
+    # ---- Destination-level resolution within the job ----
+    seen = {}
+    for e in entries:
+        norm = e.get("destination", "").lower()
+        prev_hash = seen.get(norm)
+        cur_hash = e.get("hash") or e.get("source_hash")
+        same = prev_hash is not None and cur_hash is not None and prev_hash == cur_hash
+        if norm in seen:
+            if same:
+                e["action"] = "skip_duplicate"
+                e["reason"] = f"{e.get('reason','')} [same destination within job -> only one copy deployed]"
+            else:
+                e["action"] = "conflict"
+                e["resolution"] = "manual_review"
+                e["reason"] = f"{e.get('reason','')} [same destination with different content within job -> manual review]"
+            e["resolved_action"] = e["action"]
+            e["default_action"] = e["action"]
+        else:
+            seen[norm] = cur_hash
+
+    # Final safety net: no destination may be empty or start with '/'
+    for e in entries:
+        dest = e.get("destination", "")
+        if not dest or dest.startswith("/"):
+            fname = dest.lstrip("/").split("/")[-1] if dest.lstrip("/") else ""
+            if not fname:
+                fname = pathlib.Path(e.get("source","")).name or "file"
+            else:
+                fname = pathlib.Path(fname).name or fname
+            e["destination"] = f"roms/UNKNOWN/{fname}"
+            e["reason"] = f"{e.get('reason','')} [destination sanitized to roms/UNKNOWN]"
+
     # Final deterministic sort by source then destination (stable)
     entries.sort(key=lambda x: (x.get("source", ""), x.get("destination", "")))
 
-    summary = {"unchanged": unchanged, "new": new, "changed": changed, "duplicate_content": duplicate, "conflicts": conflicts, "deletions": 0, "manual_review": manual, "unsupported_archive": unsupported}
+    # Recompute summary from FINAL actions (single source of truth)
+    summary = {
+        "unchanged": sum(1 for e in entries if e.get("action") == "skip_unchanged"),
+        "new": sum(1 for e in entries if e.get("action") in ("copy", "extract")),
+        "changed": sum(1 for e in entries if e.get("action") == "convert_then_copy"),
+        "duplicate_content": sum(1 for e in entries if e.get("action") == "skip_duplicate"),
+        "conflicts": sum(1 for e in entries if e.get("action") == "conflict"),
+        "deletions": 0,
+        "manual_review": sum(1 for e in entries if e.get("action") in ("manual_review", "unsupported", "unsupported_archive")),
+        "unsupported_archive": sum(1 for e in entries if e.get("action") in ("unsupported_archive", "unsupported")),
+    }
     warnings = ["PROVISIONAL_UNVALIDATED video preset — not hardware validated", "arch archives bounded: depth=1 entries=1024 expansion=1GiB"]
     return {"summary": summary, "entries": entries, "warnings": warnings}

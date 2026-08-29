@@ -254,6 +254,7 @@ pub fn apply_resolutions(plan: crate::Plan, decisions: &std::collections::HashMa
     crate::Plan { summary: plan.summary.clone(), entries: new_entries, warnings: plan.warnings.clone() }
 }
 
+#[allow(unused_assignments, unused_variables)]
 pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -> anyhow::Result<Plan> {
     let sd_path = Path::new(sd_root);
     let mut entries: Vec<PlanEntry> = Vec::new();
@@ -884,6 +885,38 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
         }
     }
 
+    // ---- Destination-level resolution within the job ----
+    // The same destination must never appear twice (previously aborted as "case collision").
+    // Keep the FIRST entry; later ones become:
+    //   - skip_duplicate  (same hash  -> only one copy deployed)
+    //   - conflict        (different content -> manual review)
+    // One problematic file must NEVER block the rest of the sync.
+    {
+        let mut seen: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+        for e in entries.iter_mut() {
+            let norm = e.destination.to_lowercase();
+            if let Some(prev_hash) = seen.get(&norm).cloned() {
+                let cur_hash = e.hash.clone().or_else(|| e.source_hash.clone());
+                let same = match (&prev_hash, &cur_hash) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => false,
+                };
+                if same {
+                    e.action = "skip_duplicate".to_string();
+                    e.reason = format!("{} [same destination within job -> only one copy deployed]", e.reason);
+                } else {
+                    e.action = "conflict".to_string();
+                    e.resolution = Some("manual_review".to_string());
+                    e.reason = format!("{} [same destination with different content within job -> manual review]", e.reason);
+                }
+                e.resolved_action = Some(e.action.clone());
+                e.default_action = Some(e.action.clone());
+            } else {
+                seen.insert(norm, e.hash.clone().or_else(|| e.source_hash.clone()));
+            }
+        }
+    }
+
     // Final safety net: no destination may be empty or start with '/'
     for e in &mut entries {
         if e.destination.is_empty() || e.destination.starts_with('/') {
@@ -901,7 +934,17 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
     // Deterministic: sort entries by source then destination
     entries.sort_by(|a,b| a.source.cmp(&b.source).then(a.destination.cmp(&b.destination)));
 
-    let summary = PlanSummary { unchanged, new: new_c, changed, duplicate_content: duplicate, conflicts, deletions: 0, manual_review: manual, unsupported_archive: unsupported };
+    // Recompute summary from FINAL actions (single source of truth)
+    let summary = PlanSummary {
+        unchanged: entries.iter().filter(|e| e.action == "skip_unchanged").count(),
+        new: entries.iter().filter(|e| matches!(e.action.as_str(), "copy" | "extract")).count(),
+        changed: entries.iter().filter(|e| e.action == "convert_then_copy").count(),
+        duplicate_content: entries.iter().filter(|e| e.action == "skip_duplicate").count(),
+        conflicts: entries.iter().filter(|e| e.action == "conflict").count(),
+        deletions: 0,
+        manual_review: entries.iter().filter(|e| matches!(e.action.as_str(), "manual_review" | "unsupported" | "unsupported_archive")).count(),
+        unsupported_archive: entries.iter().filter(|e| matches!(e.action.as_str(), "unsupported_archive" | "unsupported")).count(),
+    };
     Ok(Plan { summary, entries, warnings: vec!["PROVISIONAL_UNVALIDATED video preset — not hardware validated".into(), "arch archives bounded: depth=1 entries=1024 expansion=1GiB".into()] })
 }
 

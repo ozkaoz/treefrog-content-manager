@@ -248,6 +248,9 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
     }
     let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
     let collisions = sd_target::check_case_collision(&dests);
+    if !collisions.is_empty() {
+        log::warn!("Unexpected leftover collisions (resolved as warnings): {:?}", collisions);
+    }
     // Calculate space
     let space = sd_target::calculate_space(&plan, target.free_bytes);
     let mut out = serde_json::to_value(&plan).unwrap();
@@ -290,7 +293,8 @@ async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>)
     let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
     let collisions = sd_target::check_case_collision(&dests);
     if !collisions.is_empty() {
-        return Err(format!("Case collision detected: {} collides with {}", collisions[0].0, collisions[0].1));
+        // The planner resolves same-destination entries; leftovers are warnings, never an abort.
+        log::warn!("Unexpected leftover collisions (resolved as warnings): {:?}", collisions);
     }
     let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force).map_err(|e| e.to_string())?;
     let mut out = serde_json::to_value(&result).unwrap();
