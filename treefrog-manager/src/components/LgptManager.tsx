@@ -31,13 +31,15 @@ export default function LgptManager({
   onSamplesSourceChange,
   onProjectsSourceChange,
   onPlanChange,
-  onNext 
+  onNext,
+  visible
 }: { 
   globalSdPath: string;
   onSamplesSourceChange?: (v: string) => void;
   onProjectsSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
-  onNext?: () => void 
+  onNext?: () => void;
+  visible?: boolean;
 }) {
   const [samplesSource, setSamplesSource] = useState<string>("");
   const [projectsSource, setProjectsSource] = useState<string>("");
@@ -135,6 +137,15 @@ export default function LgptManager({
     if (samplesSource) await handleScanSamples();
     if (projectsSource) await handleScanProjects();
   }
+
+  // Re-scan automatically when the tab becomes visible again,
+  // so the plan always reflects the current state of disk/SD.
+  useEffect(() => {
+    if (visible && (samplesSource || projectsSource)) {
+      handleScanBoth();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   useEffect(() => {
     const allEntries: PlanEntry[] = [];

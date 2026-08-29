@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -23,12 +23,14 @@ export default function VideosPanel({
   globalSdPath, 
   onSourceChange, 
   onPlanChange,
-  onNext 
+  onNext,
+  visible
 }: { 
   globalSdPath: string; 
   onSourceChange?: (v: string) => void; 
   onPlanChange?: (plan: Plan | null) => void;
-  onNext?: () => void 
+  onNext?: () => void;
+  visible?: boolean;
 }) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -92,6 +94,15 @@ export default function VideosPanel({
     if (filter === "error") return plan.entries.filter((e) => e.action === "manual_review" || e.action === "unsupported");
     return plan.entries;
   })();
+
+  // Re-scan automatically when the tab becomes visible again,
+  // so the plan always reflects the current state of disk/SD.
+  useEffect(() => {
+    if (visible && source && globalSdPath) {
+      handlePreview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   return (
     <div className="card">

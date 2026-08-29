@@ -303,10 +303,15 @@ export default function SdCardPanel({
                   <tbody>
                     {syncResult.breakdown.map((item: any, idx: number) => (
                       <tr key={idx} style={{ borderBottom: "1px solid var(--border)" }}>
-                        <td style={{ padding: "4px", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={item.source}>
+                        <td style={{ padding: "4px", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }} title={item.source}>
                           {item.source.split(/[/\\]/).pop()}
                         </td>
-                        <td style={{ padding: "4px", fontSize: 10 }}>{item.destination}</td>
+                        <td style={{ padding: "4px", fontSize: 10 }} title={item.dest_abs || item.destination}>
+                          {item.destination}
+                          <div style={{ fontSize: 9, color: "var(--text-muted)" }}>
+                            {item.dest_exists ? "✓" : "✕"} {item.dest_abs || ""}
+                          </div>
+                        </td>
                         <td style={{ padding: "4px" }}>
                           <span className={`badge badge-${item.action === "copy" ? "copy" : item.action.startsWith("skip") ? "skip" : "conflict"}`}>
                             {item.action}
@@ -320,6 +325,9 @@ export default function SdCardPanel({
               </div>
             </details>
           )}
+            <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
+              La existencia en destino (✓/✕) se verifica en disco en el momento de sincronizar. Si un archivo no existe en la SD, se copia automáticamente.
+            </p>
           
           {syncResult.warnings && syncResult.warnings.length > 0 && (
             <div style={{ marginTop: 8 }}>

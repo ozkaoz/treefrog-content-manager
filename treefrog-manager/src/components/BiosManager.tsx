@@ -80,12 +80,14 @@ export default function BiosManager({
   globalSdPath,
   onSourceChange,
   onPlanChange,
-  onNext 
+  onNext,
+  visible
 }: { 
   globalSdPath: string;
   onSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
-  onNext?: () => void 
+  onNext?: () => void;
+  visible?: boolean;
 }) {
   const [biosSource, setBiosSource] = useState<string>("");
   const [results, setResults] = useState<BiosValidation[] | null>(null);
@@ -181,6 +183,15 @@ export default function BiosManager({
       setLoading(false);
     }
   }
+
+  // Re-scan automatically when the tab becomes visible again,
+  // so the plan always reflects the current state of disk/SD.
+  useEffect(() => {
+    if (visible && biosSource) {
+      handleScan();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   useEffect(() => {
     if (!results || results.length === 0) {

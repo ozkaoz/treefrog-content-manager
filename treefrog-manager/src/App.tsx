@@ -559,7 +559,7 @@ export default function App() {
         </div>
       </div>
       <div style={{ display: activeTab === "games" ? "block" : "none" }}>
-        <GamesPanel 
+        <GamesPanel visible={activeTab === "games"} 
           globalSdPath={sdPath} 
           onSourceChange={setGamesSource} 
           onPlanChange={setGamesPlan as any}
@@ -567,7 +567,7 @@ export default function App() {
         />
       </div>
       <div style={{ display: activeTab === "music" ? "block" : "none" }}>
-        <MusicPanel 
+        <MusicPanel visible={activeTab === "music"} 
           globalSdPath={sdPath} 
           onSourceChange={setMusicSource} 
           onPlanChange={setMusicPlan as any}
@@ -575,7 +575,7 @@ export default function App() {
         />
       </div>
       <div style={{ display: activeTab === "videos" ? "block" : "none" }}>
-        <VideosPanel 
+        <VideosPanel visible={activeTab === "videos"} 
           globalSdPath={sdPath} 
           onSourceChange={setVideosSource} 
           onPlanChange={setVideosPlan as any}
@@ -583,7 +583,7 @@ export default function App() {
         />
       </div>
       <div style={{ display: activeTab === "bios" ? "block" : "none" }}>
-        <BiosManager 
+        <BiosManager visible={activeTab === "bios"} 
           globalSdPath={sdPath}
           onSourceChange={setBiosSource}
           onPlanChange={setBiosPlan as any}
@@ -591,7 +591,7 @@ export default function App() {
         />
       </div>
       <div style={{ display: activeTab === "lgpt" ? "block" : "none" }}>
-        <LgptManager 
+        <LgptManager visible={activeTab === "lgpt"} 
           globalSdPath={sdPath}
           onSamplesSourceChange={setLgptSamplesSource}
           onProjectsSourceChange={setLgptProjectsSource}

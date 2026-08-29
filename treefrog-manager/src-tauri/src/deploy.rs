@@ -102,6 +102,7 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
     let mut failed = 0usize;
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
+    let mut breakdown_rows: Vec<serde_json::Value> = Vec::new();
 
     for entry in &plan.entries {
         let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
@@ -129,7 +130,30 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
             }
         }
         let dest_abs = sd_path.join(dest_rel);
-        match action.as_str() {
+
+        // ---- Fresh on-disk verification: never trust a stale skip decision ----
+        let dest_exists_now = dest_abs.exists();
+        let action_final: String = match action.as_str() {
+            // "unchanged" REQUIRES the file to actually exist on the SD right now.
+            "skip_unchanged" if !dest_exists_now => {
+                info!("Downgrade skip_unchanged -> copy (destination missing on SD): {}", dest_abs.display());
+                "copy".to_string()
+            }
+            other => other.to_string(),
+        };
+
+        // Record breakdown row with absolute verified path (loop-collected)
+        breakdown_rows.push(serde_json::json!({
+            "source": entry.source,
+            "destination": dest_rel,
+            "dest_abs": dest_abs.to_string_lossy(),
+            "dest_exists": dest_exists_now,
+            "action": action_final,
+            "reason": entry.reason,
+            "content_type": entry.content_type,
+        }));
+
+        match action_final.as_str() {
             "copy" | "replace" => {
                 let src_str = entry.source.split("::").next().unwrap_or(&entry.source);
                 let src = Path::new(src_str);
@@ -267,18 +291,6 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
 
     let success = failed == 0;
 
-    // Build detailed breakdown for UI
-    let breakdown: Vec<serde_json::Value> = plan.entries.iter().map(|e| {
-        let action = e.resolved_action.as_ref().unwrap_or(&e.action);
-        serde_json::json!({
-            "source": e.source,
-            "destination": e.destination,
-            "action": action,
-            "reason": e.reason,
-            "content_type": e.content_type,
-        })
-    }).collect();
-
     Ok(DeployResult {
         success,
         deployed,
@@ -286,6 +298,6 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile) -> anyh
         failed,
         errors,
         warnings,
-        breakdown: Some(breakdown),
+        breakdown: Some(breakdown_rows.clone()),
     })
 }

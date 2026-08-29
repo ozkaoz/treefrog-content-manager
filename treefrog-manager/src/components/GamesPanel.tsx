@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
 
@@ -23,12 +23,14 @@ export default function GamesPanel({
   globalSdPath, 
   onSourceChange, 
   onPlanChange,
-  onNext 
+  onNext,
+  visible
 }: { 
   globalSdPath: string; 
   onSourceChange?: (v: string) => void; 
   onPlanChange?: (plan: Plan | null) => void;
-  onNext?: () => void 
+  onNext?: () => void;
+  visible?: boolean;
 }) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -87,6 +89,15 @@ export default function GamesPanel({
       setLoading(false);
     }
   }
+
+  // Re-scan automatically when the tab becomes visible again,
+  // so the plan always reflects the current state of disk/SD.
+  useEffect(() => {
+    if (visible && source && globalSdPath) {
+      handlePreview();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const systems = Array.from(new Set(plan?.entries.map((e) => e.content_type?.replace("rom/", "") || "unknown") || []));
 
