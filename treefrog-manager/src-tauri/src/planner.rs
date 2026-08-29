@@ -1023,3 +1023,92 @@ fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Pa
         }
     }
 }
+
+/// STRUCTURAL GUARANTEE: no destination may appear twice among entries that
+/// write to the SD. Later writers are downgraded (skip_duplicate / conflict).
+/// This makes "case collision" aborts impossible by construction.
+pub fn resolve_write_collisions(plan: crate::Plan) -> crate::Plan {
+    let mut seen: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+    let mut entries = Vec::with_capacity(plan.entries.len());
+    for mut e in plan.entries {
+        let a = e.resolved_action.as_ref().unwrap_or(&e.action).clone();
+        let is_write = matches!(a.as_str(), "copy" | "extract" | "convert_then_copy" | "replace");
+        if is_write {
+            let norm = e.destination.to_lowercase();
+            if let Some(prev) = seen.get(&norm).cloned() {
+                let cur = e.hash.clone().or_else(|| e.source_hash.clone());
+                let same = match (&prev, &cur) { (Some(a), Some(b)) => a == b, _ => false };
+                if same {
+                    e.action = "skip_duplicate".into();
+                    e.reason = format!("{} [duplicate destination within job -> only one copy deployed]", e.reason);
+                } else {
+                    e.action = "conflict".into();
+                    e.resolution = Some("manual_review".into());
+                    e.reason = format!("{} [same destination, different content within job -> manual review]", e.reason);
+                }
+                e.resolved_action = Some(e.action.clone());
+                e.default_action = Some(e.action.clone());
+            } else {
+                seen.insert(norm, e.hash.clone().or_else(|| e.source_hash.clone()));
+            }
+        }
+        entries.push(e);
+    }
+    let summary = crate::PlanSummary {
+        unchanged: entries.iter().filter(|e| e.action == "skip_unchanged").count(),
+        new: entries.iter().filter(|e| matches!(e.action.as_str(), "copy" | "extract")).count(),
+        changed: entries.iter().filter(|e| e.action == "convert_then_copy").count(),
+        duplicate_content: entries.iter().filter(|e| e.action == "skip_duplicate").count(),
+        conflicts: entries.iter().filter(|e| e.action == "conflict").count(),
+        deletions: 0,
+        manual_review: entries.iter().filter(|e| matches!(e.action.as_str(), "manual_review" | "unsupported" | "unsupported_archive")).count(),
+        unsupported_archive: entries.iter().filter(|e| matches!(e.action.as_str(), "unsupported_archive" | "unsupported")).count(),
+    };
+    crate::Plan { summary, entries, warnings: plan.warnings }
+}
+
+#[cfg(test)]
+mod collision_tests {
+    fn mk(dest: &str, hash: Option<&str>) -> crate::PlanEntry {
+        crate::PlanEntry {
+            source: format!("src/{}", dest),
+            destination: dest.to_string(),
+            action: "copy".to_string(),
+            reason: "test".to_string(),
+            hash: hash.map(|s| s.to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn duplicate_destinations_are_downgraded_never_abort() {
+        let plan = crate::Plan {
+            summary: crate::PlanSummary { unchanged: 0, new: 3, changed: 0, duplicate_content: 0, conflicts: 0, deletions: 0, manual_review: 0, unsupported_archive: 0 },
+            entries: vec![
+                mk("roms/FC/King of Fighters 99, The (Unl).nes", Some("h1")),
+                mk("roms/FC/KING OF FIGHTERS 99, THE (UNL).NES", Some("h1")), // case-collision, same hash
+                mk("roms/FC/other.nes", Some("h2")),
+            ],
+            warnings: vec![],
+        };
+        let fixed = super::resolve_write_collisions(plan);
+        let writers = fixed.entries.iter().filter(|e| matches!(e.action.as_str(), "copy" | "extract" | "convert_then_copy" | "replace")).collect::<Vec<_>>();
+        assert_eq!(writers.len(), 2, "only unique destinations may write");
+        assert_eq!(fixed.entries.iter().filter(|e| e.action == "skip_duplicate").count(), 1);
+        // writers' destinations are case-unique
+        let mut set = std::collections::HashSet::new();
+        for w in writers { assert!(set.insert(w.destination.to_lowercase())); }
+    }
+
+    #[test]
+    fn different_content_same_destination_becomes_conflict() {
+        let plan = crate::Plan {
+            summary: crate::PlanSummary { unchanged: 0, new: 2, changed: 0, duplicate_content: 0, conflicts: 0, deletions: 0, manual_review: 0, unsupported_archive: 0 },
+            entries: vec![mk("roms/FC/a.nes", Some("h1")), mk("roms/FC/a.nes", Some("hX"))],
+            warnings: vec![],
+        };
+        let fixed = super::resolve_write_collisions(plan);
+        assert_eq!(fixed.entries.iter().filter(|e| e.action == "conflict").count(), 1);
+        assert_eq!(fixed.entries.iter().filter(|e| matches!(e.action.as_str(), "copy" | "extract")).count(), 1);
+    }
+}

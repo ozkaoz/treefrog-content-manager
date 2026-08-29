@@ -19,9 +19,14 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
         anyhow::bail!("source path not found: {}", source_root);
     }
     let mut out = Vec::new();
+    let mut seen_sources: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     // Walk recursively, skip hidden .res artwork folders? No — we classify everything, but planner will filter
     for entry in WalkDir::new(root).follow_links(false).into_iter().filter_map(|e| e.ok()) {
         let p = entry.path();
+        let canon = std::fs::canonicalize(entry.path()).unwrap_or_else(|_| entry.path().to_path_buf());
+        if !seen_sources.insert(canon) {
+            continue; // same physical file visited twice (symlink/junction) -> ignore
+        }
         if p.is_dir() {
             continue;
         }

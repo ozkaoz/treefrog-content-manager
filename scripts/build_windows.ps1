@@ -82,6 +82,9 @@ if ($Verbose) {
     $tauriCmd += " --verbose"
 }
 
+$env:TFM_GIT_COMMIT = (git rev-parse --short HEAD)
+$env:TFM_BUILD_TS = (Get-Date -Format "yyyy-MM-dd HH:mm")
+
 # Set target to x86_64-pc-windows-msvc (default on Windows)
 Write-Host "Running: $tauriCmd" -ForegroundColor Gray
 Invoke-Expression $tauriCmd

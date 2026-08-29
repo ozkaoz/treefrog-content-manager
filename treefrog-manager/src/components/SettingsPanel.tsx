@@ -11,6 +11,8 @@ export default function SettingsPanel() {
   const [profile, setProfile] = useState<ProfileInfo | null>(null);
   const [theme, setTheme] = useState<string>("light");
   const [error, setError] = useState("");
+  const [buildInfo, setBuildInfo] = useState<any>(null);
+  useEffect(() => { invoke("build_info").then(setBuildInfo).catch(() => {}); }, []);
 
   useEffect(() => {
     setTheme(getSystemTheme());
@@ -102,6 +104,9 @@ export default function SettingsPanel() {
         <p style={{ fontSize: 12, margin: 0, color: "var(--text-muted)" }}>
           Índice local vía <code>SQLite</code> (o robust local) para bibliotecas, fingerprints, despliegues, versión de perfil, versión de herramienta, historial de jobs. Nunca se commitean rutas de usuario. Staging + <code>atomic rename</code> para Sync, reanudable si se interrumpe, sin eliminar en Sync normal.
         </p>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+        Build: {buildInfo?.commit || "dev"} — {buildInfo?.built_at || ""}
       </div>
     </div>
   );

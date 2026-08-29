@@ -1,6 +1,10 @@
 import frogOnly from "../assets/branding/frog-only.png";
+import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 export default function About() {
+  const [buildInfo, setBuildInfo] = useState<any>(null);
+  useEffect(() => { invoke("build_info").then(setBuildInfo).catch(() => {}); }, []);
   return (
     <div className="card">
       <h3>About — TreeFrog Content Manager</h3>
@@ -29,6 +33,9 @@ export default function About() {
         <p style={{ fontSize: 12, margin: 0 }}>
           TreeFrog Content Manager code: GPL-3.0-or-later (see <code>Cargo.toml</code>). Frog asset: CC BY-NC-SA 4.0 via TreeFrogUI/FrogUI — do not sell or bundle with commercial devices. No newly generated logo; original pixel-art preserved.
         </p>
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
+        Build: {buildInfo?.commit || "dev"} — {buildInfo?.built_at || ""}
       </div>
     </div>
   );

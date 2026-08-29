@@ -84,7 +84,8 @@ pub fn run() {
             dry_run_with_target,
             deploy_to_sd,
             lgpt_scan_samples,
-            lgpt_scan_projects
+            lgpt_scan_projects,
+            build_info
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -242,6 +243,7 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
     // Use existing planner (single source of truth) with target path
     let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
     let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    let plan = planner::resolve_write_collisions(plan);
     // Validate destination paths and check collisions
     for e in &plan.entries {
         sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
@@ -290,6 +292,7 @@ async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>)
     }
     let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
     let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    let plan = planner::resolve_write_collisions(plan);
     for e in &plan.entries {
         sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
     }
@@ -348,4 +351,12 @@ async fn lgpt_scan_projects(projects_source: String, sd_path: String) -> Result<
     }).collect();
     let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "samples": [], "projects": [], "plan": plan }))
+}
+
+#[tauri::command]
+fn build_info() -> serde_json::Value {
+    serde_json::json!({
+        "commit": option_env!("TFM_GIT_COMMIT").unwrap_or("dev"),
+        "built_at": option_env!("TFM_BUILD_TS").unwrap_or("unknown")
+    })
 }
