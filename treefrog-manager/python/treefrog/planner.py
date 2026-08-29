@@ -474,16 +474,73 @@ def plan(scanned, sd_root: str, profile):
                         # For collision, we consider the folder as destination
                         group_entries.append((grp, dest_rel_inner, cue_entry))
                         dests_for_collision.append(dest_rel_inner)
-                # Collision detection among this archive's members
-                collisions = _detect_collisions(dests_for_collision)
-                if collisions:
-                    dest_rel = f"{dest_base}/{file_name}" if dest_base else f"roms/UNKNOWN/{file_name}"
-                    entries.append({"source": str(sf["source_path"]), "destination": dest_rel, "action": "manual_review", "reason": f"output collision inside archive: {collisions[0][0]} collides with {collisions[0][1]}", "hash": None, "size": sf["size"], "group": None})
-                    manual += 1
-                    continue
-                # Also check for nested archive bomb already handled via mode==manual, but double-check
-                # Now plan each group
-                for grp, dest_rel_inner, primary in group_entries:
+                # Single temp extraction per archive; member hashes computed once
+                # First, compute hashes for each group via single extraction
+                group_infos_with_hash = []
+                try:
+                    with tempfile.TemporaryDirectory() as tmpdir:
+                        tmp_path = pathlib.Path(tmpdir)
+                        try:
+                            amod.safe_extract_to_temp(sf["source_path"], tmp_path)
+                        except:
+                            pass
+                        for grp, dest_rel_inner, primary in group_entries:
+                            # Compute hash for this group
+                            gh = None
+                            if len(grp) == 1:
+                                target_name = pathlib.Path(grp[0]["name"]).name
+                                for q in tmp_path.rglob("*"):
+                                    if q.name == target_name and q.is_file():
+                                        try:
+                                            gh = hmod.sha256_file(q)
+                                        except:
+                                            pass
+                                        break
+                            else:
+                                import hashlib
+                                hasher = hashlib.sha256()
+                                found = []
+                                for member in sorted(grp, key=lambda x: x["name"]):
+                                    for q in tmp_path.rglob("*"):
+                                        if q.name == pathlib.Path(member["name"]).name and q.is_file():
+                                            try:
+                                                h = hmod.sha256_file(q)
+                                                found.append(h)
+                                            except:
+                                                pass
+                                            break
+                                if found:
+                                    found.sort()
+                                    for h in found:
+                                        hasher.update(h.encode())
+                                    gh = hasher.hexdigest()
+                            group_infos_with_hash.append((grp, dest_rel_inner, primary, gh))
+                except:
+                    # Fallback: if temp extraction fails, use no hash
+                    group_infos_with_hash = [(grp, dr, primary, None) for grp, dr, primary in group_entries]
+
+                # Dedup inside archive by (dest, hash) before planning
+                seen_dest = {}
+                final_infos = []
+                for grp, dr, primary, gh in group_infos_with_hash:
+                    norm = dr.lower()
+                    prev = seen_dest.get(norm)
+                    if prev is not None and prev is not None and gh is not None and prev == gh:
+                        # Identical content inside archive -> only one copy
+                        entries.append({"source": f"{sf['source_path']}::{grp[0]['name']}", "destination": dr, "action": "skip_duplicate", "reason": "duplicate content inside archive -> only one copy deployed", "hash": gh, "size": sum(x["size"] for x in grp), "group": [x["name"] for x in grp] if len(grp)>1 else None})
+                        duplicate += 1
+                        continue
+                    elif norm in seen_dest:
+                        # Same destination, different content -> real collision
+                        entries.append({"source": f"{sf['source_path']}::{grp[0]['name']}", "destination": dr, "action": "manual_review", "reason": f"collision inside archive: same destination {dr} with different content", "hash": gh, "size": sum(x["size"] for x in grp), "group": None})
+                        manual += 1
+                        continue
+                    else:
+                        seen_dest[norm] = gh
+                        final_infos.append((grp, dr, primary, gh))
+
+                # Now plan each group (reuse already computed hash)
+                for grp, dest_rel_inner, primary, inner_hash in final_infos:
                     # For single file groups, we can attempt to hash inner content via temp extraction to detect duplicate archive vs extracted payload
                     # Extract primary member to temp and hash for duplicate detection
                     dest_abs_inner = sd_path / dest_rel_inner

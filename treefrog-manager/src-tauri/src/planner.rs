@@ -133,6 +133,7 @@ fn decide_archive_mode(archive_path: &Path, inner: &[archive::ArchiveEntry], pro
     "extract_and_classify".to_string()
 }
 
+#[allow(dead_code)]
 fn detect_collisions(dests: &[String]) -> Vec<(String,String)> {
     let mut seen: HashMap<String,String> = HashMap::new();
     let mut out = Vec::new();
@@ -403,7 +404,6 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                 }
             };
             // Build destinations for collision detection
-            let mut dests_for_coll: Vec<String> = Vec::new();
             let mut group_infos: Vec<(Vec<archive::ArchiveEntry>, String)> = Vec::new();
             for grp in groups {
                 if grp.len() == 1 {
@@ -422,9 +422,11 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                             }
                         }
                     }
+                    if eff_base.is_empty() {
+                        eff_base = "roms/UNKNOWN".to_string();
+                    }
                     let fname = Path::new(&e.name).file_name().unwrap().to_string_lossy().to_string();
                     let dr = format!("{}/{}", eff_base, fname);
-                    dests_for_coll.push(dr.clone());
                     group_infos.push((grp.clone(), dr));
                 } else {
                     let cue = grp.iter().find(|e| Path::new(&e.name).extension().and_then(|s| s.to_str()).map(|s| s.to_lowercase()=="cue").unwrap_or(false)).unwrap_or(&grp[0]);
@@ -438,61 +440,92 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                             }
                         }
                     }
+                    if eff_base.is_empty() {
+                        eff_base = "roms/UNKNOWN".to_string();
+                    }
                     let group_name = Path::new(&cue.name).file_stem().unwrap().to_string_lossy().to_string();
                     let dr = format!("{}/{}", eff_base, group_name);
-                    dests_for_coll.push(dr.clone());
                     group_infos.push((grp.clone(), dr));
                 }
             }
-            let coll = detect_collisions(&dests_for_coll);
-            if !coll.is_empty() {
-                let dr = format!("{}/{}", sf.classification.destination, sf.source_path.file_name().unwrap().to_string_lossy());
-                entries.push(PlanEntry { source: sf.source_path.to_string_lossy().to_string(), destination: dr, action: "manual_review".into(), reason: format!("output collision inside archive: {} collides with {}", coll[0].0, coll[0].1), hash: None, size: Some(sf.size), group: None, ..Default::default()});
-                manual += 1;
-                continue;
-            }
-            // For each group, plan extract with temp hashing for duplicate detection
-            for (grp, dest_rel_inner) in group_infos {
-                let dest_abs_inner = sd_path.join(&dest_rel_inner);
-                let exists = dest_abs_inner.exists();
-                // Try to hash inner content via temp extraction
-                // We'll attempt to extract to temp and hash
-                // Use tempfile
-                let hash_attempt = (|| -> Option<String> {
-                    let tmp = tempfile::TempDir::new().ok()?;
-                    let _extracted = archive::safe_extract_to_temp(&sf.source_path, tmp.path(), &limits).ok()?;
-                    if grp.len()==1 {
-                        let target = grp[0].name.clone();
-                        let fname = Path::new(&target).file_name().unwrap().to_string_lossy().to_string();
-                        for p in walkdir::WalkDir::new(tmp.path()).follow_links(false).into_iter().filter_map(|e| e.ok()) {
-                            if p.file_name().to_string_lossy() == fname {
-                                return hash::sha256_file(p.path()).ok();
-                            }
+            // Single temp extraction per archive; member hashes computed once
+            let temp_dir = tempfile::TempDir::new().map_err(|e| anyhow::anyhow!("tempdir failed: {}", e))?;
+            let _extracted_ok = crate::archive::safe_extract_to_temp(&sf.source_path, temp_dir.path(), &limits);
+            let member_hash = |name: &str| -> Option<String> {
+                let fname = std::path::Path::new(name).file_name()?.to_string_lossy().to_string();
+                for p in walkdir::WalkDir::new(temp_dir.path()).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+                    if p.file_name().to_string_lossy() == fname {
+                        return hash::sha256_file(p.path()).ok();
+                    }
+                }
+                None
+            };
+            // Compute hashes for each group and dedup inside archive before collision handling
+            let mut group_infos_with_hash: Vec<(Vec<archive::ArchiveEntry>, String, Option<String>)> = Vec::new();
+            for (grp, dr) in group_infos {
+                let gh = if grp.len() == 1 {
+                    member_hash(&grp[0].name)
+                } else {
+                    let mut hasher = sha2::Sha256::new();
+                    use sha2::Digest;
+                    let mut found_hashes: Vec<String> = Vec::new();
+                    for member in &grp {
+                        if let Some(h) = member_hash(&member.name) {
+                            found_hashes.push(h);
                         }
-                        None
-                    } else {
-                        // combined hash
-                        let mut hasher = sha2::Sha256::new();
-                        use sha2::Digest;
-                        let mut found_hashes: Vec<String> = Vec::new();
-                        for member in &grp {
-                            let fname = Path::new(&member.name).file_name().unwrap().to_string_lossy().to_string();
-                            for p in walkdir::WalkDir::new(tmp.path()).follow_links(false).into_iter().filter_map(|e| e.ok()) {
-                                if p.file_name().to_string_lossy() == fname {
-                                    if let Ok(h) = hash::sha256_file(p.path()) {
-                                        found_hashes.push(h);
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        if found_hashes.is_empty() { return None; }
+                    }
+                    if found_hashes.is_empty() { None } else {
                         found_hashes.sort();
-                        for h in found_hashes { hasher.update(h.as_bytes()); }
+                        for h in &found_hashes { hasher.update(h.as_bytes()); }
                         Some(hex::encode(hasher.finalize()))
                     }
-                })();
-                let inner_hash = hash_attempt;
+                };
+                group_infos_with_hash.push((grp, dr, gh));
+            }
+            let mut seen_dest: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+            let mut final_infos: Vec<(Vec<archive::ArchiveEntry>, String, Option<String>)> = Vec::new();
+            for (grp, dr, gh) in group_infos_with_hash {
+                let norm = dr.to_lowercase();
+                match seen_dest.get(&norm) {
+                    Some(prev) if prev.is_some() && gh.is_some() && prev.as_ref() == gh.as_ref() => {
+                        // Identical content inside the archive -> deploy ONE copy only
+                        entries.push(PlanEntry {
+                            source: format!("{}::{}", sf.source_path.display(), grp[0].name),
+                            destination: dr.clone(),
+                            action: "skip_duplicate".into(),
+                            reason: "duplicate content inside archive -> only one copy deployed".into(),
+                            hash: gh.clone(),
+                            size: Some(grp.iter().map(|e| e.size).sum()),
+                            group: if grp.len() > 1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None },
+                            ..Default::default()
+                        });
+                        duplicate += 1;
+                        continue;
+                    }
+                    Some(_) => {
+                        // Same destination, DIFFERENT content -> real collision -> manual review (only this member)
+                        entries.push(PlanEntry {
+                            source: format!("{}::{}", sf.source_path.display(), grp[0].name),
+                            destination: dr.clone(),
+                            action: "manual_review".into(),
+                            reason: format!("collision inside archive: same destination {} with different content", dr),
+                            hash: gh.clone(),
+                            size: Some(grp.iter().map(|e| e.size).sum()),
+                            ..Default::default()
+                        });
+                        manual += 1;
+                        continue;
+                    }
+                    None => {
+                        seen_dest.insert(norm, gh.clone());
+                        final_infos.push((grp, dr, gh));
+                    }
+                }
+            }
+            // For each group, plan extract with temp hashing for duplicate detection (reuse already computed hash)
+            for (grp, dest_rel_inner, inner_hash) in final_infos {
+                let dest_abs_inner = sd_path.join(&dest_rel_inner);
+                let exists = dest_abs_inner.exists();
 
                 if exists {
                     if grp.len()==1 {
@@ -851,6 +884,20 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
         }
     }
 
+    // Final safety net: no destination may be empty or start with '/'
+    for e in &mut entries {
+        if e.destination.is_empty() || e.destination.starts_with('/') {
+            let fname = e.destination.trim_start_matches('/').to_string();
+            let fname = if fname.is_empty() {
+                std::path::Path::new(&e.source).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "file".to_string())
+            } else {
+                std::path::Path::new(&fname).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or(fname)
+            };
+            e.destination = format!("roms/UNKNOWN/{}", fname);
+            e.reason = format!("{} [destination sanitized to roms/UNKNOWN]", e.reason);
+        }
+    }
+
     // Deterministic: sort entries by source then destination
     entries.sort_by(|a,b| a.source.cmp(&b.source).then(a.destination.cmp(&b.destination)));
 
@@ -870,7 +917,13 @@ fn do_hash_compare(src: &Path, dst: &Path) -> anyhow::Result<(Option<String>, Op
 
 fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Path) -> anyhow::Result<(String, String, String)> {
     let kind = &sf.classification.kind;
-    let dest_base = &sf.classification.destination;
+    // NEVER allow an empty destination base: it would produce "/file" (invalid absolute path)
+    let dest_base_owned = if sf.classification.destination.is_empty() {
+        "roms/UNKNOWN".to_string()
+    } else {
+        sf.classification.destination.clone()
+    };
+    let dest_base = &dest_base_owned;
     let file_name = sf.source_path.file_name().unwrap().to_string_lossy().to_string();
     match kind {
         crate::classify::Kind::Music => {
