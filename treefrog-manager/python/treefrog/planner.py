@@ -400,12 +400,10 @@ def plan(scanned, sd_root: str, profile):
                 elif cls == "conflict":
                     conflicts+=1; action="conflict"; reason="same path + different hash -> conflict (payload)"
                 else:
-                    # Check duplicate via sd_hash_map for payload archive itself
+                    # In-job dedup only for payload archive
                     try:
                         src_hash = hmod.sha256_file(sf["source_path"])
-                        if src_hash in sd_hash_map:
-                            duplicate+=1; action="skip_duplicate"; reason="different path + same hash -> duplicate content (payload archive already on SD)"
-                        elif src_hash in hash_to_dest:
+                        if src_hash in hash_to_dest:
                             duplicate+=1; action="skip_duplicate"; reason="duplicate archive in same job"
                         else:
                             hash_to_dest[src_hash]=dest_rel
@@ -513,12 +511,6 @@ def plan(scanned, sd_root: str, profile):
                                         break
                                 if found and found.exists():
                                     inner_hash = hmod.sha256_file(found)
-                                    # Also check if this inner hash duplicates any loose file or other archive inner
-                                    if inner_hash in sd_hash_map:
-                                        # Duplicate extracted payload already on SD
-                                        entries.append({"source": f"{sf['source_path']}::{primary['name']}", "destination": dest_rel_inner, "action": "skip_duplicate", "reason": f"duplicate extracted payload (inner {pathlib.Path(primary['name']).suffix} already on SD at {sd_hash_map[inner_hash]})", "hash": inner_hash, "size": primary["size"], "group": [x["name"] for x in grp] if len(grp)>1 else None})
-                                        duplicate += 1
-                                        continue
                                     if inner_hash in hash_to_dest:
                                         entries.append({"source": f"{sf['source_path']}::{primary['name']}", "destination": dest_rel_inner, "action": "skip_duplicate", "reason": "duplicate extracted payload in same job", "hash": inner_hash, "size": primary["size"], "group": [x["name"] for x in grp] if len(grp)>1 else None})
                                         duplicate += 1
@@ -538,10 +530,6 @@ def plan(scanned, sd_root: str, profile):
                                         h = hmod.sha256_file(member_path)
                                         combined.update(h.encode())
                                 inner_hash = combined.hexdigest() if combined else None
-                                if inner_hash and inner_hash in sd_hash_map:
-                                    entries.append({"source": f"{sf['source_path']}::group:{group_name}", "destination": dest_rel_inner, "action": "skip_duplicate", "reason": f"duplicate grouped payload already on SD", "hash": inner_hash, "size": sum(x["size"] for x in grp), "group": [x["name"] for x in grp]})
-                                    duplicate += 1
-                                    continue
                                 if inner_hash and inner_hash in hash_to_dest:
                                     entries.append({"source": f"{sf['source_path']}::group:{group_name}", "destination": dest_rel_inner, "action": "skip_duplicate", "reason": "duplicate grouped payload in same job", "hash": inner_hash, "size": sum(x["size"] for x in grp), "group": [x["name"] for x in grp]})
                                     duplicate += 1
@@ -721,15 +709,25 @@ def plan(scanned, sd_root: str, profile):
                     else:
                         new+=1; action="copy"; reason2=f"video compatible -> copy to {dest_base}"
                 else:
+                    wrong_location_v = None
+                    try:
+                        tmp_h = hmod.sha256_file(sf["source_path"])
+                        if tmp_h in sd_hash_map:
+                            wrong_location_v = sd_hash_map[tmp_h]
+                    except:
+                        pass
                     try:
                         src_hash = hmod.sha256_file(sf["source_path"])
-                        if src_hash in sd_hash_map:
+                        if src_hash in hash_to_dest:
                             duplicate+=1; action="skip_duplicate"; reason2="different path + same hash -> duplicate (video)"
-                        elif src_hash in hash_to_dest:
-                            duplicate+=1; action="skip_duplicate"; reason2="duplicate video in same job"
                         else:
                             hash_to_dest[src_hash]=dest_rel
-                            new+=1; action="copy"; reason2=f"video compatible -> copy to {dest_base}"
+                            new+=1; base_v = f"video compatible -> copy to {dest_base}"
+                            if wrong_location_v:
+                                reason2 = f"{base_v} | same content already exists at {wrong_location_v} (wrong location) -> copy to required destination"
+                            else:
+                                reason2 = base_v
+                            action="copy"
                     except:
                         new+=1; action="copy"; reason2=f"video compatible -> copy"
                 # Use converted reason
@@ -942,19 +940,31 @@ def plan(scanned, sd_root: str, profile):
             else:
                 new+=1; action="copy"; reason="new path + new hash -> copy"
         else:
+            # Wrong-location info: same content exists elsewhere on SD (informative)
+            wrong_location = None
+            try:
+                tmp_hash = _get_src_hash(sf["source_path"])
+                if tmp_hash is None and sf["source_path"].is_file():
+                    tmp_hash = hmod.sha256_file(sf["source_path"])
+                if tmp_hash and tmp_hash in sd_hash_map:
+                    wrong_location = sd_hash_map[tmp_hash]
+            except:
+                pass
             try:
                 src_hash = _get_src_hash(sf["source_path"])
                 if src_hash is None:
-                    # Fallback to file hash if project hash failed
                     src_hash = hmod.sha256_file(sf["source_path"]) if sf["source_path"].is_file() else None
-                if src_hash and src_hash in sd_hash_map:
-                    duplicate+=1; action="skip_duplicate"; reason="different path + same hash -> duplicate content default skip"
-                elif src_hash and src_hash in hash_to_dest:
+                if src_hash and src_hash in hash_to_dest:
                     duplicate+=1; action="skip_duplicate"; reason="different path + same hash -> duplicate content default skip"
                 else:
                     if src_hash:
                         hash_to_dest[src_hash] = dest_rel
-                    new+=1; action="copy"; reason=f"new path + new hash -> {dest_base}"
+                    new+=1; base = f"new path + new hash -> {dest_base}"
+                    if wrong_location:
+                        reason = f"{base} | same content already exists at {wrong_location} (wrong location) -> copy to required destination"
+                    else:
+                        reason = base
+                    action="copy"
             except:
                 new+=1; action="copy"; reason=f"new path + new hash -> {dest_base}"
 

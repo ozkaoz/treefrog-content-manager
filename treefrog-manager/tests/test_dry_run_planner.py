@@ -53,12 +53,14 @@ def test_dry_run_summary_counts():
         summary = plan["summary"]
         # deletions always 0
         assert summary["deletions"] == 0
-        # at least one unchanged, one new, one duplicate, one extract
+        # at least one unchanged, one new, one extract
         assert summary["unchanged"] >= 1, summary
         assert summary["new"] >= 1, summary
-        # duplicate detection: duplicate_of_existing should be duplicate_content
-        dups = [e for e in plan["entries"] if e["action"]=="skip_duplicate"]
-        assert len(dups) >= 1, plan["entries"]
+        # duplicate detection: same hash elsewhere on SD now copies to required destination (wrong-location rule)
+        # duplicate_of_existing should be copy with wrong location reason, not skip_duplicate
+        wrong_copies = [e for e in plan["entries"] if e["action"]=="copy" and "wrong location" in e["reason"]]
+        assert len(wrong_copies) >= 1, plan["entries"]
+        # in-job duplicate (same hash twice in same job) should still be skip_duplicate — tested via other cases
         extracts = [e for e in plan["entries"] if e["action"]=="extract"]
         assert len(extracts) >= 1
 

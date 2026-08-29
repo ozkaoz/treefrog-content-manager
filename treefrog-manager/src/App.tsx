@@ -298,108 +298,41 @@ export default function App() {
   }
 
   async function handleSync(): Promise<any> {
-    if (!sdPath) {
-      const msg = "No hay SD seleccionada. Ve a Overview y selecciona una SD.";
-      setError(msg);
-      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
-    }
-    if (!globalPlan || !globalPlan.entries || globalPlan.entries.length === 0) {
-      const msg = "No hay archivos para sincronizar. Ve a Games/Music/Videos/BIOS/LGPT y selecciona carpetas de origen.";
-      setError(msg);
-      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
-    }
-    if (globalSpace?.status === "insufficient_space") {
-      const msg = "Espacio insuficiente";
-      setError(msg);
-      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
-    }
-    
+    if (!sdPath) return { error: "No hay SD seleccionada. Ve a Overview." };
+    if (!globalPlan) return { error: "No hay plan de sincronización. Escanea al menos una carpeta de origen." };
+    if (globalSpace?.status === "insufficient_space") return { error: "Espacio insuficiente en la SD." };
+
     setLoading(true);
     setError("");
+    const agg = { deployed: 0, skipped: 0, failed: 0, errors: [] as string[], warnings: [] as string[], breakdown: [] as any[] };
     try {
-      // Multi-origen: desplegar cada fuente que tiene plan
-      const sourceEntries: Array<{ src: string; plan: any }> = [
+      const jobs = [
         { src: gamesSource, plan: gamesPlan },
         { src: musicSource, plan: musicPlan },
         { src: videosSource, plan: videosPlan },
         { src: biosSource, plan: biosPlan },
         { src: lgptSamplesSource, plan: lgptPlan },
         { src: lgptProjectsSource, plan: lgptPlan },
-      ].filter(s => s.src && s.plan && s.plan.entries && s.plan.entries.length > 0) as any;
+      ].filter((j, i, arr) => j.src && j.plan && arr.findIndex((x) => x.src === j.src) === i);
 
-      // Fallback: si no hay planes individuales pero globalPlan existe, usar primera fuente disponible
-      let results: any[] = [];
-      if (sourceEntries.length === 0) {
-        const fallbackSrc = [gamesSource, musicSource, videosSource, biosSource, lgptSamplesSource, lgptProjectsSource].filter(Boolean)[0];
-        if (fallbackSrc) {
-          const res: any = await invoke("deploy_to_sd", { sourcePath: fallbackSrc, sdPath });
-          results.push(res);
-        }
-      } else {
-        // Deduplicate sources (lgpt samples/projects may share same plan)
-        const seen = new Set<string>();
-        for (const { src } of sourceEntries) {
-          if (seen.has(src)) continue;
-          seen.add(src);
-          try {
-            const res: any = await invoke("deploy_to_sd", { sourcePath: src, sdPath });
-            results.push(res);
-          } catch (e) {
-            results.push({ deployed: 0, skipped: 0, failed: 1, error: String(e), breakdown: [], warnings: [], errors: [String(e)] });
-          }
-        }
+      if (jobs.length === 0) return { error: "No hay carpetas de origen escaneadas. Ve a Games/Music/Videos/BIOS/LGPT y pulsa Scan." };
+
+      for (const job of jobs) {
+        const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath })) as any;
+        agg.deployed += res.deployed || 0;
+        agg.skipped += res.skipped || 0;
+        agg.failed += res.failed || 0;
+        agg.errors.push(...(res.errors || []));
+        agg.warnings.push(...(res.warnings || []));
+        agg.breakdown.push(...(res.breakdown || []));
       }
-
-      // Aggregate breakdown
-      let totalDeployed = 0;
-      let totalSkipped = 0;
-      let totalFailed = 0;
-      let allBreakdown: any[] = [];
-      let allWarnings: string[] = [];
-      let allErrors: string[] = [];
-      for (const r of results) {
-        totalDeployed += r.deployed || 0;
-        totalSkipped += r.skipped || 0;
-        totalFailed += r.failed || 0;
-        if (Array.isArray(r.breakdown)) allBreakdown.push(...r.breakdown);
-        if (Array.isArray(r.warnings)) allWarnings.push(...r.warnings);
-        if (Array.isArray(r.errors)) allErrors.push(...r.errors);
-        if (r.error) allErrors.push(String(r.error));
-      }
-
-      // Si no hubo resultados individuales pero globalPlan existe, generar breakdown desde globalPlan
-      if (allBreakdown.length === 0 && globalPlan && globalPlan.entries) {
-        allBreakdown = globalPlan.entries.map((e: any) => ({
-          source: e.source,
-          destination: e.destination,
-          action: (e as any).resolved_action || e.action,
-          reason: e.reason,
-          content_type: e.content_type,
-        }));
-        // Si no hay desglose previo, inferir totales desde summary
-        if (results.length === 0) {
-          totalDeployed = globalPlan.summary.new + globalPlan.summary.changed;
-          totalSkipped = globalPlan.summary.unchanged + globalPlan.summary.duplicate_content;
-          totalFailed = globalPlan.summary.conflicts + (globalPlan.summary.manual_review || 0);
-        }
-      }
-
-      const aggregated: any = {
-        deployed: totalDeployed,
-        skipped: totalSkipped,
-        failed: totalFailed,
-        breakdown: allBreakdown,
-        warnings: allWarnings,
-        errors: allErrors,
-        results,
-      };
 
       await handleAnalyze();
-      return aggregated;
+      return agg;
     } catch (e) {
       const msg = String(e);
       setError(msg);
-      return { error: msg, deployed: 0, skipped: 0, failed: 0, breakdown: [], warnings: [], errors: [msg] };
+      return { ...agg, error: msg };
     } finally {
       setLoading(false);
     }
@@ -481,7 +414,7 @@ export default function App() {
         ))}
       </nav>
 
-      {activeTab === "overview" && (
+      <div style={{ display: activeTab === "overview" ? "block" : "none" }}>
         <div>
           <div className="card">
             <h3 style={{ marginTop: 0 }}>TREEFROG CONTENT MANAGER</h3>
@@ -624,41 +557,40 @@ export default function App() {
           </div>
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flujo: <code>ANALIZAR</code> (estado real SD) → <code>TRANSFERIR ARCHIVOS</code> (Games → Music → Videos → BIOS → LGPT → SD Card) → <code>Sync to SD</code> en SD Card. La app verifica la extensión y copia automáticamente a la carpeta correcta (perfil TreeFrogUI, no eliges carpeta en SD). Análisis recursivo de subcarpetas.</p>
         </div>
-      )}
-
-      {activeTab === "games" && (
+      </div>
+      <div style={{ display: activeTab === "games" ? "block" : "none" }}>
         <GamesPanel 
           globalSdPath={sdPath} 
           onSourceChange={setGamesSource} 
           onPlanChange={setGamesPlan as any}
           onNext={() => setActiveTab("music")} 
         />
-      )}
-      {activeTab === "music" && (
+      </div>
+      <div style={{ display: activeTab === "music" ? "block" : "none" }}>
         <MusicPanel 
           globalSdPath={sdPath} 
           onSourceChange={setMusicSource} 
           onPlanChange={setMusicPlan as any}
           onNext={() => setActiveTab("videos")} 
         />
-      )}
-      {activeTab === "videos" && (
+      </div>
+      <div style={{ display: activeTab === "videos" ? "block" : "none" }}>
         <VideosPanel 
           globalSdPath={sdPath} 
           onSourceChange={setVideosSource} 
           onPlanChange={setVideosPlan as any}
           onNext={() => setActiveTab("bios")} 
         />
-      )}
-      {activeTab === "bios" && (
+      </div>
+      <div style={{ display: activeTab === "bios" ? "block" : "none" }}>
         <BiosManager 
           globalSdPath={sdPath}
           onSourceChange={setBiosSource}
           onPlanChange={setBiosPlan as any}
           onNext={() => setActiveTab("lgpt")} 
         />
-      )}
-      {activeTab === "lgpt" && (
+      </div>
+      <div style={{ display: activeTab === "lgpt" ? "block" : "none" }}>
         <LgptManager 
           globalSdPath={sdPath}
           onSamplesSourceChange={setLgptSamplesSource}
@@ -666,8 +598,8 @@ export default function App() {
           onPlanChange={setLgptPlan as any}
           onNext={() => setActiveTab("sdcard")} 
         />
-      )}
-      {activeTab === "sdcard" && (
+      </div>
+      <div style={{ display: activeTab === "sdcard" ? "block" : "none" }}>
         <SdCardPanel 
           sdPath={sdPath} 
           onChange={setSdPath} 
@@ -680,9 +612,9 @@ export default function App() {
             return result;
           }}
         />
-      )}
-      {activeTab === "settings" && <SettingsPanel />}
-      {activeTab === "about" && <About />}
+      </div>
+      <div style={{ display: activeTab === "settings" ? "block" : "none" }}><SettingsPanel /></div>
+      <div style={{ display: activeTab === "about" ? "block" : "none" }}><About /></div>
     </div>
   );
 }

@@ -361,7 +361,7 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                         // check duplicate via sd_hash_map or hash_to_dest for archive itself
                         let h = hash::sha256_file(&sf.source_path).ok();
                         if let Some(hv) = h {
-                            if sd_hash_map.contains_key(&hv) || hash_to_dest.contains_key(&hv) {
+                            if hash_to_dest.contains_key(&hv) {
                                 duplicate+=1; ("skip_duplicate", "duplicate archive payload")
                             } else {
                                 hash_to_dest.insert(hv.clone(), dest_rel2.clone());
@@ -511,14 +511,8 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     }
                     continue;
                 }
-                // Check duplicate via hash
+                // Check duplicate via hash - only in-job dedup (same hash elsewhere on SD -> copy to required dest)
                 if let Some(ref h) = inner_hash {
-                    if sd_hash_map.contains_key(h) {
-                        let src = if grp.len()==1 { format!("{}::{}", sf.source_path.display(), grp[0].name) } else { format!("{}::group:{}", sf.source_path.display(), grp[0].name) };
-                        entries.push(PlanEntry { source: src, destination: dest_rel_inner.clone(), action: "skip_duplicate".into(), reason: format!("duplicate extracted payload (inner {} already on SD at {})", Path::new(&grp[0].name).extension().unwrap_or_default().to_string_lossy(), sd_hash_map[h]), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None }, ..Default::default()});
-                        duplicate +=1;
-                        continue;
-                    }
                     if hash_to_dest.contains_key(h) {
                         let src = if grp.len()==1 { format!("{}::{}", sf.source_path.display(), grp[0].name) } else { format!("{}::group:{}", sf.source_path.display(), grp[0].name) };
                         entries.push(PlanEntry { source: src, destination: dest_rel_inner.clone(), action: "skip_duplicate".into(), reason: "duplicate extracted payload in same job".into(), hash: inner_hash.clone(), size: Some(grp.iter().map(|e| e.size).sum()), group: if grp.len()>1 { Some(grp.iter().map(|e| e.name.clone()).collect()) } else { None }, ..Default::default()});
@@ -600,19 +594,27 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     if std::fs::metadata(&dest_abs_v).map(|m| m.len()).unwrap_or(0) != sf.size { false } else { a == b }
                 } else { false };
                 let class_v = if exists_v { hash::classify(None, exists_v, same_hash_v, exists_v) } else { hash::DuplicateClass::New };
+                let wrong_location_v = src_hash_v.as_ref().and_then(|h| sd_hash_map.get(h).cloned());
                 let duplicate_elsewhere_v = if !exists_v {
                     if let Some(h) = &src_hash_v {
-                        if sd_hash_map.contains_key(h) || hash_to_dest.contains_key(h) { true } else { hash_to_dest.insert(h.clone(), dest_rel_video.clone()); false }
+                        if hash_to_dest.contains_key(h) { true } else { hash_to_dest.insert(h.clone(), dest_rel_video.clone()); false }
                     } else { false }
                 } else { false };
                 let (action_v, reason_v) = if duplicate_elsewhere_v {
                     duplicate += 1;
-                    ("skip_duplicate", "different path + same hash -> duplicate (video)")
+                    ("skip_duplicate".to_string(), "different path + same hash -> duplicate (video)".to_string())
                 } else {
                     match class_v {
-                        hash::DuplicateClass::Unchanged => { unchanged += 1; ("skip_unchanged", "same path + same hash -> unchanged (video compatible)") },
-                        hash::DuplicateClass::Conflict => { conflicts += 1; changed += 1; ("conflict", "same path + different hash -> conflict (video)") },
-                        _ => { new_c += 1; ("copy", "video compatible -> copy") },
+                        hash::DuplicateClass::Unchanged => { unchanged += 1; ("skip_unchanged".to_string(), "same path + same hash -> unchanged (video compatible)".to_string()) },
+                        hash::DuplicateClass::Conflict => { conflicts += 1; changed += 1; ("conflict".to_string(), "same path + different hash -> conflict (video)".to_string()) },
+                        _ => {
+                            new_c += 1;
+                            let base = "video compatible -> copy".to_string();
+                            let r = if let Some(wl) = &wrong_location_v {
+                                format!("{} | same content already exists at {} (wrong location) -> copy to required destination", base, wl)
+                            } else { base };
+                            ("copy".to_string(), r)
+                        },
                     }
                 };
                 entries.push(crate::PlanEntry {
@@ -627,9 +629,9 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     size: Some(sf.size),
                     group: None,
                     members: None,
-                    default_action: Some(action_v.to_string()),
-                    resolution: Some(default_resolution_for_action(action_v)),
-                    resolved_action: Some(action_v.to_string()),
+                    default_action: Some(action_v.clone()),
+                    resolution: Some(default_resolution_for_action(&action_v)),
+                    resolved_action: Some(action_v.clone()),
                     original_destination: None,
                     ..Default::default()
                 });
@@ -730,9 +732,19 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             } else { false }
         } else { false };
 
+        // Wrong-location info: same content exists elsewhere on SD (only informative now)
+        let wrong_location: Option<String> = if !same_path {
+            if let Ok(h) = hash::sha256_file(&sf.source_path) {
+                sd_hash_map.get(&h).cloned()
+            } else { None }
+        } else { None };
+
+        // In-job dedup only: same hash twice within this job -> skip_duplicate.
+        // Same hash elsewhere on SD -> COPY to the required destination (TreeFrogUI/LGPT
+        // need the file at the profile destination; a copy in another path doesn't count).
         let duplicate_elsewhere = if !same_path {
             if let Ok(h) = hash::sha256_file(&sf.source_path) {
-                if sd_hash_map.contains_key(&h) || hash_to_dest.contains_key(&h) {
+                if hash_to_dest.contains_key(&h) {
                     true
                 } else {
                     hash_to_dest.insert(h.clone(), dest_rel.clone());
@@ -751,9 +763,16 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             hash::DuplicateClass::Unchanged => { unchanged+=1; ("skip_unchanged".to_string(), "same path + same hash -> unchanged".to_string()) },
             hash::DuplicateClass::DuplicateContent => { duplicate+=1; ("skip_duplicate".to_string(), "different path + same hash -> duplicate content default skip".to_string()) },
             hash::DuplicateClass::Conflict => { conflicts+=1; if same_path { changed+=1; } ("conflict".to_string(), "same path + different hash -> conflict".to_string()) },
-            hash::DuplicateClass::New => { new_c+=1; ("copy".to_string(), reason.clone()) },
+            hash::DuplicateClass::New => {
+                new_c+=1;
+                let base = reason.clone();
+                let r = if let Some(wl) = &wrong_location {
+                    format!("{} | same content already exists at {} (wrong location) -> copy to required destination", base, wl)
+                } else { base };
+                ("copy".to_string(), r)
+            },
         };
-        let r = if action=="copy" { reason } else { reason2.to_string() };
+        let r = reason2.clone();
 
         let src_str = if let Some(ref members) = sf.group_members { format!("{} (group {} files)", sf.source_path.display(), members.len()) } else { sf.source_path.to_string_lossy().to_string() };
         let ct = content_type_for_classification(&sf.classification.kind, &sf.classification.system_id);
