@@ -530,142 +530,84 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
 
     let lgpt_detected = p.join("lgpt").exists();
 
-    // Enumerate existing content read-only - whitelist: only valid system folders + media/bios/lgpt
+    // Use scanner.rs for SD destination (single source of truth) - ensures counts exactly match planner
+    let profile_for_scan = crate::profile::load_profile().unwrap_or_else(|_| {
+        crate::profile::load_profile().unwrap()
+    });
+    let scanned_files = crate::scanner::scan(path, &profile_for_scan).unwrap_or_default();
+
     let mut rom_dirs = Vec::new();
     let mut media_dirs = Vec::new();
     let mut bios_dirs = Vec::new();
     let mut lgpt_dirs = Vec::new();
-    let mut existing_count = 0usize;
     let mut total_size = 0u64;
     let mut folder_breakdown: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
-    // Load profile for valid system folders (used for whitelist at depth 2)
-    let valid_system_folders: std::collections::HashSet<String> = crate::profile::load_profile()
-        .map(|prof| prof.systems.iter().flat_map(|s| s.folder_aliases.iter().map(|a| a.to_lowercase())).collect())
-        .unwrap_or_default();
-    let valid_media_folders = ["music", "videos", "images"];
-    // Build system -> extensions map and media extensions for file filtering
-    let mut system_extensions: std::collections::HashMap<String, std::collections::HashSet<String>> = std::collections::HashMap::new();
-    let valid_media_extensions: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::from([
-        ("music", vec![".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"]),
-        ("videos", vec![".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"]),
-        ("images", vec![".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff"]),
-    ]);
-    if let Ok(prof) = crate::profile::load_profile() {
-        for sys in &prof.systems {
-            let exts: std::collections::HashSet<String> = sys.extensions.iter().map(|e| e.to_lowercase()).collect();
-            for alias in &sys.folder_aliases {
-                system_extensions.insert(alias.to_lowercase(), exts.clone());
-            }
+    // Derive UI badge dirs from scanned files' destinations (whitelist already applied by scanner+classify)
+    let mut seen_rom_dirs = std::collections::HashSet::new();
+    let mut seen_media_dirs = std::collections::HashSet::new();
+    let mut seen_bios_dirs = std::collections::HashSet::new();
+    let mut seen_lgpt_dirs = std::collections::HashSet::new();
+
+    for sf in &scanned_files {
+        total_size += sf.size;
+        match sf.classification.kind {
+            crate::classify::Kind::Rom => {
+                if let Some(dir) = sf.classification.destination.strip_prefix("roms/") {
+                    let top = dir.split('/').next().unwrap_or(dir);
+                    if seen_rom_dirs.insert(top.to_string()) {
+                        rom_dirs.push(top.to_string());
+                    }
+                } else if !sf.classification.destination.is_empty() {
+                    if seen_rom_dirs.insert(sf.classification.destination.clone()) {
+                        rom_dirs.push(sf.classification.destination.clone());
+                    }
+                }
+            },
+            crate::classify::Kind::Music => {
+                if seen_media_dirs.insert("music".to_string()) {
+                    media_dirs.push("music".to_string());
+                }
+            },
+            crate::classify::Kind::Video => {
+                if seen_media_dirs.insert("videos".to_string()) {
+                    media_dirs.push("videos".to_string());
+                }
+            },
+            crate::classify::Kind::Image => {
+                if seen_media_dirs.insert("images".to_string()) {
+                    media_dirs.push("images".to_string());
+                }
+            },
+            crate::classify::Kind::Bios => {
+                if seen_bios_dirs.insert("cubegm/bios".to_string()) {
+                    bios_dirs.push("cubegm/bios".to_string());
+                }
+            },
+            crate::classify::Kind::LgptSample => {
+                if seen_lgpt_dirs.insert("lgpt/samples".to_string()) {
+                    lgpt_dirs.push("lgpt/samples".to_string());
+                }
+            },
+            crate::classify::Kind::LgptProject => {
+                if seen_lgpt_dirs.insert("lgpt/projects".to_string()) {
+                    lgpt_dirs.push("lgpt/projects".to_string());
+                }
+            },
+            _ => {}
+        }
+        let folder = sf.classification.destination.clone();
+        if !folder.is_empty() {
+            *folder_breakdown.entry(folder).or_insert(0) += 1;
         }
     }
 
-    // Populate rom_dirs/media_dirs/bios_dirs based on actual dirs (for UI badges), but only those that are valid
-    let roms_path = p.join("roms");
-    if roms_path.exists() {
-        if let Ok(entries) = std::fs::read_dir(&roms_path) {
-            for ent in entries.flatten() {
-                if let Ok(ft) = ent.file_type() {
-                    if ft.is_dir() {
-                        let name = ent.file_name().to_string_lossy().to_string();
-                        let lower = name.to_lowercase();
-                        // Only count valid system/media folders for the badge lists (whitelist)
-                        if valid_system_folders.contains(&lower) || valid_media_folders.contains(&lower.as_str()) {
-                            match lower.as_str() {
-                                "music" | "videos" | "images" | "ebook" => media_dirs.push(name),
-                                "bios" => bios_dirs.push(name),
-                                _ => rom_dirs.push(name),
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    if p.join("cubegm/bios").exists() {
-        if !bios_dirs.contains(&"cubegm/bios".to_string()) {
-            bios_dirs.push("cubegm/bios".to_string());
-        }
-    }
+    let existing_count = scanned_files.len();
+    // Also ensure lgpt_dirs from filesystem if scanner didn't find them (for empty lgpt)
     if lgpt_detected {
-        if p.join("lgpt/samples").exists() { lgpt_dirs.push("lgpt/samples".to_string()); }
-        if p.join("lgpt/projects").exists() { lgpt_dirs.push("lgpt/projects".to_string()); }
+        if p.join("lgpt/samples").exists() && !seen_lgpt_dirs.contains("lgpt/samples") { lgpt_dirs.push("lgpt/samples".to_string()); }
+        if p.join("lgpt/projects").exists() && !seen_lgpt_dirs.contains("lgpt/projects") { lgpt_dirs.push("lgpt/projects".to_string()); }
         if p.join("lgpt").exists() && lgpt_dirs.is_empty() { lgpt_dirs.push("lgpt".to_string()); }
-    }
-
-    // Single walk from SD root with strict whitelist filter (depth-aware) + extension filtering for files
-    for entry in walkdir::WalkDir::new(p).follow_links(false).into_iter().filter_entry(|e| {
-        let path = e.path();
-        let name = e.file_name().to_string_lossy().to_lowercase();
-        // 1. Ignorar ocultos y temporales
-        if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") {
-            return false;
-        }
-        // 2. Permitir raíz
-        if path == p { return true; }
-        // 3. Nivel 1: Solo entrar en roms, cubegm, lgpt
-        if e.depth() == 1 {
-            return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
-        }
-        // 4. Nivel 2: Si el padre es "roms", solo permitir sistemas válidos o medios legítimos
-        if let Some(parent_name) = path.parent().and_then(|pp| pp.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
-            if parent_name == "roms" {
-                return valid_system_folders.contains(&name) || valid_media_folders.contains(&name.as_str());
-            }
-            if parent_name == "cubegm" {
-                return name == "bios";
-            }
-        }
-        // 5. Si es un archivo, validar extensión según la carpeta de sistema/medios
-        if e.file_type().is_file() {
-            if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())) {
-                if let Ok(rel_path) = path.strip_prefix(p) {
-                    let components: Vec<String> = rel_path.components().map(|c| c.as_os_str().to_string_lossy().to_lowercase()).collect();
-                    if components.len() >= 2 && components[0] == "roms" {
-                        let folder_name = &components[1];
-                        if let Some(valid_exts) = system_extensions.get(folder_name) {
-                            return valid_exts.contains(&ext);
-                        }
-                        if let Some(valid_exts) = valid_media_extensions.get(folder_name.as_str()) {
-                            return valid_exts.contains(&ext.as_str());
-                        }
-                        // For roms/<system> where system is valid, any file with invalid ext should be filtered
-                        // If folder is a valid system but ext not in its list, filter it
-                        if valid_system_folders.contains(folder_name) || valid_media_folders.contains(&folder_name.as_str()) {
-                            return false;
-                        }
-                    }
-                    if rel_path.to_string_lossy().to_lowercase().contains("cubegm/bios") {
-                        return true;
-                    }
-                    if rel_path.to_string_lossy().to_lowercase().contains("lgpt") {
-                        return true;
-                    }
-                }
-            }
-            // If we can't determine, allow by default (for unknown files, let planner handle)
-            // But for strict filtering, we should be permissive for now
-            return true;
-        }
-        // 6. Por defecto, permitir directorios si ya pasamos los filtros anteriores
-        true
-    }).filter_map(|e| e.ok()) {
-        if entry.file_type().is_file() && !entry.file_type().is_symlink() {
-            // Count only files that are inside the whitelisted tree (roms/*, cubegm/bios/*, lgpt/*)
-            // walkdir already filtered, so any file here is legitimate
-            existing_count += 1;
-            if let Ok(m) = entry.metadata() {
-                total_size += m.len();
-            }
-            if let Ok(rel) = entry.path().strip_prefix(p) {
-                if let Some(parent) = rel.parent() {
-                    let key = parent.to_string_lossy().replace("\\", "/");
-                    if !key.is_empty() {
-                        *folder_breakdown.entry(key).or_insert(0) += 1;
-                    }
-                }
-            }
-        }
     }
 
     rom_dirs.sort();
