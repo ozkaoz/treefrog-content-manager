@@ -20,6 +20,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-shell = "2"
 sha2 = "0.10"
 hex = "0.4"
+md5 = "0.7"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
 walkdir = "2"

@@ -1,56 +1,27 @@
-import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { pickFolder } from "../services/dialog";
-import EmptyState from "./EmptyState";
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
+import { t } from '../i18n';
 
-type BiosVariant = {
+interface BiosEntry {
   id: string;
-  filenames: string[];
-  aliases: string[];
-  expected_size: number | null;
-  hashes_sha256: string[];
-};
-
-type BiosDefinition = {
-  id: string;
-  system_id: string;
   system_name: string;
-  name: string;
-  description: string;
-  required: string;
-  requirement: { scope: string; mandatory_when: string; condition?: string };
-  variants: BiosVariant[];
-  accepted_filenames: string[];
-  accepted_patterns?: string[];
-  destinations: string[];
-  primary_destination: string;
-  expected_size: number | null;
-  hashes_sha256: string[];
-  aliases: string[];
-};
-
-type BiosValidation = {
-  bios_id: string;
-  system_id?: string;
-  state: string;
-  reason: string;
+  filenames: string[];
+  pattern?: string;
+  destination: string;
   required: boolean;
-  file?: string | null;
-  hash?: string | null;
-  size?: number | null;
-  variant?: string | null;
-};
+  description: string;
+  sha256?: string;
+  md5?: string;
+  expected_size?: number;
+}
 
-const STATUS_LABEL: Record<string, string> = {
-  missing: "Missing",
-  found_valid: "Verified",
-  found_invalid: "Invalid",
-  found_unknown: "Needs verification",
-  duplicate: "Duplicate",
-  conflict: "Conflict",
-  not_required: "Not Required",
-  found_valid_variant: "Verified",
-};
+interface BiosState {
+  selected: boolean;
+  found_path: string | null;
+  valid: boolean;
+  reason?: string;
+}
 
 type PlanEntry = {
   source: string;
@@ -67,271 +38,235 @@ type Plan = {
   warnings: string[];
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  missing: "var(--danger)",
-  found_valid: "var(--success)",
-  found_invalid: "var(--danger)",
-  found_unknown: "var(--warning)",
-  duplicate: "var(--accent)",
-  conflict: "var(--danger)",
-  not_required: "var(--text-muted)",
-};
-
-export default function BiosManager({ 
+export default function BiosManager({
   globalSdPath,
   onSourceChange,
   onPlanChange,
   onNext,
   visible
-}: { 
+}: {
   globalSdPath: string;
   onSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
   onNext?: () => void;
   visible?: boolean;
 }) {
-  const [biosSource, setBiosSource] = useState<string>("");
-  const [results, setResults] = useState<BiosValidation[] | null>(null);
-  const [selected, setSelected] = useState<BiosValidation | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>("");
-  const [definitions, setDefinitions] = useState<BiosDefinition[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  void globalSdPath;
+  void visible;
+  const [catalog, setCatalog] = useState<BiosEntry[]>([]);
+  const [biosState, setBiosState] = useState<Record<string, BiosState>>({});
+  const [searchQuery, setSearchQuery] = useState('');
+  const [error, setError] = useState("");
 
-  async function loadDefinitions() {
-    try {
-      const res = (await invoke("bios_profile")) as { definitions: BiosDefinition[] };
-      setDefinitions(res.definitions || []);
-    } catch (e) {
-      setError(String(e));
-    }
-  }
+  useEffect(() => {
+    invoke('get_bios_catalog').then((c) => {
+      const cat = c as BiosEntry[];
+      setCatalog(cat);
+      const initial: Record<string, BiosState> = {};
+      cat.forEach(b => {
+        initial[b.id] = { selected: false, found_path: null, valid: false };
+      });
+      setBiosState(initial);
+    }).catch(e => setError(String(e)));
+  }, []);
 
-  async function handleBrowse() {
+  useEffect(() => {
+    if (!visible || catalog.length === 0) return;
+    // No auto-scan, user browses per BIOS
+  }, [visible, catalog]);
+
+  const handleBrowse = async (biosId: string) => {
+    const bios = catalog.find(b => b.id === biosId);
+    if (!bios) return;
     try {
-      const sel = await pickFolder({ title: "Select BIOS source folder" });
-      if (sel) {
-        setBiosSource(sel);
-        onSourceChange?.(sel);
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'BIOS files', extensions: ['bin', 'rom', 'zip', 'img', 'pk3'] }],
+      });
+      if (selected && typeof selected === 'string') {
+        const validation = await invoke('validate_bios_file', {
+          path: selected,
+          biosId: biosId,
+        }) as { valid: boolean; reason: string };
+        setBiosState(prev => ({
+          ...prev,
+          [biosId]: {
+            selected: validation.valid,
+            found_path: selected,
+            valid: validation.valid,
+            reason: validation.reason,
+          },
+        }));
+        if (onSourceChange) onSourceChange(selected);
       }
     } catch (e) {
+      console.error(e);
       setError(String(e));
     }
-  }
-
-  async function handleScan() {
-    if (!biosSource) {
-      setError("Select a BIOS source directory (e.g., C:\\BIOS)");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      const res = (await invoke("bios_scan", { biosSource })) as { results: BiosValidation[] };
-      setResults(res.results);
-      if (res.results.length > 0) setSelected(res.results[0]);
-      setSelectedFiles(new Set(res.results.filter(r => r.file).map(r => r.file!)));
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const toggleFileSelection = (file: string) => {
-    setSelectedFiles(prev => {
-      const ns = new Set(prev);
-      if (ns.has(file)) ns.delete(file); else ns.add(file);
-      return ns;
-    });
-  };
-  const toggleAll = (checked: boolean) => {
-    if (checked && results) setSelectedFiles(new Set(results.filter(r => r.file).map(r => r.file!)));
-    else setSelectedFiles(new Set());
   };
 
-  const lastScanKey = useRef("");
-  useEffect(() => {
-    const key = `${biosSource}|${globalSdPath}`;
-    if (visible && biosSource && globalSdPath && key !== lastScanKey.current) {
-      lastScanKey.current = key;
-      handleScan();
-    }
-  }, [visible, biosSource, globalSdPath]);
+  const toggleSelection = (biosId: string) => {
+    setBiosState(prev => ({
+      ...prev,
+      [biosId]: { ...prev[biosId], selected: !prev[biosId].selected },
+    }));
+  };
 
   useEffect(() => {
-    if (!results || results.length === 0) {
+    if (catalog.length === 0) {
       onPlanChange?.(null);
       return;
     }
-    
-    // Convert BIOS validation results to Plan format - solo seleccionados
-    const filteredResults = results.filter(r => !r.file || selectedFiles.has(r.file));
-    const entries: PlanEntry[] = filteredResults.map(r => {
-      const action = r.state === 'found_valid' ? 'copy' : 
-                     r.state === 'missing' ? 'manual_review' :
-                     r.state === 'found_invalid' ? 'conflict' :
-                     r.state === 'duplicate' ? 'skip_duplicate' : 'manual_review';
-      
-      return {
-        source: r.file || '',
-        destination: `cubegm/bios/${r.file?.split(/[/\\]/).pop() || ''}`,
-        action,
-        reason: r.reason,
-        content_type: 'bios',
-        size: r.size || 0,
-      };
-    });
-    
+    const entries: PlanEntry[] = Object.entries(biosState)
+      .filter(([_, state]) => state.selected && state.found_path && state.valid)
+      .map(([biosId, state]) => {
+        const bios = catalog.find(b => b.id === biosId)!;
+        const filename = state.found_path!.split(/[\\/]/).pop()!;
+        return {
+          source: state.found_path!,
+          destination: `${bios.destination}/${filename}`,
+          action: 'copy',
+          reason: 'BIOS file selected by user',
+          content_type: 'bios',
+          size: 0,
+        };
+      });
+    if (entries.length === 0) {
+      onPlanChange?.(null);
+      return;
+    }
     const summary = {
-      new: entries.filter(e => e.action === 'copy').length,
+      new: entries.length,
       changed: 0,
       unchanged: 0,
-      duplicate_content: entries.filter(e => e.action === 'skip_duplicate').length,
-      conflicts: entries.filter(e => e.action === 'conflict').length,
+      duplicate_content: 0,
+      conflicts: 0,
       deletions: 0,
-      manual_review: entries.filter(e => e.action === 'manual_review').length,
+      manual_review: 0,
       unsupported_archive: 0,
     };
-    
-    const plan: Plan = { entries, summary, warnings: [] };
-    onPlanChange?.(plan);
-  }, [results, selectedFiles, onPlanChange]);
+    onPlanChange?.({ entries, summary, warnings: [] });
+  }, [biosState, catalog, onPlanChange]);
 
-  if (definitions.length === 0) {
-    setTimeout(() => loadDefinitions(), 0);
-  }
+  const visibleCatalog = catalog.filter(b => {
+    const q = searchQuery.toLowerCase();
+    return !q || b.system_name.toLowerCase().includes(q) ||
+      b.filenames.some(f => f.toLowerCase().includes(q)) ||
+      b.description.toLowerCase().includes(q);
+  });
 
   return (
     <div className="card">
-      <h3>BIOS — TreeFrogUI (profile-driven, no downloads)</h3>
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>BIOS source folder</label>
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <div
-            style={{
-              flex: 1,
-              padding: "8px 10px",
-              border: "1px solid var(--border)",
-              borderRadius: 6,
-              background: "var(--input)",
-              color: biosSource ? "var(--text)" : "var(--text-muted)",
-              fontSize: 13,
-              minHeight: 36,
-              display: "flex",
-              alignItems: "center",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-            title={biosSource || "No folder selected — e.g., D:\\BIOS"}
-          >
-            {biosSource || "No folder selected — e.g., D:\\BIOS"}
-          </div>
-          <button onClick={handleBrowse}>Browse</button>
-        </div>
-      </div>
-
-      <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px 0" }}>
-        SD destination: {globalSdPath || "—"} — the app will automatically copy to cubegm/bios/ according to TreeFrogUI profile.
+      <h3>{t.biosManagement || "BIOS Management"}</h3>
+      <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '12px' }}>
+        {t.biosHelp || "Select BIOS files required by TreeFrogUI. All files are copied to cubegm/bios/ on the SD card."}
       </p>
 
-      <div className="row">
-        <button className="primary" onClick={() => { lastScanKey.current = `${biosSource}|${globalSdPath}`; handleScan(); }} disabled={loading || !biosSource}>
-          {loading ? "Scanning…" : "Scan BIOS"}
-        </button>
-        <button onClick={() => { setResults(null); setSelected(null); onPlanChange?.(null); }} disabled={!results}>
-          Clear
-        </button>
-        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Skip → LGPT
-        </button>
-        <button className="primary" onClick={() => onNext?.()} disabled={!biosSource && !results}>
-          Continue to LGPT →
-        </button>
-      </div>
+      <input
+        type="text"
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        placeholder={t.searchBios || "Search BIOS..."}
+        style={{
+          width: '100%', padding: '10px 14px', marginBottom: '16px',
+          borderRadius: '6px', border: '1px solid var(--border-color)',
+          backgroundColor: 'var(--input-bg, transparent)', color: 'var(--text-primary)',
+          fontSize: '14px',
+        }}
+      />
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
-      <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: 360 }}>
-          <h4>Requirements {results && `(${results.length})`}</h4>
-          {!results && !loading && <EmptyState kind="empty" title="No scan yet" description="Select a BIOS source and press Scan. The scan recursively inspects files, safely inspects archives (temp workspace), hashes where needed, matches filenames/patterns/aliases, validates hashes/size, and identifies duplicates/conflicts/unknown." />}
-          {loading && <EmptyState kind="loading" title="Scanning…" description="Recursive scan, archive inspection, hashing, validation." />}
-          {results && results.length === 0 && <EmptyState kind="empty" title="No BIOS found" description="No files matched BIOS patterns in the selected folder." />}
-          {results && results.length > 0 && (
-            <table>
-              <thead>
-                <tr>
-                  <th><input type="checkbox" checked={results.length > 0 && results.filter(r => r.file).every(r => selectedFiles.has(r.file!))} onChange={(e) => toggleAll(e.target.checked)} /></th>
-                  <th>System</th>
-                  <th>BIOS</th>
-                  <th>Status</th>
-                  <th>Variant</th>
-                  <th>Source</th>
-                  <th>Destination</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {results.map((r, idx) => {
-                  const def = definitions.find((d) => d.id === r.bios_id);
-                  const variantId = (r as unknown as Record<string, unknown>).variant as string | undefined || (r.file ? r.file.split(/[\\/]/).pop() : undefined);
-                  const statusLabel = STATUS_LABEL[r.state] || r.state;
-                  const action = r.state === "found_valid" ? "copy" : r.state === "missing" ? "manual_review" : r.state === "found_invalid" ? "conflict" : r.state === "duplicate" ? "skip" : "manual_review";
-                  return (
-                    <tr key={idx} onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.bios_id === r.bios_id ? "var(--surface)" : undefined, opacity: r.file && !selectedFiles.has(r.file) ? 0.5 : 1 }}>
-                      <td><input type="checkbox" checked={r.file ? selectedFiles.has(r.file) : false} onChange={(e) => { e.stopPropagation(); if (r.file) toggleFileSelection(r.file); }} onClick={(e) => e.stopPropagation()} /></td>
-                      <td style={{ fontSize: 11 }}>{def?.system_name || r.system_id || r.bios_id}</td>
-                      <td style={{ fontSize: 11 }}>{def?.name || r.bios_id}</td>
-                      <td><span className="badge" style={{ background: STATUS_COLOR[r.state] || "var(--text-muted)", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{statusLabel}</span></td>
-                      <td style={{ fontSize: 11 }}>{variantId || (def?.variants[0]?.filenames[0] || "-")}</td>
-                      <td style={{ fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.file || ""}>{r.file ? r.file.split(/[\\/]/).pop() : "-"}</td>
-                      <td style={{ fontSize: 10 }}>{def?.primary_destination || def?.destinations[0] || "-"}</td>
-                      <td style={{ fontSize: 10 }}><span className={`badge badge-${action === "copy" ? "copy" : action === "skip" ? "skip" : "conflict"}`}>{action}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-          {results && results.length > 0 && (
-            <p style={{ fontSize: 11, color: "var(--success)", marginTop: 8 }}>
-              Any one valid variant satisfies the logical requirement (e.g., PS1: scph1001.bin <em>or</em> scph5501.bin). Conditional requirements: PS1 BIOS shows <em>Missing</em> only when PS1 content was detected; otherwise <em>Not Required</em>.
-            </p>
-          )}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+        {visibleCatalog.map(bios => {
+          const state = biosState[bios.id];
+          const statusColor = !state?.found_path
+            ? 'var(--text-secondary)'
+            : state.valid
+            ? 'var(--success, #4CAF50)'
+            : 'var(--danger, #d32f2f)';
+          const statusIcon = !state?.found_path ? '⚪' : state.valid ? '✅' : '⚠️';
 
-        <div style={{ flex: 1, minWidth: 280, border: "1px solid var(--border)", borderRadius: 6, padding: 12, background: "var(--surface)" }}>
-          <h4>Details {selected ? `— ${selected.bios_id}` : ""}</h4>
-          {!selected && <EmptyState kind="empty" title="No selection" description="Select a BIOS requirement to see system, logical name, requirement status, accepted filenames, selected variant, source path, expected destination, expected size, SHA-256 when known, actual SHA-256, and validation reason." />}
-          {selected && (() => {
-            const def = definitions.find((d) => d.id === selected.bios_id);
-            return (
-              <div style={{ fontSize: 12 }}>
-                <div><strong>System:</strong> {def?.system_name || selected.system_id} ({def?.system_id || selected.system_id})</div>
-                <div><strong>Logical BIOS:</strong> {def?.name || selected.bios_id}</div>
-                <div><strong>Status:</strong> <span style={{ color: STATUS_COLOR[selected.state] || "var(--text)", fontWeight: 600 }}>{STATUS_LABEL[selected.state] || selected.state}</span> — {selected.reason}</div>
-                <div><strong>Required:</strong> {selected.required ? "Yes" : "No"} {def?.requirement?.mandatory_when ? `(${def.requirement.mandatory_when})` : ""}</div>
-                <div><strong>Accepted filenames:</strong> {(def?.accepted_filenames || []).join(", ")}</div>
-                <div><strong>Aliases/patterns:</strong> {[...(def?.aliases || []), ...(def?.accepted_patterns || [])].join(", ")}</div>
-                <div><strong>Selected variant:</strong> {(selected as unknown as Record<string, unknown>).variant as string || (selected.file ? selected.file.split(/[\\/]/).pop() : "-")}</div>
-                <div><strong>Source path:</strong> <span style={{ wordBreak: "break-all" }}>{selected.file || "-"}</span></div>
-                <div><strong>Expected destination:</strong> {def?.primary_destination || def?.destinations[0] || "-"}</div>
-                <div><strong>Valid destinations:</strong> {(def?.destinations || []).join(", ")}</div>
-                <div><strong>Expected size:</strong> {def?.expected_size ? `${def.expected_size} bytes` : "any"} {selected.size ? `(actual: ${selected.size})` : ""}</div>
-                <div><strong>SHA-256 when known:</strong> <span style={{ wordBreak: "break-all", fontSize: 11 }}>{(def?.hashes_sha256?.[0] || def?.variants[0]?.hashes_sha256?.[0] || "none (size-only or unknown)")}</span></div>
-                <div><strong>Actual SHA-256:</strong> <span style={{ wordBreak: "break-all", fontSize: 11 }}>{selected.hash ? `${selected.hash.slice(0, 16)}… (${selected.hash})` : "-"}</span></div>
-                <div><strong>Validation reason:</strong> {selected.reason}</div>
+          return (
+            <div key={bios.id} style={{
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '14px',
+              backgroundColor: bios.required ? 'var(--bg-secondary, var(--surface))' : 'transparent',
+              borderLeft: bios.required ? '4px solid var(--accent)' : '4px solid var(--border-color)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <input
+                  type="checkbox"
+                  checked={state?.selected || false}
+                  disabled={!state?.found_path || !state?.valid}
+                  onChange={() => toggleSelection(bios.id)}
+                  style={{ marginTop: '4px', transform: 'scale(1.2)' }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                    <strong style={{ color: 'var(--text-primary)' }}>
+                      {statusIcon} {bios.system_name}
+                    </strong>
+                    {bios.required && (
+                      <span style={{
+                        fontSize: '11px', padding: '2px 6px',
+                        backgroundColor: 'var(--accent)', color: 'var(--button-text)',
+                        borderRadius: '4px', fontWeight: 'bold',
+                      }}>
+                        REQUIRED
+                      </span>
+                    )}
+                    {!bios.required && (
+                      <span style={{
+                        fontSize: '11px', padding: '2px 6px',
+                        backgroundColor: 'var(--border-color)', color: 'var(--text-secondary)',
+                        borderRadius: '4px',
+                      }}>
+                        OPTIONAL
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    {bios.description}
+                  </div>
+                  <div style={{ fontSize: '12px', color: statusColor, fontFamily: 'monospace', marginBottom: '8px' }}>
+                    Expected: {bios.pattern || bios.filenames.join(' OR ')}
+                    {state?.found_path && (
+                      <div style={{ marginTop: '4px', color: state.valid ? 'var(--success)' : 'var(--danger)' }}>
+                        Selected: {state.found_path.split(/[\\/]/).pop()} — {state.reason || (state.valid ? 'File valid' : 'Invalid')}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleBrowse(bios.id)}
+                    style={{
+                      padding: '6px 14px', fontSize: '13px',
+                      backgroundColor: 'var(--accent)', color: 'var(--button-text)',
+                      border: 'none', borderRadius: '4px', cursor: 'pointer',
+                    }}
+                  >
+                    {t.browseBios || "Browse..."}
+                  </button>
+                </div>
               </div>
-            );
-          })()}
-        </div>
+            </div>
+          );
+        })}
+        {visibleCatalog.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No BIOS matches search.</div>
+        )}
       </div>
 
-
+      <div className="row" style={{ marginTop: '16px' }}>
+        <button onClick={() => onNext?.()} style={{ marginLeft: 'auto' }}>
+          Skip → LGPT
+        </button>
+        <button className="primary" onClick={() => onNext?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
+          Continue to LGPT →
+        </button>
+      </div>
+      <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>All BIOS files will be copied to <code>cubegm/bios/</code> (VICE JiffyDOS to <code>cubegm/bios/vice/</code>) as per TreeFrogUI docs. Required BIOS show blue left border.</p>
     </div>
   );
 }
-

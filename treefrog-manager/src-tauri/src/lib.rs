@@ -1,5 +1,6 @@
 pub mod archive;
 pub mod bios;
+pub mod bios_catalog;
 pub mod classify;
 pub mod db;
 pub mod deploy;
@@ -152,7 +153,9 @@ pub fn run() {
             check_for_updates,
             download_update,
             get_temp_path,
-            open_folder
+            open_folder,
+            get_bios_catalog,
+            validate_bios_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -483,6 +486,82 @@ async fn get_valid_systems_for_extension(ext: String) -> Result<Vec<SystemOption
         }
     }
     Ok(systems)
+}
+
+#[tauri::command]
+async fn get_bios_catalog() -> Result<Vec<crate::bios_catalog::BiosEntry>, String> {
+    Ok(crate::bios_catalog::get_bios_catalog())
+}
+
+#[tauri::command]
+async fn validate_bios_file(path: String, bios_id: String) -> Result<serde_json::Value, String> {
+    let catalog = crate::bios_catalog::get_bios_catalog();
+    let bios = catalog.iter().find(|b| b.id == bios_id)
+        .ok_or_else(|| format!("BIOS id not found: {}", bios_id))?;
+
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Ok(serde_json::json!({"valid": false, "reason": "File not found"}));
+    }
+
+    let filename = p.file_name()
+        .and_then(|n| n.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    let name_ok = if let Some(pattern) = &bios.pattern {
+        let regex_str = "^".to_string() + &pattern.replace('.', "\\.").replace('*', ".*") + "$";
+        regex::Regex::new(&regex_str)
+            .map(|re| re.is_match(&filename))
+            .unwrap_or(false)
+    } else {
+        bios.filenames.iter().any(|f| f.to_lowercase() == filename)
+    };
+
+    if !name_ok {
+        return Ok(serde_json::json!({
+            "valid": false,
+            "reason": format!("Filename does not match expected: {}", bios.pattern.clone().unwrap_or(bios.filenames.join(" OR ")))
+        }));
+    }
+
+    if let Some(expected_size) = bios.expected_size {
+        let actual_size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        if actual_size != expected_size {
+            return Ok(serde_json::json!({
+                "valid": false,
+                "reason": format!("Size mismatch: expected {} bytes, got {}", expected_size, actual_size)
+            }));
+        }
+    }
+
+    if let Some(expected_md5) = &bios.md5 {
+        let bytes = std::fs::read(p).map_err(|e| e.to_string())?;
+        let digest = md5::compute(&bytes);
+        let actual_md5 = format!("{:x}", digest);
+        if actual_md5 != *expected_md5 {
+            return Ok(serde_json::json!({
+                "valid": false,
+                "reason": format!("MD5 mismatch: expected {}, got {}", expected_md5, actual_md5)
+            }));
+        }
+    }
+
+    if let Some(expected_sha) = &bios.sha256 {
+        let bytes = std::fs::read(p).map_err(|e| e.to_string())?;
+        let mut hasher = sha2::Sha256::new();
+        use sha2::Digest;
+        hasher.update(&bytes);
+        let actual_sha = hex::encode(hasher.finalize());
+        if actual_sha != *expected_sha {
+            return Ok(serde_json::json!({
+                "valid": false,
+                "reason": format!("SHA-256 mismatch")
+            }));
+        }
+    }
+
+    Ok(serde_json::json!({"valid": true, "reason": "OK"}))
 }
 
 #[tauri::command]
