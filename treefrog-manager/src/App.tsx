@@ -182,7 +182,7 @@ export default function App() {
         let vols: VolumeInfo[] = [];
         try {
           vols = (await invoke("list_volumes")) as VolumeInfo[];
-          // Filtrar solo volúmenes con letra de unidad y accesibles
+          // Filter only volumes con letra de unidad y accesibles
           vols = vols.filter(v => v.path && !v.path.startsWith('\\\\?\\') && v.accessible !== false && v.path.length >= 2 && v.path[1] === ':');
         } catch (e) {
           console.warn("list_volumes failed", e);
@@ -313,8 +313,8 @@ export default function App() {
       const target = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
       setSdAnalysis(target);
       
-      // NO generar plan aquí, se construye progresivamente en cada panel
-      // globalPlan y globalSpace se calculan vía useMemo
+      // Do not generate plan here, se construye progresivamente en cada panel
+      // globalPlan and globalSpace are calculated vía useMemo
     } catch (e) {
       setError(String(e));
     } finally {
@@ -324,7 +324,7 @@ export default function App() {
 
   async function handleSync(force: boolean = false): Promise<any> {
     if (!sdPath) return { error: "No SD selected. Go to Overview." };
-    if (!globalPlan) return { error: "No plan de sincronización. Scan at least una carpeta de origen." };
+    if (!globalPlan) return { error: "No sync plan. Scan at least one source folder." };
     if (globalSpace?.status === "insufficient_space") return { error: "Insufficient space en la SD." };
 
     setLoading(true);

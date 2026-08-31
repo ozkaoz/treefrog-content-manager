@@ -302,7 +302,7 @@ export default function SdCardPanel({
             fontWeight: sdPath ? 600 : 400,
           }}
         >
-          {sdPath ? `${sdPath} — ${analysis?.label || "TreeFrogUI"} ✓` : "No hay SD seleccionada — ve a Overview para detección automática"}
+          {sdPath ? `${sdPath} — ${analysis?.label || "TreeFrogUI"} ✓` : "No SD selected — go to Overview para detección automática"}
         </div>
 
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -315,9 +315,9 @@ export default function SdCardPanel({
         <div className="status-error" style={{ fontSize: 12, marginBottom: 8, padding: 10, border: "2px solid var(--danger)", background: "var(--danger-bg)", borderRadius: 6 }}>
           <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Error de selección de SD</div>
           <div>{error}</div>
-          {error.includes("Has seleccionado la carpeta 'roms'") && (
+          {error.includes("You selected the 'roms'") && (
             <div style={{ marginTop: 8, fontSize: 11, color: "var(--text)" }}>
-              <strong>Solución:</strong> Selecciona la <strong>raíz</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>. La app creará automáticamente <code>roms/SISTEMA/</code>.
+              <strong>Solution:</strong> Select the <strong>root</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>. La app creará automáticamente <code>roms/SYSTEM/</code>.
             </div>
           )}
         </div>
@@ -381,10 +381,10 @@ export default function SdCardPanel({
           {analysis.folder_breakdown && Object.keys(analysis.folder_breakdown).length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--surface)", gridColumn: "span 2", marginTop: 12 }}>
               <details open>
-                <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Desglose por carpeta — {Object.keys(analysis.folder_breakdown).length} carpetas</summary>
+                <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Folder breakdown — {Object.keys(analysis.folder_breakdown).length} carpetas</summary>
                 <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
                   <table style={{ width: "100%", fontSize: 11 }}>
-                    <thead><tr><th style={{ textAlign: "left", padding: "4px" }}>Carpeta</th><th style={{ textAlign: "right", padding: "4px" }}>Archivos</th><th style={{ textAlign: "left", padding: "4px" }}>Tipo</th></tr></thead>
+                    <thead><tr><th style={{ textAlign: "left", padding: "4px" }}>Folder</th><th style={{ textAlign: "right", padding: "4px" }}>Files</th><th style={{ textAlign: "left", padding: "4px" }}>Type</th></tr></thead>
                     <tbody>
                       {Object.entries(analysis.folder_breakdown).sort((a,b) => (b[1] as number) - (a[1] as number)).map(([folder, count]) => {
                         const lower = folder.toLowerCase();
@@ -402,7 +402,7 @@ export default function SdCardPanel({
                       })}
                     </tbody>
                   </table>
-                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Carpetas con [DEMO]/[ASSET]/[SISTEMA] son contenido de TreeFrogUI por defecto. Las de [Usuario] son tu contenido personal. Ej.: <code>roms/FC/</code> 12 juegos, <code>roms/pico8/</code> 28 carts [DEMO].</p>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Folders with [DEMO]/[ASSET]/[SYSTEM] are default TreeFrogUI content. [User] are your personal content. Ej.: <code>roms/FC/</code> 12 juegos, <code>roms/pico8/</code> 28 carts [DEMO].</p>
                 </div>
               </details>
             </div>
@@ -414,7 +414,7 @@ export default function SdCardPanel({
         <div style={{ padding: 12, border: "2px solid var(--accent)", borderRadius: 6, background: "var(--accent)", color: "white", textAlign: "center", fontWeight: 600, fontSize: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
             <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid white", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-            Transfiriendo archivos a la SD — por favor espera...
+            Transferring files to SD — please wait...
           </div>
           {isSyncing && progress.total > 0 && (
             <div style={{ marginTop: '10px' }}>
@@ -427,7 +427,7 @@ export default function SdCardPanel({
               </div>
             </div>
           )}
-          <div style={{ fontSize: 11, fontWeight: 400, marginTop: 4 }}>No desconectes la tarjeta SD</div>
+          <div style={{ fontSize: 11, fontWeight: 400, marginTop: 4 }}>Do not disconnect the SD card</div>
         </div>
       )}
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
@@ -461,45 +461,45 @@ export default function SdCardPanel({
             style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
             title={
               !globalPlan 
-                ? "Ve a Overview y pulsa ANALIZAR primero"
+                ? "Go to Overview and press ANALYZE primero"
                 : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
-                ? "No hay archivos nuevos o modificados para sincronizar"
+                ? "No new or modified files para sincronizar"
                 : `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}`
             }
           >
-            {loading ? "Sincronizando…" : "Sync to SD"}
+            {loading ? "Synchronizing…" : "Sync to SD"}
           </button>
 
         )}
         <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
           {!globalPlan 
-            ? "Ve a Overview y pulsa ANALIZAR para preparar la sincronización."
+            ? "Go to Overview and press ANALYZE to prepare synchronization."
             : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
-            ? "No hay archivos nuevos o modificados. Ve a Games/Music/Videos/BIOS/LGPT y selecciona carpetas de origen."
-            : `Listo para sincronizar: ${globalPlan.summary.new} nuevos, ${globalPlan.summary.changed} modificados, ${globalPlan.summary.unchanged} sin cambios.`}
+            ? "No new or modified files. Go to Games/Music/Videos/BIOS/LGPT and select source folders."
+            : `Ready to synchronize: ${globalPlan.summary.new} new, ${globalPlan.summary.changed} modified, ${globalPlan.summary.unchanged} unchanged.`}
         </div>
       </div>
 
       {syncResult && (
         <div style={{ marginTop: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)" }}>
-          <h4 style={{ margin: "0 0 8px 0" }}>Resultado de Sincronización</h4>
+          <h4 style={{ margin: "0 0 8px 0" }}>Synchronization Result</h4>
           <div style={{ fontSize: 13, marginBottom: 8 }}>
-            <div><strong>Copiados:</strong> <span style={{ color: "var(--success)" }}>{syncResult.deployed}</span></div>
-            <div><strong>Omitidos:</strong> <span style={{ color: "var(--warning)" }}>{syncResult.skipped}</span></div>
-            <div><strong>Fallidos:</strong> <span style={{ color: "var(--danger)" }}>{syncResult.failed}</span></div>
+            <div><strong>Copied:</strong> <span style={{ color: "var(--success)" }}>{syncResult.deployed}</span></div>
+            <div><strong>Skipped:</strong> <span style={{ color: "var(--warning)" }}>{syncResult.skipped}</span></div>
+            <div><strong>Failed:</strong> <span style={{ color: "var(--danger)" }}>{syncResult.failed}</span></div>
           </div>
           
           {syncResult.breakdown && syncResult.breakdown.length > 0 && (
             <details style={{ marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Ver detalle de archivos ({syncResult.breakdown.length})</summary>
+              <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Ver detalle de files ({syncResult.breakdown.length})</summary>
               <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
                 <table style={{ width: "100%", fontSize: 11 }}>
                   <thead>
                     <tr>
-                      <th style={{ textAlign: "left", padding: "4px" }}>Archivo</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>File</th>
                       <th style={{ textAlign: "left", padding: "4px" }}>Destino</th>
-                      <th style={{ textAlign: "left", padding: "4px" }}>Acción</th>
-                      <th style={{ textAlign: "left", padding: "4px" }}>Razón</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Action</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Reason</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -528,12 +528,12 @@ export default function SdCardPanel({
             </details>
           )}
             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
-              La existencia en destino (✓/✕) se verifica en disco en el momento de sincronizar. Si un archivo no existe en la SD, se copia automáticamente.
+              Destination existence (✓/✕) is verified on disk en el momento de sincronizar. If a file does not exist on the SD, it is copied automatically.
             </p>
           
           {syncResult.warnings && syncResult.warnings.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <strong style={{ fontSize: 12 }}>Advertencias:</strong>
+              <strong style={{ fontSize: 12 }}>Warnings:</strong>
               <ul style={{ fontSize: 11, margin: "4px 0", paddingLeft: 20 }}>
                 {syncResult.warnings.map((w: string, idx: number) => (
                   <li key={idx} style={{ color: "var(--warning)" }}>{w}</li>
@@ -544,7 +544,7 @@ export default function SdCardPanel({
           
           {syncResult.errors && syncResult.errors.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <strong style={{ fontSize: 12, color: "var(--danger)" }}>Errores:</strong>
+              <strong style={{ fontSize: 12, color: "var(--danger)" }}>Errors:</strong>
               <ul style={{ fontSize: 11, margin: "4px 0", paddingLeft: 20 }}>
                 {syncResult.errors.map((e: string, idx: number) => (
                   <li key={idx}>{e}</li>

@@ -52,11 +52,11 @@ export default function MusicPanel({
 
   async function handlePreview() {
     if (!source) {
-      setError("Selecciona la carpeta de origen");
+      setError("Select source folder");
       return;
     }
     if (!globalSdPath) {
-      setError("No hay SD seleccionada — ve a Overview");
+      setError("No SD selected — go to Overview");
       return;
     }
     setLoading(true);
@@ -136,7 +136,7 @@ export default function MusicPanel({
     <div className="card">
       <h3>Music — Playlists (TreeFrogUI)</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        Cada subcarpeta bajo <code>roms/music/</code> es una playlist en TreeFrogUI. Preserva subcarpetas (ej. <code>roms/music/My Album/</code>). Formatos soportados vía perfil <code>media.json</code>: MP3, M4A, AAC, WAV, FLAC, OGG, Opus.
+        Each subfolder under <code>roms/music/</code> es una playlist en TreeFrogUI. Preserves subfolders (ej. <code>roms/music/My Album/</code>). Supported formats via profile <code>media.json</code>: MP3, M4A, AAC, WAV, FLAC, OGG, Opus.
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
@@ -147,7 +147,7 @@ export default function MusicPanel({
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destino: <strong>{globalSdPath || "ninguna (selecciona en SD Card)"}</strong> — la app copiará automáticamente a <code>roms/music/</code> según extensión.</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy a <code>roms/music/</code> según extensión.</div>
       </div>
 
       <div className="row">

@@ -132,7 +132,7 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
                 {e.kind === 'ambiguous' && (
                   <div style={{ marginTop: 4 }}>
                     <select value={selectedDestinations[e.source] || ''} onChange={(ev) => handleDestinationChange(e.source, ev.target.value)} style={{ fontSize: 11, padding: "2px 4px", width: "100%" }}>
-                      <option value="">Seleccionar destino...</option>
+                      <option value="">Select destination...</option>
                       {e.possible_destinations?.map(dest => (
                         <option key={dest} value={dest}>{dest}</option>
                       ))}

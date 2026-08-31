@@ -56,11 +56,11 @@ export default function VideosPanel({
 
   async function handlePreview() {
     if (!source) {
-      setError("Selecciona la carpeta de origen");
+      setError("Select source folder");
       return;
     }
     if (!globalSdPath) {
-      setError("No hay SD seleccionada — ve a Overview");
+      setError("No SD selected — go to Overview");
       return;
     }
     setLoading(true);
@@ -130,7 +130,7 @@ export default function VideosPanel({
     <div className="card">
       <h3>Videos — Hardware decoder (TreeFrogUI)</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        Inspección vía <code>ffprobe</code>: contenedor, codec, perfil/nivel, pix_fmt, dimensiones, framerate, audio. <code>compatible → copiar</code>, <code>incompatible → FFmpeg → re-probe → desplegar</code>. Original nunca se modifica, salida en staging. Preset <code>PROVISIONAL_UNVALIDATED</code>.
+        Inspection via <code>ffprobe</code>: contenedor, codec, perfil/nivel, pix_fmt, dimensiones, framerate, audio. <code>compatible → copiar</code>, <code>incompatible → FFmpeg → re-probe → desplegar</code>. Original nunca se modifica, salida en staging. Preset <code>PROVISIONAL_UNVALIDATED</code>.
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
@@ -141,7 +141,7 @@ export default function VideosPanel({
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destino: <strong>{globalSdPath || "ninguna (selecciona en SD Card)"}</strong> — la app copiará automáticamente a <code>roms/videos/</code> según extensión.</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy a <code>roms/videos/</code> según extensión.</div>
       </div>
 
       <div className="row">
@@ -156,7 +156,7 @@ export default function VideosPanel({
           Continuar a BIOS →
         </button>
       </div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza recursivamente; la app copiará automáticamente a <code>roms/videos/</code> según extensión, con conversión si es necesario.</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze recursively; the app will automatically copy a <code>roms/videos/</code> según extensión, with conversion if necessary.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
@@ -237,7 +237,7 @@ export default function VideosPanel({
           </table>
           {displayFiltered.length === 0 && <EmptyState kind="empty" title="No Videos found" description="No video files (MP4, MKV, AVI, etc.) matched in the selected source. Check media.json and video_presets.json." />}
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-            Conversión: staging en <code>temp</code>, re-probe, solo si válido se copia a SD. Original intacto. Preset conservador <code>PROVISIONAL_UNVALIDATED</code> hasta validación física R36SX.
+            Conversion: staging en <code>temp</code>, re-probe, solo si válido se copia a SD. Original intact. Preset conservador <code>PROVISIONAL_UNVALIDATED</code> until physical validation R36SX.
           </p>
         </>
       )}

@@ -234,7 +234,7 @@ export default function BiosManager({
       </div>
 
       <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px 0" }}>
-        SD destino: {globalSdPath || "—"} — la app copiará automáticamente a cubegm/bios/ según el perfil TreeFrogUI.
+        SD destination: {globalSdPath || "—"} — the app will automatically copy to cubegm/bios/ according to TreeFrogUI profile.
       </p>
 
       <div className="row">

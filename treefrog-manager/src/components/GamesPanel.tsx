@@ -68,11 +68,11 @@ export default function GamesPanel({
 
   async function handlePreview() {
     if (!source) {
-      setError("Selecciona la carpeta de origen");
+      setError("Select source folder");
       return;
     }
     if (!globalSdPath) {
-      setError("No hay SD seleccionada — ve a Overview");
+      setError("No SD selected — go to Overview");
       return;
     }
     setLoading(true);
@@ -189,7 +189,7 @@ export default function GamesPanel({
     <div className="card">
       <h3>Games — ROM library (profile-driven)</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        Gestiona ROMs por sistema. Cada carpeta bajo <code>roms/</code> selecciona el core (ej. <code>GBA</code> para GBA, <code>PS</code> para PlayStation). Preserva unidades lógicas multiarchivo (CUE/BIN) y respeta <code>archive_policy.json</code> (arcade <code>cps1/neogeo/m2k</code> como <code>payload</code>, no extraído). Duplicados por <code>SHA-256</code>, no por nombre.
+        Manage ROMs by system. Cada carpeta bajo <code>roms/</code> selecciona el core (ej. <code>GBA</code> para GBA, <code>PS</code> para PlayStation). Preserve multi-file logical units (CUE/BIN) y respeta <code>archive_policy.json</code> (arcade <code>cps1/neogeo/m2k</code> como <code>payload</code>, no extraído). Duplicates by <code>SHA-256</code>, no por nombre.
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
@@ -200,7 +200,7 @@ export default function GamesPanel({
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destino: <strong>{globalSdPath || "ninguna (selecciona en SD Card)"}</strong> — la app copiará automáticamente a la carpeta correcta según extensión (perfil TreeFrogUI).</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy a la carpeta correcta según extensión (perfil TreeFrogUI).</div>
       </div>
 
       <div className="row">

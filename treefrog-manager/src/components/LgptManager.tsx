@@ -241,7 +241,7 @@ export default function LgptManager({
       </div>
 
       <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px 0" }}>
-        SD destino: {globalSdPath || "—"} — la app copiará automáticamente a lgpt/samples/ y lgpt/projects/ según el tipo de contenido.
+        SD destination: {globalSdPath || "—"} — the app will automatically copy to lgpt/samples/ y lgpt/projects/ according to content type.
       </p>
 
       <div className="row">
