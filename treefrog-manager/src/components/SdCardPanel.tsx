@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import EmptyState from "./EmptyState";
 import MiniScraper from "./MiniScraper";
@@ -85,6 +86,7 @@ export default function SdCardPanel({
   const [syncResult, setSyncResult] = useState<any | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [forceCopy, setForceCopy] = useState(false);
+  const [progress, setProgress] = useState({ current: 0, total: 0, percentage: 0, message: '' });
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
   const _volumes = propVolumes !== undefined ? propVolumes : volumesState;
@@ -105,6 +107,13 @@ export default function SdCardPanel({
   useEffect(() => {
     if (sdPath) void handleAnalyze(sdPath);
   }, [sdPath]);
+
+  useEffect(() => {
+    const unlisten = listen('deploy-progress', (event) => {
+      setProgress(event.payload as any);
+    });
+    return () => { unlisten.then(f => f()); };
+  }, []);
 
   async function handleAnalyze(p?: string) {
     const target = p ?? sdPath;
@@ -265,6 +274,17 @@ export default function SdCardPanel({
             <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid white", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
             Transfiriendo archivos a la SD — por favor espera...
           </div>
+          {isSyncing && progress.total > 0 && (
+            <div style={{ marginTop: '10px' }}>
+              <div style={{ fontSize: '14px', marginBottom: '5px' }}>{progress.message}</div>
+              <div style={{ width: '100%', height: '20px', backgroundColor: '#333', borderRadius: '10px', overflow: 'hidden' }}>
+                <div style={{ width: `${progress.percentage}%`, height: '100%', backgroundColor: '#4CAF50', transition: 'width 0.3s ease' }} />
+              </div>
+              <div style={{ fontSize: '12px', marginTop: '5px', textAlign: 'center' }}>
+                {progress.percentage}% ({progress.current}/{progress.total})
+              </div>
+            </div>
+          )}
           <div style={{ fontSize: 11, fontWeight: 400, marginTop: 4 }}>No desconectes la tarjeta SD</div>
         </div>
       )}

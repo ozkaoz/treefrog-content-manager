@@ -3,6 +3,7 @@ use crate::profile::LoadedProfile;
 use crate::sd_target;
 use std::path::Path;
 use log::{info, warn};
+use tauri::{Emitter, AppHandle};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -78,7 +79,7 @@ fn safe_copy_file(src: &Path, dest: &Path) -> anyhow::Result<()> {
     }
 }
 
-pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: bool) -> anyhow::Result<DeployResult> {
+pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: bool, app: Option<&AppHandle>) -> anyhow::Result<DeployResult> {
     let sd_path = Path::new(sd_root);
     if !sd_path.exists() {
         anyhow::bail!("SD root not found: {}", sd_root);
@@ -110,6 +111,9 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
     let mut breakdown_rows: Vec<serde_json::Value> = Vec::new();
     let mut written_dests: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
 
+    let total = plan.entries.iter().filter(|e| matches!(e.resolved_action.as_ref().unwrap_or(&e.action).as_str(), "copy" | "extract" | "convert_then_copy")).count();
+    let mut completed = 0usize;
+    
     for entry in &plan.entries {
         let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
         info!(
@@ -243,6 +247,19 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     Ok(()) => {
                         deployed += 1;
                         written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                        // Emitir progreso después de cada archivo copiado
+                        if matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy") {
+                            completed += 1;
+                            if let Some(app_handle) = app {
+                                let _ = app_handle.emit("deploy-progress", serde_json::json!({
+                                    "current": completed,
+                                    "total": total,
+                                    "percentage": (completed as f64 / total as f64 * 100.0) as u32,
+                                    "current_file": entry.source,
+                                    "message": format!("Transfiriendo {}/{} archivos...", completed, total)
+                                }));
+                            }
+                        }
                     },
                     Err(e) => {
                         errors.push(format!("copy {} -> {}: {}", src.display(), dest_abs.display(), e));
@@ -292,6 +309,18 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                         if ok {
                             deployed += 1;
                             written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                            if matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy") {
+                                completed += 1;
+                                if let Some(app_handle) = app {
+                                    let _ = app_handle.emit("deploy-progress", serde_json::json!({
+                                        "current": completed,
+                                        "total": total,
+                                        "percentage": (completed as f64 / total as f64 * 100.0) as u32,
+                                        "current_file": entry.source,
+                                        "message": format!("Transfiriendo {}/{} archivos...", completed, total)
+                                    }));
+                                }
+                            }
                         } else { failed += 1; }
                     },
                     Err(e) => {
@@ -327,6 +356,19 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     Ok(()) => {
                         deployed += 1;
                         written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                        // Emitir progreso después de cada archivo copiado
+                        if matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy") {
+                            completed += 1;
+                            if let Some(app_handle) = app {
+                                let _ = app_handle.emit("deploy-progress", serde_json::json!({
+                                    "current": completed,
+                                    "total": total,
+                                    "percentage": (completed as f64 / total as f64 * 100.0) as u32,
+                                    "current_file": entry.source,
+                                    "message": format!("Transfiriendo {}/{} archivos...", completed, total)
+                                }));
+                            }
+                        }
                     },
                     Err(e) => {
                         errors.push(format!("video copy {} -> {}: {}", src.display(), dest_abs.display(), e));

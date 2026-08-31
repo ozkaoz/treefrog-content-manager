@@ -160,6 +160,7 @@ fn content_type_for_classification(kind: &crate::classify::Kind, system_id: &Opt
         crate::classify::Kind::LgptProject => "lgpt/project".to_string(),
         crate::classify::Kind::Archive => "archive".to_string(),
         crate::classify::Kind::Unknown => "unknown".to_string(),
+        crate::classify::Kind::Ambiguous => "ambiguous".to_string(),
     }
 }
 
@@ -802,6 +803,8 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
             source_hash: src_hash.clone(),
             destination_hash: dst_hash.clone(),
             content_type: Some(ct),
+            kind: Some(format!("{:?}", sf.classification.kind).to_lowercase()),
+            possible_destinations: sf.classification.possible_destinations.clone(),
             size: Some(sf.size),
             group: members_vec.clone(),
             members: members_vec,
@@ -990,6 +993,10 @@ fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Pa
         crate::classify::Kind::Archive => {
             let dest = if dest_base.is_empty() { format!("roms/UNKNOWN/{}", file_name) } else { format!("{}/{}", dest_base, file_name) };
             Ok((dest, "inspect".into(), "archive — inspect entries before copy".into()))
+        },
+        crate::classify::Kind::Ambiguous => {
+            let dest = format!("{}/{}", dest_base, file_name);
+            Ok((dest, "copy".into(), "ambiguous -> needs user destination choice (PS vs SegaCD)".into()))
         },
         _ => {
             // Preserve relative subpath so two unknown files with the same name

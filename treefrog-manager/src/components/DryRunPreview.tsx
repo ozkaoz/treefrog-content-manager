@@ -53,6 +53,15 @@ function applyResolutions(entries: PlanEntry[], decisions: Record<number, string
 export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResolve: (p: Plan) => void }) {
   const s = plan.summary;
   const [decisions, setDecisions] = useState<Record<number, string>>({});
+  const [selectedDestinations, setSelectedDestinations] = useState<Record<string, string>>({});
+
+  const handleDestinationChange = (source: string, dest: string) => {
+    const newSelected = { ...selectedDestinations, [source]: dest };
+    setSelectedDestinations(newSelected);
+    const updatedEntries = entries.map(e => e.source === source ? { ...e, destination: `roms/${dest}` } : e);
+    const updatedPlan = { ...plan, entries: updatedEntries };
+    onResolve(updatedPlan);
+  };
 
   const entries = applyResolutions(plan.entries, decisions);
 
@@ -118,7 +127,19 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
                 {e.default_action && e.default_action !== e.action && <div style={{ fontSize: 10, color: "#999" }}>default: {e.default_action}</div>}
               </td>
               <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }} title={e.source}>{e.source}</td>
-              <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }} title={e.destination}>{e.destination}</td>
+              <td style={{ maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11 }} title={e.destination}>
+                {e.destination}
+                {e.kind === 'ambiguous' && (
+                  <div style={{ marginTop: 4 }}>
+                    <select value={selectedDestinations[e.source] || ''} onChange={(ev) => handleDestinationChange(e.source, ev.target.value)} style={{ fontSize: 11, padding: "2px 4px", width: "100%" }}>
+                      <option value="">Seleccionar destino...</option>
+                      {e.possible_destinations?.map(dest => (
+                        <option key={dest} value={dest}>{dest}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </td>
               <td style={{ fontSize: 11, maxWidth: 320 }}>
                 <div>{e.reason}</div>
                 {e.status && <div style={{ fontSize: 10, color: "#b7791f" }}>status: {e.status}{e.preset ? ` / preset: ${e.preset}` : ""}{e.preset === "treefrog_conservative_default" ? " (provisional)" : ""}</div>}

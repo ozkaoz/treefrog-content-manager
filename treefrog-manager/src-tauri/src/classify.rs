@@ -13,6 +13,7 @@ pub enum Kind {
     LgptProject,
     Archive,
     Unknown,
+    Ambiguous,
 }
 
 #[derive(Debug, Clone)]
@@ -22,6 +23,7 @@ pub struct Classification {
     pub destination: String,
     pub archive_valid: bool,
     pub multi_file: bool,
+    pub possible_destinations: Option<Vec<String>>,
 }
 
 pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
@@ -30,10 +32,10 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     let lower_path = path.to_string_lossy().to_lowercase().replace('\\', "/");
     // Prioridad absoluta de BIOS: todo dentro de cubegm/bios es BIOS, sin importar extensión
     if lower_path.contains("/cubegm/bios/") {
-        return Classification { kind: Kind::Bios, system_id: None, destination: "cubegm/bios".into(), archive_valid: false, multi_file: false };
+        return Classification { kind: Kind::Bios, system_id: None, destination: "cubegm/bios".into(), archive_valid: false, multi_file: false, possible_destinations: None };
     }
     if lower_path.contains("/frogui/") || lower_path.contains("/cubegm/cores/") {
-        return Classification { kind: Kind::Unknown, system_id: None, destination: "roms/UNKNOWN".into(), archive_valid: false, multi_file: false };
+        return Classification { kind: Kind::Unknown, system_id: None, destination: "roms/UNKNOWN".into(), archive_valid: false, multi_file: false, possible_destinations: None };
     }
 
     // Archives recognized first — but we still peek inside later via archive.rs
@@ -45,6 +47,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: String::new(), // resolved after inspection
             archive_valid: false,
             multi_file: false,
+            possible_destinations: None,
         };
     }
 
@@ -59,6 +62,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: lgpt_samples.into(),
                 archive_valid: false,
                 multi_file: false,
+            possible_destinations: None,
             };
         }
         if path.to_string_lossy().to_lowercase().contains("samples") && ext == ".wav" {
@@ -68,6 +72,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: lgpt_samples.into(),
                 archive_valid: false,
                 multi_file: false,
+            possible_destinations: None,
             };
         }
     }
@@ -81,6 +86,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                     destination: lgpt_projects.into(),
                     archive_valid: false,
                     multi_file: true,
+            possible_destinations: None,
                 };
             }
             if path.join("lgptsav.dat").exists() || path.join("project.lgpt").exists() {
@@ -90,6 +96,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                     destination: lgpt_projects.into(),
                     archive_valid: false,
                     multi_file: true,
+            possible_destinations: None,
                 };
             }
         }
@@ -101,6 +108,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: lgpt_projects.into(),
             archive_valid: false,
             multi_file: true,
+            possible_destinations: None,
         };
     }
     if path.to_string_lossy().to_lowercase().contains("projects") && path.is_dir() {
@@ -110,6 +118,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: lgpt_projects.into(),
             archive_valid: false,
             multi_file: true,
+            possible_destinations: None,
         };
     }
 
@@ -122,6 +131,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: "roms/music".into(),
             archive_valid: false,
             multi_file: false,
+            possible_destinations: None,
         };
     }
     let video_exts = [".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts", ".webm"];
@@ -135,6 +145,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: "roms/videos".into(),
                 archive_valid: false,
                 multi_file: false,
+            possible_destinations: None,
             };
         }
         // Fall through to Unknown for videos outside roms/videos/ (will go to roms/UNKNOWN)
@@ -149,6 +160,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: ".res".into(),
                 archive_valid: false,
                 multi_file: false,
+            possible_destinations: None,
             };
         }
         return Classification {
@@ -157,6 +169,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: "roms/images".into(),
             archive_valid: false,
             multi_file: false,
+            possible_destinations: None,
         };
     }
     let ebook_exts = [".epub", ".mobi", ".pdf", ".cbz", ".fb2", ".xps"];
@@ -167,6 +180,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: "roms/Ebook".into(),
             archive_valid: false,
             multi_file: false,
+            possible_destinations: None,
         };
     }
 
@@ -182,6 +196,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: "cubegm/bios".into(),
                 archive_valid: false,
                 multi_file: false,
+            possible_destinations: None,
             };
         }
     }
@@ -195,13 +210,13 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         if is_ps_hint {
             if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
                 let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+                return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
             }
         }
         if is_segacd_hint {
             if let Some(sys) = profile.systems.iter().find(|s| s.id == "segacd") {
                 let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/segacd".into());
-                return Classification { kind: Kind::Rom, system_id: Some("segacd".into()), destination: folder, archive_valid: false, multi_file: true };
+                return Classification { kind: Kind::Rom, system_id: Some("segacd".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
             }
         }
         // For .cue, check content for PS-specific strings
@@ -211,7 +226,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 if upper.contains("PLAYSTATION") || upper.contains("PSX") {
                     if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
                         let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
                     }
                 }
             }
@@ -223,23 +238,20 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                     // Large BIN -> PS or SegaCD, default to PS (most common for TreeFrogUI)
                     if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
                         let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
                     }
                 }
             }
         }
-        // Fallback: for CUE/BIN without clear hint, default to PS (most common for TreeFrogUI) if the file is likely PS1
-        // Check if the file's parent folder or the archive's name suggests PS
-        // For now, if the file is .cue and no other system matched, default to PS for CUE, and for .bin check size
-        if ext == ".cue" {
-            // Default CUE to PS if no other clue (PS is more common than SegaCD for TreeFrogUI)
-            if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
-                // Only default to PS if the file is not obviously MD (MD never uses CUE)
-                // MD uses .bin/.md/.smd/.gen, not .cue, so CUE is never MD
-                let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
-            }
-        }
+        // Fallback: for CUE/BIN without clear hint, mark as Ambiguous for user to choose (PS vs SegaCD)
+        return Classification {
+            kind: Kind::Ambiguous,
+            system_id: None,
+            destination: "roms/UNKNOWN".into(),
+            archive_valid: false,
+            multi_file: true,
+            possible_destinations: Some(vec!["ps_psx".to_string(), "segacd".to_string()]),
+        };
     }
 
     // NOTA UX: Para extensiones compartidas (.cue, .bin, .iso) el usuario DEBE organizar sus archivos
@@ -249,6 +261,11 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     // y usará la heurística genérica (PS por defecto para .cue, tamaño para .bin).
     // Ver systems.json para la tabla completa de alias -> sistema.
 
+    // Forzar .nes a FC (alta compatibilidad) — TreeFrogUI usa FC para fceumm, NES para quicknes (mappers)
+    if ext == ".nes" {
+        return Classification { kind: Kind::Rom, system_id: Some("nes_fceumm".into()), destination: "roms/FC".into(), archive_valid: false, multi_file: false, possible_destinations: None };
+    }
+
     // Clasificación Contextual (Context-Aware): si la carpeta padre coincide con un alias, usar ese sistema
     if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
         if let Some(sys_id) = profile.alias_to_system.get(&parent_name) {
@@ -256,7 +273,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/UNKNOWN".into());
             let multi = sys.and_then(|s| s.multi_file).unwrap_or(false);
             let archive_valid = sys.and_then(|s| s.archive_payload_valid.as_ref()).map(|v| v.iter().any(|e| e.to_lowercase()==ext)).unwrap_or(false);
-            return Classification { kind: Kind::Rom, system_id: Some(sys_id.clone()), destination: folder, archive_valid, multi_file: multi };
+            return Classification { kind: Kind::Rom, system_id: Some(sys_id.clone()), destination: folder, archive_valid, multi_file: multi, possible_destinations: None };
         }
     }
 
@@ -274,7 +291,8 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             destination: folder,
             archive_valid,
             multi_file: multi,
-        };
+            possible_destinations: None,
+        }
     }
 
     // Fallback: unknown -> let user decide, but we still propose roms/UNKNOWN for dry-run visibility
@@ -284,5 +302,6 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         destination: "roms/UNKNOWN".into(),
         archive_valid: false,
         multi_file: false,
+        possible_destinations: None,
     }
 }

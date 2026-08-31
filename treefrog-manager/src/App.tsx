@@ -651,6 +651,8 @@ export type PlanEntry = {
   source_hash?: string | null;
   destination_hash?: string | null;
   content_type?: string;
+  kind?: string;
+  possible_destinations?: string[] | null;
   size?: number;
   group?: string[];
   members?: string[] | null;

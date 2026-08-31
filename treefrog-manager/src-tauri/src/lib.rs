@@ -64,6 +64,10 @@ pub struct PlanEntry {
     pub destination_hash: Option<String>,
     #[serde(default)]
     pub content_type: Option<String>,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub possible_destinations: Option<Vec<String>>,
     pub size: Option<u64>,
     pub group: Option<Vec<String>>,
     #[serde(default)]
@@ -297,7 +301,7 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
 }
 
 #[tauri::command]
-async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>) -> Result<serde_json::Value, String> {
+async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
     let target_val = analyze_target_cached(&sd_path)?;
     let target: sd_target::TargetAnalysis = serde_json::from_value(target_val).unwrap();
@@ -342,7 +346,7 @@ async fn deploy_to_sd(source_path: String, sd_path: String, force: Option<bool>)
         // Never abort: deploy.rs has a runtime double-write guard as last resort.
         log::warn!("Leftover write collisions (deploy guard will skip them): {:?}", collisions);
     }
-    let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force).map_err(|e| e.to_string())?;
+    let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app)).map_err(|e| e.to_string())?;
     let mut out = serde_json::to_value(&result).unwrap();
     out["target"] = serde_json::to_value(&target).unwrap();
     out["space"] = serde_json::to_value(&space).unwrap();
