@@ -534,7 +534,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     let profile_for_scan = crate::profile::load_profile().unwrap_or_else(|_| {
         crate::profile::load_profile().unwrap()
     });
-    let scanned_files = crate::scanner::scan(path, &profile_for_scan).unwrap_or_default();
+    let scanned_files = crate::scanner::scan_directory(path, &profile_for_scan, true).unwrap_or_default();
 
     let mut rom_dirs = Vec::new();
     let mut media_dirs = Vec::new();

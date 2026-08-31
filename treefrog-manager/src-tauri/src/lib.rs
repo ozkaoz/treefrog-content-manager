@@ -27,6 +27,16 @@ fn analyze_target_cached(path: &str) -> Result<serde_json::Value, String> {
     Ok(v)
 }
 
+fn cleanup_state() {
+    // Clear in-memory caches
+    if let Ok(mut g) = ANALYZE_CACHE.lock() {
+        *g = None;
+    }
+    // Clear any on-disk state that might persist between sessions (e.g., temp files, stale DB)
+    // For now, just clear the cache; DB is not used for transferred files persistence
+    // If a SQLite DB exists at the default location, we could delete it here, but it's not currently used for sync state
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PlanSummary {
     pub unchanged: usize,
@@ -83,6 +93,7 @@ pub struct Plan {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    cleanup_state();
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -99,7 +110,8 @@ pub fn run() {
             deploy_to_sd,
             lgpt_scan_samples,
             lgpt_scan_projects,
-            build_info
+            build_info,
+            clear_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -375,4 +387,10 @@ fn build_info() -> serde_json::Value {
         "commit": option_env!("TFM_GIT_COMMIT").unwrap_or("dev"),
         "built_at": option_env!("TFM_BUILD_TS").unwrap_or("unknown")
     })
+}
+
+#[tauri::command]
+fn clear_cache() -> Result<(), String> {
+    cleanup_state();
+    Ok(())
 }

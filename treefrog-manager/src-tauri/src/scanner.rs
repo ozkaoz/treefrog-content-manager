@@ -14,33 +14,39 @@ pub struct ScannedFile {
 }
 
 pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
-    let root = Path::new(source_root);
+    scan_directory(source_root, profile, false)
+}
+
+pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> anyhow::Result<Vec<ScannedFile>> {
+    let root = Path::new(path);
     if !root.exists() {
-        anyhow::bail!("source path not found: {}", source_root);
+        anyhow::bail!("source path not found: {}", path);
     }
     let mut out = Vec::new();
     let mut seen_sources: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut consumed: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    // Walk recursively with whitelist: only roms/cubegm/lgpt at depth 1, and cubegm/bios at depth 2+
-    for entry in WalkDir::new(root).follow_links(false).into_iter().filter_entry(|e| {
-        let path = e.path();
-        let name = e.file_name().to_string_lossy().to_lowercase();
-        // 1. Ignorar ocultos
-        if name.starts_with('.') { return false; }
-        // 2. Permitir raíz
-        if path == root { return true; }
-        // 3. Nivel 1: Solo entrar en roms, cubegm, lgpt
-        if e.depth() == 1 {
-            return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
-        }
-        // 4. Nivel 2+: Si el padre es "cubegm", solo permitir "bios"
-        if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
-            if parent_name == "cubegm" {
-                return name == "bios";
+    for entry in WalkDir::new(root).follow_links(false).into_iter().filter_entry({
+        let root = root.to_path_buf();
+        move |e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") {
+                return false;
             }
+            if !is_target {
+                return true;
+            }
+            let path = e.path();
+            if path == root { return true; }
+            if e.depth() == 1 {
+                return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
+            }
+            if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+                if parent_name == "cubegm" {
+                    return name == "bios";
+                }
+            }
+            true
         }
-        // 5. Por defecto, permitir si ya pasamos los filtros anteriores (estamos dentro de roms, bios, lgpt)
-        true
     }).filter_map(|e| e.ok()) {
         let p = entry.path();
         let canon = std::fs::canonicalize(entry.path()).unwrap_or_else(|_| entry.path().to_path_buf());
