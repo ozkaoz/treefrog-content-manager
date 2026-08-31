@@ -510,7 +510,7 @@ async fn validate_bios_file(path: String, bios_id: String) -> Result<serde_json:
         .unwrap_or_default();
 
     let name_ok = if let Some(pattern) = &bios.pattern {
-        let regex_str = "^".to_string() + &pattern.replace('.', "\\.").replace('*', ".*") + "$";
+        let regex_str = "^".to_string() + &pattern.to_lowercase().replace('.', "\\.").replace('*', ".*") + "$";
         regex::Regex::new(&regex_str)
             .map(|re| re.is_match(&filename))
             .unwrap_or(false)
@@ -521,7 +521,7 @@ async fn validate_bios_file(path: String, bios_id: String) -> Result<serde_json:
     if !name_ok {
         return Ok(serde_json::json!({
             "valid": false,
-            "reason": format!("Filename does not match expected: {}", bios.pattern.clone().unwrap_or(bios.filenames.join(" OR ")))
+            "reason": format!("Filename '{}' does not match expected pattern: {}", p.file_name().unwrap_or_default().to_string_lossy(), bios.pattern.clone().unwrap_or(bios.filenames.join(" OR ")))
         }));
     }
 

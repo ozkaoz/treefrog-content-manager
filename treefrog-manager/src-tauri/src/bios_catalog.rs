@@ -24,7 +24,7 @@ pub fn get_bios_catalog() -> Vec<BiosEntry> {
             pattern: Some("scph*.bin".into()),
             destination: "cubegm/bios".into(),
             required: true,
-            sha256: Some("3b7e31a4a68eb7c2f96c23ea83132d78b0f8d8b9b28ed5273b5cc5c7b5dfe7c4".into()),
+            sha256: None,
             md5: None,
             expected_size: Some(524288),
             description: "PS1 BIOS (any 512 KiB scph variant). Required for PS1 games.".into(),
