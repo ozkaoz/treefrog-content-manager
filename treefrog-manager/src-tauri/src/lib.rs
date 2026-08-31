@@ -479,10 +479,12 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
     
     let source_path_str = source_path.unwrap();
 
-    // BIOS: copy directly without planner (triple guard for cubegm/bios already in delete, here for deploy)
+    // BIOS: copy directly without planner
     let mut bios_deployed = 0usize;
     let mut bios_failed = 0usize;
+    let mut bios_skipped = 0usize;
     let mut bios_errors: Vec<String> = Vec::new();
+    let mut bios_warnings: Vec<String> = Vec::new();
     if let Some(entries) = &bios_entries {
         let total_bios = entries.len();
         let mut completed_bios = 0usize;
@@ -490,11 +492,13 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
             let dest_abs = std::path::Path::new(&sd_path).join(&entry.destination);
             let filename_lower = dest_abs.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
             const STOCK_BIOS: &[&str] = &["scph1001.bin","scph5501.bin","scph5502.bin","gba_bios.bin","o2rom.bin","neogeo.zip","disksys.rom","bios_cd_u.bin","bios_cd_e.bin","bios_cd_j.bin"];
-            if STOCK_BIOS.contains(&filename_lower.as_str()) {
-                if !force {
-                    tracing::info!("Skipping stock BIOS overwrite: {}", dest_abs.display());
-                    continue;
-                }
+            let already_exists = dest_abs.exists();
+            let is_stock = STOCK_BIOS.contains(&filename_lower.as_str());
+            if already_exists && is_stock && !force {
+                tracing::info!("Skipping stock BIOS overwrite (already exists): {}", dest_abs.display());
+                bios_skipped += 1;
+                bios_warnings.push(format!("Skipped {} - stock BIOS already exists on SD", entry.source.split('/').last().unwrap_or(&entry.source)));
+                continue;
             }
             let normalized = entry.destination.to_lowercase().replace('\\', "/");
             if !normalized.starts_with("cubegm/bios") {
@@ -522,6 +526,9 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
                 "message": format!("Copying BIOS {}/{}...", completed_bios, total_bios),
                 "isDeleting": false
             }));
+        }
+        if bios_skipped > 0 {
+            tracing::warn!("{} BIOS files were skipped (stock BIOS already exist on SD)", bios_skipped);
         }
     }
 
@@ -566,16 +573,22 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
     }
     let mut result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app)).map_err(|e| e.to_string())?;
     result.deployed += bios_deployed;
+    result.skipped += bios_skipped;
     result.failed += bios_failed;
     result.errors.extend(bios_errors.clone());
+    result.warnings.extend(bios_warnings.clone());
     if bios_deployed > 0 {
         result.warnings.push(format!("BIOS: {} copied, {} failed", bios_deployed, bios_failed));
+    }
+    if bios_skipped > 0 {
+        result.warnings.push(format!("BIOS: {} skipped (already exist)", bios_skipped));
     }
     let mut out = serde_json::to_value(&result).unwrap();
     out["target"] = serde_json::to_value(&target).unwrap();
     out["space"] = serde_json::to_value(&space).unwrap();
     out["plan"] = serde_json::to_value(&plan).unwrap();
     out["bios_deployed"] = serde_json::json!(bios_deployed);
+    out["bios_skipped"] = serde_json::json!(bios_skipped);
     out["bios_failed"] = serde_json::json!(bios_failed);
     Ok(out)
 }
