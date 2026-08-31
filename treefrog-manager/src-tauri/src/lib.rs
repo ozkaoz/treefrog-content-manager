@@ -126,6 +126,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             dry_run_preview,
             detect_sd,
@@ -332,7 +333,7 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
 }
 
 #[tauri::command]
-async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>, selected_files: Option<Vec<String>>) -> Result<serde_json::Value, String> {
+async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>, selected_files: Option<Vec<String>>, user_decisions: Option<std::collections::HashMap<String, String>>) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
     let target_val = analyze_target_cached(&sd_path)?;
     let target: sd_target::TargetAnalysis = serde_json::from_value(target_val).unwrap();
@@ -354,11 +355,22 @@ async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: Strin
         ));
     }
     let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
-    let plan = if let Some(ref files) = selected_files {
+    let mut plan = if let Some(ref files) = selected_files {
         planner::plan_with_selection(scanned, &sd_path, &profile, Some(files.clone())).map_err(|e| e.to_string())?
     } else {
         planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?
     };
+    if let Some(overrides) = &user_decisions {
+        for entry in plan.entries.iter_mut() {
+            let src_base = entry.source.split("::").next().unwrap_or(&entry.source).to_string();
+            if let Some(new_folder) = overrides.get(&src_base).or_else(|| overrides.get(&entry.source)) {
+                let file_name = std::path::Path::new(&entry.destination).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+                let new_dest = format!("{}/{}", new_folder.trim_end_matches('/'), file_name);
+                tracing::info!("Override aplicado: {} -> {} (antes {})", src_base, new_dest, entry.destination);
+                entry.destination = new_dest;
+            }
+        }
+    }
     let plan = planner::resolve_write_collisions(plan);
     for e in &plan.entries {
         sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;

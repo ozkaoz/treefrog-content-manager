@@ -19,6 +19,7 @@
     "fs:allow-stat",
     "fs:allow-read-dir",
     "opener:allow-open-url",
-    "opener:allow-open-path"
+    "opener:allow-open-path",
+    "shell:allow-open"
   ]
 }

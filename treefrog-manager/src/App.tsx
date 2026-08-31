@@ -79,6 +79,7 @@ export default function App() {
   const [syncResult, setSyncResult] = useState<any | null>(null);
   void syncResult;
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [systemOverrides, setSystemOverrides] = useState<Record<string, string>>({});
 
   // Build aggregated plan from all individual plans
   const globalPlan = useMemo(() => {
@@ -341,7 +342,7 @@ export default function App() {
       if (jobs.length === 0) return { error: "No hay carpetas de origen escaneadas. Ve a Games/Music/Videos/BIOS/LGPT y pulsa Scan." };
 
       for (const job of jobs) {
-        const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force })) as any;
+        const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force, selectedFiles: null, userDecisions: systemOverrides })) as any;
         agg.deployed += res.deployed || 0;
         agg.skipped += res.skipped || 0;
         agg.failed += res.failed || 0;
@@ -601,6 +602,7 @@ export default function App() {
           globalSdPath={sdPath} 
           onSourceChange={setGamesSource} 
           onPlanChange={setGamesPlan as any}
+          onOverridesChange={setSystemOverrides}
           onNext={() => setActiveTab("music")} 
         />
       </div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
@@ -32,13 +32,15 @@ export default function GamesPanel({
   onSourceChange, 
   onPlanChange,
   onNext,
-  visible
+  visible,
+  onOverridesChange
 }: { 
   globalSdPath: string; 
   onSourceChange?: (v: string) => void; 
   onPlanChange?: (plan: Plan | null) => void;
   onNext?: () => void;
   visible?: boolean;
+  onOverridesChange?: (overrides: Record<string, string>) => void;
 }) {
   const [source, setSource] = useState("");
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -48,6 +50,8 @@ export default function GamesPanel({
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
   const [editingSystem, setEditingSystem] = useState<string | null>(null);
   const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
+  const [systemOverrides, setSystemOverrides] = useState<Record<string, string>>({});
+  const [searchQuery, setSearchQuery] = useState('');
 
   async function handlePickSource() {
     try {
@@ -125,14 +129,6 @@ export default function GamesPanel({
     });
   };
 
-  const toggleAll = (checked: boolean) => {
-    if (checked && plan) {
-      setSelectedFiles(new Set(plan.entries.map(e => e.source)));
-    } else {
-      setSelectedFiles(new Set());
-    }
-  };
-
   const handleSystemClick = async (romId: string, sourcePath: string) => {
     setEditingSystem(romId);
     const ext = sourcePath.split('.').pop() ? '.' + sourcePath.split('.').pop()!.toLowerCase() : '';
@@ -160,7 +156,9 @@ export default function GamesPanel({
     });
     const newPlan = { ...plan, entries: newEntries };
     setPlan(newPlan);
-    onPlanChange?.(newPlan as any);
+    const newOverrides = { ...systemOverrides, [romId]: `roms/${newFolder}` };
+    setSystemOverrides(newOverrides);
+    onOverridesChange?.(newOverrides);
     setEditingSystem(null);
   };
 
@@ -176,6 +174,12 @@ export default function GamesPanel({
   const systems = Array.from(new Set(plan?.entries.map((e) => e.content_type?.replace("rom/", "") || "unknown") || []));
 
   const filtered = plan?.entries.filter((e) => filterSystem === "all" || e.content_type?.includes(filterSystem)) || [];
+
+  const visibleItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return filtered;
+    return filtered.filter(item => (item.source.split(/[\\/]/).pop() || item.source).toLowerCase().includes(q));
+  }, [filtered, searchQuery]);
 
   // Expose selected files for parent if needed
   (GamesPanel as any).getSelectedFiles = () => selectedFiles;
@@ -235,14 +239,40 @@ export default function GamesPanel({
               </button>
             ))}
           </div>
+          <div style={{ marginBottom: '10px', marginTop: '10px' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar archivo..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--input-bg, transparent)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
           <table style={{ marginTop: 8 }}>
             <thead>
               <tr>
                 <th>
                   <input 
                     type="checkbox" 
-                    checked={plan.entries.length > 0 && selectedFiles.size === plan.entries.length}
-                    onChange={(e) => toggleAll(e.target.checked)}
+                    checked={visibleItems.length > 0 && visibleItems.every(e => selectedFiles.has(e.source))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedFiles(prev => new Set([...prev, ...visibleItems.map(x => x.source)]));
+                      } else {
+                        setSelectedFiles(prev => {
+                          const ns = new Set(prev);
+                          visibleItems.forEach(x => ns.delete(x.source));
+                          return ns;
+                        });
+                      }
+                    }}
                   />
                 </th>
                 <th>Source</th>
@@ -252,7 +282,7 @@ export default function GamesPanel({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e, idx) => (
+              {visibleItems.map((e, idx) => (
                 <tr key={idx} style={{ opacity: selectedFiles.has(e.source) ? 1 : 0.5 }}>
                   <td>
                     <input 
@@ -295,7 +325,7 @@ export default function GamesPanel({
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && <EmptyState kind="empty" title="No Games found" description="No ROMs matched profile extensions in the selected source (check roms/ subfolders and archive_policy.json)." />}
+          {visibleItems.length === 0 && <EmptyState kind="empty" title="No Games found" description="No ROMs matched profile extensions in the selected source (check roms/ subfolders and archive_policy.json)." />}
         </>
       )}
     </div>

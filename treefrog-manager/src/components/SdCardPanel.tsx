@@ -606,6 +606,32 @@ export default function SdCardPanel({
         )}
       </div>
 
+      <div style={{ marginTop: '15px' }}>
+        <h4 style={{ color: 'var(--text-primary)' }}>🎨 Artwork (Mini Scraper)</h4>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+          Descarga Mini Scraper v2.4.0 para añadir box art automático a tus ROMs (compatible con TreeFrogUI).
+        </p>
+        <button
+          onClick={() => {
+            import('@tauri-apps/plugin-shell').then(({ open }) => {
+              open('https://github.com/tzubertowski/mini-scraper-cfw/releases/latest');
+            }).catch(() => {
+              window.open('https://github.com/tzubertowski/mini-scraper-cfw/releases/latest', '_blank');
+            });
+          }}
+          style={{
+            padding: '8px 16px',
+            backgroundColor: 'var(--accent, #1976d2)',
+            color: 'var(--button-text, #fff)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+          }}
+        >
+          Descargar Mini Scraper v2.4.0
+        </button>
+      </div>
+
       <MiniScraper sdPath={sdPath} />
     </div>
   );

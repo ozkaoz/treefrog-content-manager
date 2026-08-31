@@ -39,6 +39,7 @@ export default function VideosPanel({
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "compatible" | "convert" | "error">("all");
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
 
   async function handlePickSource() {
     try {
@@ -103,17 +104,16 @@ export default function VideosPanel({
       return ns;
     });
   };
-  const toggleAll = (checked: boolean) => {
-    if (checked && plan) setSelectedFiles(new Set(plan.entries.map(e => e.source)));
-    else setSelectedFiles(new Set());
-  };
 
   const displayFiltered = (() => {
     if (!plan) return [];
-    if (filter === "compatible") return plan.entries.filter((e) => e.action === "copy");
-    if (filter === "convert") return plan.entries.filter((e) => e.action === "convert_then_copy");
-    if (filter === "error") return plan.entries.filter((e) => e.action === "manual_review" || e.action === "unsupported");
-    return plan.entries;
+    let items = plan.entries;
+    if (filter === "compatible") items = items.filter((e) => e.action === "copy");
+    else if (filter === "convert") items = items.filter((e) => e.action === "convert_then_copy");
+    else if (filter === "error") items = items.filter((e) => e.action === "manual_review" || e.action === "unsupported");
+    const q = searchQuery.trim().toLowerCase();
+    if (q) items = items.filter(item => (item.source.split(/[\\/]/).pop() || item.source).toLowerCase().includes(q));
+    return items;
   })();
 
   const lastScanKey = useRef("");
@@ -178,10 +178,36 @@ export default function VideosPanel({
               </button>
             ))}
           </div>
+          <div style={{ marginBottom: '10px', marginTop: '10px' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar archivo..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--input-bg, transparent)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
           <table style={{ marginTop: 8 }}>
             <thead>
               <tr>
-                <th><input type="checkbox" checked={plan.entries.length > 0 && selectedFiles.size === plan.entries.length} onChange={(e) => toggleAll(e.target.checked)} /></th>
+                <th><input type="checkbox" checked={displayFiltered.length > 0 && displayFiltered.every(e => selectedFiles.has(e.source))} onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedFiles(prev => new Set([...prev, ...displayFiltered.map(x => x.source)]));
+                  } else {
+                    setSelectedFiles(prev => {
+                      const ns = new Set(prev);
+                      displayFiltered.forEach(x => ns.delete(x.source));
+                      return ns;
+                    });
+                  }
+                }} /></th>
                 <th>Source</th>
                 <th>Destination</th>
                 <th>Codec</th>

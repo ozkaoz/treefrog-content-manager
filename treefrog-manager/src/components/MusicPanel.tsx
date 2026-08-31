@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
@@ -35,6 +35,7 @@ export default function MusicPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState('');
 
   async function handlePickSource() {
     try {
@@ -64,7 +65,6 @@ export default function MusicPanel({
         sourcePath: source,
         sdPath: globalSdPath,
       })) as any;
-      // Filtrado correcto: solo audio
       const audioExts = [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"];
       const filtered = (result.entries as PlanEntry[]).filter(e => {
         const ext = '.' + (e.source.split('.').pop() || '').toLowerCase();
@@ -86,11 +86,10 @@ export default function MusicPanel({
 
   useEffect(() => {
     if (!plan) { onPlanChange?.(null); return; }
-    if (selectedFiles.size === 0 || selectedFiles.size === plan.entries.length) {
-      onPlanChange?.(plan);
-    } else {
+    if (selectedFiles.size === 0 || selectedFiles.size === plan.entries.length) onPlanChange?.(plan);
+    else {
       const filtered = plan.entries.filter(e => selectedFiles.has(e.source));
-      const newSummary = { ...plan.summary, new: filtered.filter(e => e.action === 'copy' || e.action === 'extract').length, unchanged: filtered.filter(e => e.action === 'skip_unchanged').length, duplicate_content: filtered.filter(e => e.action === 'skip_duplicate').length, conflicts: filtered.filter(e => e.action === 'conflict').length };
+      const newSummary = { new: filtered.filter(e => e.action === 'copy' || e.action === 'extract').length, unchanged: filtered.filter(e => e.action === 'skip_unchanged').length, duplicate_content: filtered.filter(e => e.action === 'skip_duplicate').length, conflicts: filtered.filter(e => e.action === 'conflict').length };
       onPlanChange?.({ ...plan, entries: filtered, summary: newSummary } as any);
     }
   }, [selectedFiles, plan, onPlanChange]);
@@ -103,10 +102,18 @@ export default function MusicPanel({
     });
   };
 
+  const visibleTracks = useMemo(() => {
+    if (!plan) return [];
+    const q = searchQuery.trim().toLowerCase();
+    let items = plan.entries;
+    if (q) items = items.filter(item => (item.source.split(/[\\/]/).pop() || item.source).toLowerCase().includes(q));
+    return items;
+  }, [plan, searchQuery]);
+
   const playlists = (() => {
     if (!plan) return [];
     const map = new Map<string, PlanEntry[]>();
-    for (const e of plan.entries) {
+    for (const e of visibleTracks) {
       const parts = e.destination.split("/");
       const playlist = parts.length >= 3 ? parts[2] : "unknown";
       if (!map.has(playlist)) map.set(playlist, []);
@@ -169,23 +176,49 @@ export default function MusicPanel({
             <span style={{ fontSize: 12, background: "var(--surface)", border: "1px solid var(--border)", padding: "2px 6px", borderRadius: 4 }}>{plan.summary.new} new</span>
             <span style={{ fontSize: 12, background: "var(--surface)", border: "1px solid var(--border)", padding: "2px 6px", borderRadius: 4 }}>{plan.summary.unchanged} unchanged</span>
           </div>
+          <div style={{ marginBottom: '10px', marginTop: '10px' }}>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar archivo..."
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                border: '1px solid var(--border-color)',
+                backgroundColor: 'var(--input-bg, transparent)',
+                color: 'var(--text-primary)',
+              }}
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={visibleTracks.length > 0 && visibleTracks.every(t => selectedFiles.has(t.source))}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    setSelectedFiles(prev => new Set([...prev, ...visibleTracks.map(t => t.source)]));
+                  } else {
+                    setSelectedFiles(prev => {
+                      const ns = new Set(prev);
+                      visibleTracks.forEach(t => ns.delete(t.source));
+                      return ns;
+                    });
+                  }
+                }}
+              />
+              Track
+            </label>
+          </div>
           {playlists.map(([playlist, entries]) => (
             <div key={playlist} style={{ marginTop: 10, border: "1px solid var(--border)", borderRadius: 6, padding: 8, background: "var(--surface)" }}>
               <h4 style={{ margin: "0 0 6px 0", fontSize: 13 }}>Playlist: {playlist} ({entries.length} tracks)</h4>
               <table>
                 <thead>
                   <tr>
-                    <th><input type="checkbox" checked={entries.length > 0 && entries.every(e => selectedFiles.has(e.source))} onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFiles(prev => new Set([...prev, ...entries.map(en => en.source)]));
-                      } else {
-                        setSelectedFiles(prev => {
-                          const ns = new Set(prev);
-                          entries.forEach(en => ns.delete(en.source));
-                          return ns;
-                        });
-                      }
-                    }} /></th>
+                    <th></th>
                     <th>Track</th>
                     <th>Destination</th>
                     <th>Action</th>
@@ -206,7 +239,7 @@ export default function MusicPanel({
               </table>
             </div>
           ))}
-          {plan.entries.length === 0 && <EmptyState kind="empty" title="No Music found" description="No audio files (MP3, FLAC, etc.) matched media.json in the selected source." />}
+          {visibleTracks.length === 0 && <EmptyState kind="empty" title="No Music found" description="No audio files (MP3, FLAC, etc.) matched in the selected source or search." />}
         </>
       )}
     </div>
