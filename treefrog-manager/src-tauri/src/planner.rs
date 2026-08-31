@@ -945,11 +945,14 @@ fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Pa
         },
         crate::classify::Kind::Rom => {
             let dest = format!("{}/{}", dest_base, file_name);
-            Ok((dest, "copy".into(), format!("new path + new hash -> {}", dest_base)))
+            // Defensa en profundidad: colapsar duplicidad accidental de carpeta raíz (ej. roms/roms/GBA/...)
+            let safe_dest = dest.replace("roms/roms/", "roms/").replace("roms\\roms\\", "roms/");
+            Ok((safe_dest, "copy".into(), format!("new path + new hash -> {}", dest_base)))
         },
         crate::classify::Kind::Video => {
             let dest = format!("{}/{}", dest_base, file_name);
-            Ok((dest, "copy".into(), "video — will be probed via ffprobe at sync time".into()))
+            let safe_dest = dest.replace("roms/roms/", "roms/").replace("roms\\roms\\", "roms/");
+            Ok((safe_dest, "copy".into(), "video — will be probed via ffprobe at sync time".into()))
         },
         crate::classify::Kind::Image => {
             let dest = if dest_base==".res" { format!("{}/{}", dest_base, file_name) } else { format!("{}/{}", dest_base, file_name) };

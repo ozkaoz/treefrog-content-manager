@@ -458,6 +458,12 @@ fn load_markers() -> (Vec<String>, Vec<String>) {
 pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     let vol = get_volume_info(path);
     let p = Path::new(path);
+    // Tarea 1: Detección temprana si el usuario seleccionó la carpeta roms por error
+    if let Some(fname) = p.file_name().and_then(|n| n.to_str()) {
+        if fname.to_lowercase() == "roms" && !p.join("cubegm").exists() {
+            anyhow::bail!("Has seleccionado la carpeta 'roms' como raíz. Por favor, selecciona la raíz de la tarjeta SD (ej. 'E:\\') para que los ROMs se copien correctamente en 'roms/SISTEMA/'.");
+        }
+    }
     let mut errors = Vec::new();
     if let Some(e) = &vol.error {
         errors.push(e.clone());
