@@ -270,6 +270,28 @@ export default function BiosManager({
         )}
       </div>
 
+      <div style={{ 
+        padding: '10px', 
+        backgroundColor: Object.values(biosState).filter(s => s.selected && s.valid).length > 0 ? 'var(--success-bg)' : 'var(--bg-secondary, var(--surface))',
+        borderRadius: '6px',
+        marginTop: '15px',
+      }}>
+        <strong>{Object.values(biosState).filter(s => s.selected && s.valid).length} BIOS file(s) selected for sync</strong>
+        {Object.values(biosState).filter(s => s.selected && s.valid).length > 0 && (
+          <ul style={{ margin: '10px 0', paddingLeft: '20px' }}>
+            {Object.entries(biosState).filter(([_, s]) => s.selected && s.valid).map(([biosId, state]) => {
+              const bios = catalog.find(b => b.id === biosId);
+              const filename = state.found_path?.split(/[\\/]/).pop() || biosId;
+              return (
+                <li key={biosId} style={{ fontSize: '13px' }}>
+                  {bios?.destination}/{filename}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
       <div className="row" style={{ marginTop: '16px' }}>
         <button onClick={() => onNext?.()} style={{ marginLeft: 'auto' }}>
           Skip → LGPT

@@ -68,7 +68,8 @@ export default function SdCardPanel({
   globalPlan,
   globalSpace,
   onSync,
-  isSyncing
+  isSyncing,
+  biosPlanEntries
 }: { 
   sdPath: string; 
   onChange: (v: string) => void; 
@@ -77,6 +78,7 @@ export default function SdCardPanel({
   globalSpace?: any;
   onSync?: (force: boolean) => Promise<any>;
   isSyncing?: boolean;
+  biosPlanEntries?: any[];
 }) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
   const [space] = useState<SpaceInfo | null>(null);
@@ -435,7 +437,11 @@ export default function SdCardPanel({
           <input type="checkbox" checked={forceCopy} onChange={(e) => setForceCopy(e.target.checked)} />
           {t.forceCopy}
         </label>
-        {confirming ? (
+        {(() => {
+          const hasRomEntries = globalPlan && globalPlan.entries.length > 0;
+          const hasBiosEntries = biosPlanEntries && biosPlanEntries.length > 0;
+          const hasAnyEntries = hasRomEntries || hasBiosEntries;
+          return confirming ? (
           <div style={{ padding: 12, border: "1px solid var(--accent)", borderRadius: 6, background: "var(--surface-elevated)" }}>
             <div style={{ fontSize: 13, marginBottom: 8 }}>
               {t.confirmSync(sdPath, globalPlan?.summary.new ?? 0, globalPlan?.summary.changed ?? 0, forceCopy)}
@@ -455,28 +461,31 @@ export default function SdCardPanel({
         ) : (
           <button
             onClick={() => { setError(""); setConfirming(true); }}
-            disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading ||
-              ((globalPlan.summary.new === 0 && globalPlan.summary.changed === 0) && !forceCopy)}
+            disabled={!hasAnyEntries || globalSpace?.status === "insufficient_space" || loading ||
+              (globalPlan && ((globalPlan.summary.new === 0 && globalPlan.summary.changed === 0) && !forceCopy) && !hasBiosEntries)}
             className="primary"
-            style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
+            style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600, backgroundColor: hasAnyEntries ? 'var(--accent)' : 'var(--button-disabled-bg)', color: 'var(--button-text)', cursor: hasAnyEntries ? 'pointer' : 'not-allowed' } as any}
             title={
-              !globalPlan 
+              !hasAnyEntries 
                 ? "Go to Overview and press ANALYZE first"
-                : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
+                : globalPlan && globalPlan.summary.new === 0 && globalPlan.summary.changed === 0 && !hasBiosEntries
                 ? "No new or modified files to synchronize"
-                : `Synchronize ${globalPlan.summary.new} new to ${sdPath}`
+                : `Synchronize ${globalPlan?.summary.new || 0} new to ${sdPath}${hasBiosEntries ? ` + ${biosPlanEntries.length} BIOS` : ""}`
             }
           >
             {loading ? "Synchronizing…" : "Sync to SD"}
           </button>
 
-        )}
+        )})()}
         <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center" }}>
-          {!globalPlan 
-            ? "Go to Overview and press ANALYZE to prepare synchronization."
-            : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
-            ? "No new or modified files. Go to Games/Music/Videos/BIOS/LGPT and select source folders."
-            : `Ready to synchronize: ${globalPlan.summary.new} new, ${globalPlan.summary.changed} modified, ${globalPlan.summary.unchanged} unchanged.`}
+          {(() => {
+            const hasRomEntries = globalPlan && globalPlan.entries.length > 0;
+            const hasBiosEntries = biosPlanEntries && biosPlanEntries.length > 0;
+            const hasAnyEntries = hasRomEntries || hasBiosEntries;
+            if (!hasAnyEntries) return "Go to Overview and press ANALYZE to prepare synchronization.";
+            if (globalPlan && globalPlan.summary.new === 0 && globalPlan.summary.changed === 0 && !hasBiosEntries) return "No new or modified files. Go to Games/Music/Videos/BIOS/LGPT and select source folders.";
+            return `Ready to synchronize: ${globalPlan?.summary.new || 0} new, ${globalPlan?.summary.changed || 0} modified, ${globalPlan?.summary.unchanged || 0} unchanged.${hasBiosEntries ? ` BIOS: ${biosPlanEntries.length} files.` : ""}`;
+          })()}
         </div>
       </div>
 

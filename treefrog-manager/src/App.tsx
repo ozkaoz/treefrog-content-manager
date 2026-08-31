@@ -118,16 +118,83 @@ export default function App() {
     return { entries: allEntries, summary, warnings: [] };
   }, [gamesPlan, musicPlan, videosPlan, lgptPlan]);
 
-  // Calculate global space from aggregated plan
+  const combinedPlan = useMemo(() => {
+    if (!globalPlan && biosPlanEntries.length === 0) return null;
+    if (!globalPlan) {
+      const allEntries = biosPlanEntries.map(bios => ({
+        source: bios.source,
+        destination: bios.destination,
+        action: bios.action,
+        reason: bios.reason,
+        content_type: bios.content_type,
+        hash: null,
+        source_hash: null,
+        destination_hash: null,
+        size: 0,
+        group: null,
+        members: null,
+        default_action: bios.action,
+        resolution: 'copy',
+        resolved_action: bios.action,
+        original_destination: null,
+      }));
+      return {
+        entries: allEntries,
+        summary: {
+          new: allEntries.length,
+          unchanged: 0,
+          changed: 0,
+          duplicate_content: 0,
+          conflicts: 0,
+          deletions: 0,
+          manual_review: 0,
+          unsupported_archive: 0,
+          bios_count: biosPlanEntries.length,
+        },
+        warnings: [],
+      } as any;
+    }
+    const allEntries = [
+      ...globalPlan.entries,
+      ...biosPlanEntries.map(bios => ({
+        source: bios.source,
+        destination: bios.destination,
+        action: bios.action,
+        reason: bios.reason,
+        content_type: bios.content_type,
+        hash: null,
+        source_hash: null,
+        destination_hash: null,
+        size: 0,
+        group: null,
+        members: null,
+        default_action: bios.action,
+        resolution: 'copy',
+        resolved_action: bios.action,
+        original_destination: null,
+      })),
+    ];
+    return {
+      ...globalPlan,
+      entries: allEntries,
+      summary: {
+        ...globalPlan.summary,
+        bios_count: biosPlanEntries.length,
+      },
+    } as any;
+  }, [globalPlan, biosPlanEntries]);
+
+  // Calculate global space from aggregated plan (including BIOS)
   const globalSpace = useMemo(() => {
-    if (!globalPlan || !sdAnalysis) return null;
+    const planForSpace = combinedPlan || globalPlan;
+    if (!planForSpace || !sdAnalysis) return null;
     
     let to_copy = 0;
     let to_extract = 0;
     let to_generate = 0;
     let to_skip = 0;
     
-    for (const e of globalPlan.entries) {
+    for (const e of planForSpace.entries) {
       const size = (e as any).size || 0;
       if (e.action === 'copy') to_copy += size;
       else if (e.action === 'extract') to_extract += size;
@@ -148,7 +215,7 @@ export default function App() {
       available_bytes: available,
       status,
     };
-  }, [globalPlan, sdAnalysis]);
+  }, [combinedPlan, globalPlan, sdAnalysis]);
 
   useEffect(() => {
     const cleanup = initTheme();
@@ -370,8 +437,7 @@ export default function App() {
           agg.breakdown.push(...(res.breakdown || []));
         }
       } else if (hasBios) {
-        // Only BIOS, no ROMs: still need a sourcePath for deploy_to_sd, use a dummy existing path (sdPath itself)
-        const res = (await invoke("deploy_to_sd", { sourcePath: sdPath, sdPath, force, selectedFiles: [], userDecisions: systemOverrides, biosEntries: biosEntriesForDeploy })) as any;
+        const res = (await invoke("deploy_to_sd", { sourcePath: null, sdPath, force, selectedFiles: null, userDecisions: systemOverrides, biosEntries: biosEntriesForDeploy })) as any;
         agg.deployed += res.deployed || 0;
         agg.skipped += res.skipped || 0;
         agg.failed += res.failed || 0;
@@ -688,9 +754,10 @@ export default function App() {
           sdPath={sdPath} 
           onChange={setSdPath} 
           volumes={volumes}
-          globalPlan={globalPlan}
+          globalPlan={combinedPlan}
           globalSpace={globalSpace}
           isSyncing={loading}
+          biosPlanEntries={biosPlanEntries}
           onSync={async (force) => {
             const result = await handleSync(force);
             setSyncResult(result);
