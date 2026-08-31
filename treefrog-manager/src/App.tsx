@@ -538,7 +538,17 @@ export default function App() {
             )}
           </div>
 
-          {error && <div className="status-error" style={{ fontSize: 12, marginBottom: 8 }}>{error}</div>}
+          {error && (
+            <div className="status-error" style={{ fontSize: 12, marginBottom: 8, padding: 10, border: "2px solid var(--danger)", background: "var(--danger-bg)", borderRadius: 6 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Error</div>
+              <div>{error}</div>
+              {error.includes("Has seleccionado la carpeta 'roms'") && (
+                <div style={{ marginTop: 8, fontSize: 11, color: "var(--text)" }}>
+                  <strong>Solución:</strong> Selecciona la <strong>raíz</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>.
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="row" style={{ marginTop: 12 }}>
             <button className="primary" onClick={handleAnalyze} disabled={loading || !sdPath}>

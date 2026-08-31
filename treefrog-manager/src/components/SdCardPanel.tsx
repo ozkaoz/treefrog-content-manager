@@ -157,9 +157,19 @@ export default function SdCardPanel({
 
       </div>
 
-      {error && <div className="status-error" style={{ fontSize: 12, marginBottom: 8 }}>{error}</div>}
+      {error && (
+        <div className="status-error" style={{ fontSize: 12, marginBottom: 8, padding: 10, border: "2px solid var(--danger)", background: "var(--danger-bg)", borderRadius: 6 }}>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Error de selección de SD</div>
+          <div>{error}</div>
+          {error.includes("Has seleccionado la carpeta 'roms'") && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "var(--text)" }}>
+              <strong>Solución:</strong> Selecciona la <strong>raíz</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>. La app creará automáticamente <code>roms/SISTEMA/</code>.
+            </div>
+          )}
+        </div>
+      )}
 
-      {!analysis && !loading && <EmptyState kind="empty" title="No target analyzed" description="Click Select SD (native Windows folder picker) then Analyze. No writes will occur." />}
+      {!analysis && !loading && !error && <EmptyState kind="empty" title="No target analyzed" description="Click Select SD (native Windows folder picker) then Analyze. No writes will occur." />}
 
       {loading && <EmptyState kind="loading" title="Analyzing…" description="Reading volume info, checking markers, indexing existing content (read-only)." />}
 
