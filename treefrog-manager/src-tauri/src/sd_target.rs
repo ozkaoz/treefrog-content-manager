@@ -36,6 +36,7 @@ pub struct TargetAnalysis {
     pub errors: Vec<String>,
     pub stable_id: Option<String>,
     pub physical_device: Option<PhysicalDevice>,
+    pub folder_breakdown: std::collections::HashMap<String, usize>,
 }
 
 #[cfg(target_os = "windows")]
@@ -492,6 +493,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
             errors,
             stable_id: None,
             physical_device: None,
+            folder_breakdown: std::collections::HashMap::new(),
         });
     }
 
@@ -535,6 +537,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     let mut lgpt_dirs = Vec::new();
     let mut existing_count = 0usize;
     let mut total_size = 0u64;
+    let mut folder_breakdown: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
     let roms_path = p.join("roms");
     if roms_path.exists() {
@@ -560,6 +563,13 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
                 if let Ok(m) = entry.metadata() {
                     total_size += m.len();
                 }
+                // Per-folder breakdown
+                if let Ok(rel) = entry.path().strip_prefix(p) {
+                    if let Some(parent) = rel.parent() {
+                        let key = parent.to_string_lossy().replace("\\", "/");
+                        *folder_breakdown.entry(key).or_insert(0) += 1;
+                    }
+                }
             }
         }
     }
@@ -571,6 +581,12 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
             if entry.file_type().is_file() {
                 existing_count += 1;
                 if let Ok(m) = entry.metadata() { total_size += m.len(); }
+                if let Ok(rel) = entry.path().strip_prefix(p) {
+                    if let Some(parent) = rel.parent() {
+                        let key = parent.to_string_lossy().replace("\\", "/");
+                        *folder_breakdown.entry(key).or_insert(0) += 1;
+                    }
+                }
             }
         }
     }
@@ -582,6 +598,12 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
             if entry.file_type().is_file() {
                 existing_count += 1;
                 if let Ok(m) = entry.metadata() { total_size += m.len(); }
+                if let Ok(rel) = entry.path().strip_prefix(p) {
+                    if let Some(parent) = rel.parent() {
+                        let key = parent.to_string_lossy().replace("\\", "/");
+                        *folder_breakdown.entry(key).or_insert(0) += 1;
+                    }
+                }
             }
         }
     }
@@ -671,6 +693,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         errors,
         stable_id,
         physical_device,
+        folder_breakdown,
     })
 }
 

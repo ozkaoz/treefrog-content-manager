@@ -1,7 +1,8 @@
 {
   "schema_version": "1.1.0",
   "profile_version": "1.1.0",
-  "description": "Global TreeFrogUI ROM/system folder mappings — authoritative folder aliases (case-sensitive) and extensions. Manager must support full profile, not just bootstrap examples.",
+  "description": "Global TreeFrogUI ROM/system folder mappings — authoritative folder aliases (case-sensitive) and extensions. Manager must support full profile, not just bootstrap examples. PRIORITY: high-compatibility cores first (FC before NES, GBA before mgba) — ext_to_system respects JSON order, first alias wins for shared extensions like .nes/.gba/.bin/.cue.",
+  "_priority_note": "For shared extensions (.nes, .gba, .bin, .cue, .iso), the FIRST system in this array with that extension wins. Keep high-compat cores (fceumm FC, gpsp GBA) BEFORE low-compat alts (quicknes NES, mgba). See classify.rs contextual folder logic for CUE/BIN disambiguation.",
   "source": "https://github.com/tzubertowski/treefrog-ui — README.md ROM folder setup + cores.md + docs/cores/*.md (verified 2026-08-28)",
   "systems": [
     {

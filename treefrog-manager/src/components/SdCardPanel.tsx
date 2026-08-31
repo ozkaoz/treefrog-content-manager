@@ -35,6 +35,7 @@ type TargetAnalysis = {
   filesystem?: string | null;
   label?: string | null;
   errors: string[];
+  folder_breakdown?: Record<string, number>;
 };
 
 type SpaceInfo = {
@@ -226,6 +227,35 @@ export default function SdCardPanel({
               )}
             </div>
           </div>
+          {analysis.folder_breakdown && Object.keys(analysis.folder_breakdown).length > 0 && (
+            <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--surface)", gridColumn: "span 2", marginTop: 12 }}>
+              <details open>
+                <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Desglose por carpeta — {Object.keys(analysis.folder_breakdown).length} carpetas</summary>
+                <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
+                  <table style={{ width: "100%", fontSize: 11 }}>
+                    <thead><tr><th style={{ textAlign: "left", padding: "4px" }}>Carpeta</th><th style={{ textAlign: "right", padding: "4px" }}>Archivos</th><th style={{ textAlign: "left", padding: "4px" }}>Tipo</th></tr></thead>
+                    <tbody>
+                      {Object.entries(analysis.folder_breakdown).sort((a,b) => (b[1] as number) - (a[1] as number)).map(([folder, count]) => {
+                        const lower = folder.toLowerCase();
+                        const isDemo = lower.includes("pico8") || lower.includes("treefrog_defaults") || (lower.includes("samples") && (count as number) > 100);
+                        const isAsset = lower.includes("treefrog_defaults") || lower.includes("pico8") || lower.includes("bios");
+                        const tag = lower.includes("bios") ? "[SISTEMA]" : isDemo ? "[DEMO]" : isAsset ? "[ASSET]" : "[Usuario]";
+                        const tagColor = isDemo ? "var(--warning)" : isAsset ? "var(--accent)" : "var(--success)";
+                        return (
+                          <tr key={folder}>
+                            <td style={{ padding: "4px" }}>{folder}/</td>
+                            <td style={{ padding: "4px", textAlign: "right" }}>{count as number}</td>
+                            <td style={{ padding: "4px" }}><span style={{ background: tagColor, color: "white", padding: "1px 4px", borderRadius: 3, fontSize: 10 }}>{tag}</span></td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Carpetas con [DEMO]/[ASSET]/[SISTEMA] son contenido de TreeFrogUI por defecto. Las de [Usuario] son tu contenido personal. Ej.: <code>roms/FC/</code> 12 juegos, <code>roms/pico8/</code> 28 carts [DEMO].</p>
+                </div>
+              </details>
+            </div>
+          )}
         </div>
       )}
 

@@ -237,6 +237,13 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         }
     }
 
+    // NOTA UX: Para extensiones compartidas (.cue, .bin, .iso) el usuario DEBE organizar sus archivos
+    // en carpetas separadas en el PC de origen (ej. D:\ROMs\PS1\ y D:\ROMs\SegaCD\).
+    // El gestor usa el nombre de la carpeta padre para clasificar (context-aware). Si todos
+    // los .cue/.bin están en una sola carpeta sin pista del sistema, no puede adivinar
+    // y usará la heurística genérica (PS por defecto para .cue, tamaño para .bin).
+    // Ver systems.json para la tabla completa de alias -> sistema.
+
     // Clasificación Contextual (Context-Aware): si la carpeta padre coincide con un alias, usar ese sistema
     if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
         if let Some(sys_id) = profile.alias_to_system.get(&parent_name) {

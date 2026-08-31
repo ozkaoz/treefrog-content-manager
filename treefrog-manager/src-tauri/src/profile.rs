@@ -123,6 +123,7 @@ pub fn load_profile() -> anyhow::Result<LoadedProfile> {
 
     let mut ext_to_system: HashMap<String, Vec<String>> = HashMap::new();
     let mut alias_to_system: HashMap<String, String> = HashMap::new();
+    // PRIORITY: keep JSON order — first system with a given extension wins (e.g. .nes -> FC before NES, .gba -> GBA before mgba)
     for sys in &systems.systems {
         for ext in &sys.extensions {
             let k = ext.to_lowercase();
