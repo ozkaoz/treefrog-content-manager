@@ -87,9 +87,14 @@ export default function SdCardPanel({
   const [confirming, setConfirming] = useState(false);
   const [forceCopy, setForceCopy] = useState(false);
   const [selectedRoms, setSelectedRoms] = useState<Set<string>>(new Set());
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<'selected' | 'all' | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, percentage: 0, message: '' });
+  const [deleteProgress, setDeleteProgress] = useState({ 
+    current: 0, 
+    total: 0, 
+    percentage: 0, 
+    message: '',
+    isDeleting: false 
+  });
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
   const _volumes = propVolumes !== undefined ? propVolumes : volumesState;
@@ -114,6 +119,13 @@ export default function SdCardPanel({
   useEffect(() => {
     const unlisten = listen('deploy-progress', (event) => {
       setProgress(event.payload as any);
+    });
+    return () => { unlisten.then(f => f()); };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen('delete-progress', (event) => {
+      setDeleteProgress(event.payload as any);
     });
     return () => { unlisten.then(f => f()); };
   }, []);
@@ -153,8 +165,12 @@ export default function SdCardPanel({
   };
 
   const handleDeleteSelected = async () => {
-    if (selectedRoms.size === 0) return;
-    setShowDeleteConfirm(false);
+    if (!confirm(`¿Eliminar ${selectedRoms.size} carpetas de ROMs? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    
+    setDeleteProgress(prev => ({ ...prev, isDeleting: true }));
+    
     try {
       const result = await invoke('delete_roms_from_sd', {
         sdPath: sdPath,
@@ -163,17 +179,28 @@ export default function SdCardPanel({
       }) as any;
       
       if (result.success) {
+        alert(`Eliminadas ${result.deleted} carpetas`);
         setSelectedRoms(new Set());
         await handleAnalyze();
+      } else {
+        alert(`Error: ${result.errors.join(', ')}`);
       }
       setSyncResult(result);
     } catch (e) {
+      alert(`Error: ${e}`);
       setError(String(e));
+    } finally {
+      setDeleteProgress(prev => ({ ...prev, isDeleting: false }));
     }
   };
 
   const handleDeleteAll = async () => {
-    setShowDeleteConfirm(false);
+    if (!confirm('¿Eliminar TODAS las ROMs de la SD? Esta acción no se puede deshacer.')) {
+      return;
+    }
+    
+    setDeleteProgress(prev => ({ ...prev, isDeleting: true }));
+    
     try {
       const result = await invoke('delete_roms_from_sd', {
         sdPath: sdPath,
@@ -182,12 +209,18 @@ export default function SdCardPanel({
       }) as any;
       
       if (result.success) {
+        alert('Todas las ROMs eliminadas');
         setSelectedRoms(new Set());
         await handleAnalyze();
+      } else {
+        alert(`Error: ${result.errors.join(', ')}`);
       }
       setSyncResult(result);
     } catch (e) {
+      alert(`Error: ${e}`);
       setError(String(e));
+    } finally {
+      setDeleteProgress(prev => ({ ...prev, isDeleting: false }));
     }
   };
 
@@ -475,27 +508,33 @@ export default function SdCardPanel({
       <div style={{ 
         marginTop: '30px', 
         padding: '20px', 
-        border: '2px solid #d32f2f', 
+        border: '2px solid var(--danger)', 
         borderRadius: '8px',
-        backgroundColor: '#ffebee'
+        backgroundColor: 'var(--danger-bg, rgba(211, 47, 47, 0.1))'
       }}>
-        <h3 style={{ color: '#d32f2f', marginBottom: '15px' }}>
+        <h3 style={{ color: 'var(--danger)', marginBottom: '15px' }}>
           ⚠️ Zona de Peligro: Eliminar ROMs
         </h3>
         
-        <div style={{ marginBottom: '15px' }}>
-          <h4>Carpetas de ROMs en la SD:</h4>
+        <div style={{ marginBottom: '15px', color: 'var(--text-primary)' }}>
+          <h4 style={{ color: 'var(--text-primary)' }}>Carpetas de ROMs en la SD:</h4>
           {romList.length === 0 ? (
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No hay carpetas de ROMs detectadas. Analiza la SD primero.</div>
           ) : (
             romList.map(({ folder, count }) => (
-              <label key={folder} style={{ display: 'block', marginBottom: '5px' }}>
+              <label key={folder} style={{ 
+                display: 'block', 
+                marginBottom: '5px',
+                color: 'var(--text-primary)',
+                cursor: 'pointer'
+              }}>
                 <input
                   type="checkbox"
                   checked={selectedRoms.has(folder)}
                   onChange={() => handleToggleRom(folder)}
+                  style={{ marginRight: '8px' }}
                 />
-                {' '}{folder} ({count} archivos)
+                {folder} <span style={{ color: 'var(--text-secondary)' }}>({count} archivos)</span>
               </label>
             ))
           )}
@@ -503,45 +542,58 @@ export default function SdCardPanel({
         
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
-            onClick={() => { setDeleteTarget('selected'); setShowDeleteConfirm(true); }}
+            onClick={handleDeleteSelected}
             disabled={selectedRoms.size === 0}
             style={{
               padding: '10px 20px',
-              backgroundColor: selectedRoms.size === 0 ? '#ccc' : '#d32f2f',
-              color: 'white',
+              backgroundColor: selectedRoms.size === 0 ? 'var(--button-disabled-bg)' : 'var(--danger)',
+              color: 'var(--button-text)',
               border: 'none',
               borderRadius: '4px',
               cursor: selectedRoms.size === 0 ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold',
             }}
           >
             Eliminar Seleccionadas ({selectedRoms.size})
           </button>
           
           <button
-            onClick={() => { setDeleteTarget('all'); setShowDeleteConfirm(true); }}
+            onClick={handleDeleteAll}
             style={{
               padding: '10px 20px',
-              backgroundColor: '#d32f2f',
-              color: 'white',
+              backgroundColor: 'var(--danger)',
+              color: 'var(--button-text)',
               border: 'none',
               borderRadius: '4px',
               cursor: 'pointer',
+              fontWeight: 'bold',
             }}
           >
             Eliminar TODAS las ROMs
           </button>
         </div>
-        {showDeleteConfirm && (
-          <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--danger)", borderRadius: 6, background: "white" }}>
-            <div style={{ fontSize: 13, marginBottom: 8 }}>¿Confirmar eliminación? Esta acción no se puede deshacer.</div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button className="primary" style={{ backgroundColor: "#d32f2f", borderColor: "#d32f2f" }} onClick={() => {
-                if (deleteTarget === 'selected') handleDeleteSelected();
-                else if (deleteTarget === 'all') handleDeleteAll();
-                setShowDeleteConfirm(false);
-                setDeleteTarget(null);
-              }}>Sí, eliminar</button>
-              <button onClick={() => { setShowDeleteConfirm(false); setDeleteTarget(null); }}>Cancelar</button>
+        {deleteProgress.isDeleting && (
+          <div style={{ marginTop: '15px' }}>
+            <div style={{ fontSize: '14px', marginBottom: '5px', color: 'var(--text-primary)' }}>
+              {deleteProgress.message}
+            </div>
+            <div style={{ 
+              width: '100%', 
+              height: '20px', 
+              backgroundColor: 'var(--progress-bg, #333)', 
+              borderRadius: '10px',
+              overflow: 'hidden',
+              border: '1px solid var(--border-color, #555)'
+            }}>
+              <div style={{ 
+                width: `${deleteProgress.percentage}%`, 
+                height: '100%', 
+                backgroundColor: 'var(--danger)',
+                transition: 'width 0.3s ease'
+              }} />
+            </div>
+            <div style={{ fontSize: '12px', marginTop: '5px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+              {deleteProgress.percentage}% ({deleteProgress.current}/{deleteProgress.total})
             </div>
           </div>
         )}

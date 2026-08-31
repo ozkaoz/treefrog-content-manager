@@ -14,6 +14,7 @@ pub mod video;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::time::Instant;
+use tauri::Emitter;
 static ANALYZE_CACHE: Mutex<Option<(String, Instant, serde_json::Value)>> = Mutex::new(None);
 
 fn analyze_target_cached(path: &str) -> Result<serde_json::Value, String> {
@@ -400,8 +401,21 @@ fn clear_cache() -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteResult {
+    pub success: bool,
+    pub deleted: usize,
+    pub failed: usize,
+    pub errors: Vec<String>,
+}
+
 #[tauri::command]
-fn delete_roms_from_sd(sd_path: String, files_to_delete: Vec<String>, delete_all: bool) -> Result<serde_json::Value, String> {
+async fn delete_roms_from_sd(
+    app: tauri::AppHandle,
+    sd_path: String,
+    files_to_delete: Vec<String>,
+    delete_all: bool,
+) -> Result<DeleteResult, String> {
     use std::path::Path;
     let sd = Path::new(&sd_path);
     if !sd.exists() {
@@ -412,62 +426,177 @@ fn delete_roms_from_sd(sd_path: String, files_to_delete: Vec<String>, delete_all
     if !target.is_treefrog {
         return Err(format!("No es una SD TreeFrog válida (status: {}): {}", target.status, sd_path));
     }
-    let mut deleted: usize = 0;
-    let mut errors: Vec<String> = Vec::new();
+    // Contar total de archivos a eliminar
+    let mut total_files = 0usize;
+    let mut files_to_process: Vec<std::path::PathBuf> = Vec::new();
+    
     if delete_all {
-        let roms_dir = sd.join("roms");
-        if roms_dir.exists() {
-            let entries = std::fs::read_dir(&roms_dir).map_err(|e| e.to_string())?;
-            for entry in entries {
-                match entry {
-                    Ok(e) => {
-                        let p = e.path();
-                        // Safety: only delete inside roms/
-                        if !p.starts_with(&roms_dir) {
-                            continue;
-                        }
-                        let res = if p.is_dir() {
-                            std::fs::remove_dir_all(&p)
-                        } else {
-                            std::fs::remove_file(&p)
-                        };
-                        match res {
-                            Ok(()) => deleted += 1,
-                            Err(err) => errors.push(format!("{}: {}", p.display(), err)),
+        for dir in ["roms", "cubegm/bios", "lgpt"] {
+            let dir_path = sd.join(dir);
+            if dir_path.exists() {
+                for entry in walkdir::WalkDir::new(&dir_path).into_iter().filter_map(|e| e.ok()) {
+                    if entry.file_type().is_file() {
+                        total_files += 1;
+                        files_to_process.push(entry.path().to_path_buf());
+                    }
+                }
+            }
+        }
+        if total_files == 0 {
+            let roms_dir = sd.join("roms");
+            if roms_dir.exists() {
+                if let Ok(entries) = std::fs::read_dir(&roms_dir) {
+                    for e in entries.filter_map(|e| e.ok()) {
+                        if e.path().is_dir() {
+                            total_files += 1;
+                            for inner in walkdir::WalkDir::new(e.path()).into_iter().filter_map(|e| e.ok()) {
+                                if inner.file_type().is_file() {
+                                    files_to_process.push(inner.path().to_path_buf());
+                                }
+                            }
+                            if files_to_process.is_empty() {
+                                files_to_process.push(e.path());
+                            }
                         }
                     }
-                    Err(err) => errors.push(err.to_string()),
                 }
             }
         }
     } else {
-        for rel in files_to_delete {
-            // Only allow deletion inside roms/
-            if !rel.starts_with("roms/") && !rel.starts_with("roms\\") {
-                errors.push(format!("Ruta no permitida (solo roms/): {}", rel));
+        for file_rel in &files_to_delete {
+            if !file_rel.starts_with("roms/") && !file_rel.starts_with("roms\\") && !file_rel.starts_with("cubegm/bios") && !file_rel.starts_with("lgpt") {
+                if let Err(_e) = sd_target::validate_destination_path(file_rel) {
+                    if !file_rel.starts_with("roms") {
+                        continue;
+                    }
+                }
+            }
+            let file_path = sd.join(file_rel);
+            if !file_path.exists() {
                 continue;
             }
-            let p = sd.join(&rel);
-            // Ensure p is inside sd (prevent traversal)
-            if let Err(e) = sd_target::validate_destination_path(&rel) {
-                errors.push(format!("Ruta inválida {}: {}", rel, e));
-                continue;
-            }
-            if !p.exists() {
-                errors.push(format!("No existe: {}", rel));
-                continue;
-            }
-            let res = if p.is_dir() {
-                std::fs::remove_dir_all(&p)
-            } else {
-                std::fs::remove_file(&p)
-            };
-            match res {
-                Ok(()) => deleted += 1,
-                Err(err) => errors.push(format!("{}: {}", p.display(), err)),
+            if file_path.is_file() {
+                total_files += 1;
+                files_to_process.push(file_path);
+            } else if file_path.is_dir() {
+                let mut dir_files = 0usize;
+                for entry in walkdir::WalkDir::new(&file_path).into_iter().filter_map(|e| e.ok()) {
+                    if entry.file_type().is_file() {
+                        dir_files += 1;
+                        files_to_process.push(entry.path().to_path_buf());
+                    }
+                }
+                if dir_files == 0 {
+                    total_files += 1;
+                    files_to_process.push(file_path);
+                } else {
+                    total_files += dir_files;
+                }
             }
         }
     }
+    
+    if total_files == 0 && files_to_process.is_empty() {
+        cleanup_state();
+        return Ok(DeleteResult {
+            success: true,
+            deleted: 0,
+            failed: 0,
+            errors: Vec::new(),
+        });
+    }
+    if total_files == 0 {
+        total_files = files_to_process.len();
+    }
+    
+    let mut deleted: usize = 0;
+    let mut failed: usize = 0;
+    let mut errors: Vec<String> = Vec::new();
+    
+    for file_path in files_to_process {
+        if !file_path.exists() {
+            deleted += 1;
+            let _ = app.emit("delete-progress", serde_json::json!({
+                "current": deleted + failed,
+                "total": total_files,
+                "percentage": ((deleted + failed) as f64 / total_files.max(1) as f64 * 100.0) as u32,
+                "current_file": file_path.file_name().unwrap_or_default().to_string_lossy(),
+                "message": format!("Eliminando {}/{} archivos...", deleted + failed, total_files),
+                "isDeleting": true
+            }));
+            continue;
+        }
+        let is_dir = file_path.is_dir();
+        let res = if is_dir {
+            std::fs::remove_dir_all(&file_path)
+        } else {
+            std::fs::remove_file(&file_path)
+        };
+        match res {
+            Ok(_) => {
+                deleted += 1;
+                log::info!("Eliminado: {}", file_path.display());
+            }
+            Err(e) => {
+                failed += 1;
+                errors.push(format!("Error eliminando {}: {}", file_path.display(), e));
+                log::error!("Error eliminando {}: {}", file_path.display(), e);
+            }
+        }
+        
+        let _ = app.emit("delete-progress", serde_json::json!({
+            "current": deleted + failed,
+            "total": total_files,
+            "percentage": ((deleted + failed) as f64 / total_files.max(1) as f64 * 100.0) as u32,
+            "current_file": file_path.file_name().unwrap_or_default().to_string_lossy(),
+            "message": format!("Eliminando {}/{} archivos...", deleted + failed, total_files),
+            "isDeleting": true
+        }));
+    }
+    
+    if delete_all {
+        for dir in ["roms", "cubegm/bios", "lgpt"] {
+            let dir_path = sd.join(dir);
+            if dir_path.exists() {
+                if let Ok(entries) = std::fs::read_dir(&dir_path) {
+                    let is_empty = entries.count() == 0;
+                    if !is_empty {
+                        for entry in walkdir::WalkDir::new(&dir_path).into_iter().filter_map(|e| e.ok()).collect::<Vec<_>>().into_iter().rev() {
+                            if entry.file_type().is_dir() {
+                                let p = entry.path();
+                                if p != dir_path {
+                                    let _ = std::fs::remove_dir(p);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } else {
+        for file_rel in &files_to_delete {
+            let file_path = sd.join(file_rel);
+            if file_path.exists() && file_path.is_dir() {
+                let _ = std::fs::remove_dir(&file_path);
+            } else if !file_path.exists() {
+                if let Some(parent) = file_path.parent() {
+                    if parent.exists() && parent.is_dir() {
+                        if let Ok(mut entries) = std::fs::read_dir(parent) {
+                            if entries.next().is_none() {
+                                let _ = std::fs::remove_dir(parent);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     cleanup_state();
-    Ok(serde_json::json!({ "success": errors.is_empty(), "deleted": deleted, "errors": errors }))
+    Ok(DeleteResult {
+        success: failed == 0,
+        deleted,
+        failed,
+        errors,
+    })
 }
