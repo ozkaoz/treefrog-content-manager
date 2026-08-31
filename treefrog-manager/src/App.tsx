@@ -74,6 +74,7 @@ export default function App() {
   const [musicPlan, setMusicPlan] = useState<Plan | null>(null);
   const [videosPlan, setVideosPlan] = useState<Plan | null>(null);
   const [biosPlan, setBiosPlan] = useState<Plan | null>(null);
+  void biosPlan;
   const [lgptPlan, setLgptPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -81,14 +82,23 @@ export default function App() {
   void syncResult;
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [systemOverrides, setSystemOverrides] = useState<Record<string, string>>({});
+  const [biosPlanEntries, setBiosPlanEntries] = useState<BiosPlanEntry[]>([]);
 
-  // Build aggregated plan from all individual plans
+  interface BiosPlanEntry {
+    source: string;
+    destination: string;
+    action: string;
+    reason: string;
+    content_type: string;
+    is_bios: boolean;
+  }
+
+  // Build aggregated plan from all individual plans (BIOS separate, not via planner)
   const globalPlan = useMemo(() => {
     const allEntries = [
       ...(gamesPlan?.entries || []),
       ...(musicPlan?.entries || []),
       ...(videosPlan?.entries || []),
-      ...(biosPlan?.entries || []),
       ...(lgptPlan?.entries || []),
     ];
     
@@ -106,7 +116,7 @@ export default function App() {
     };
     
     return { entries: allEntries, summary, warnings: [] };
-  }, [gamesPlan, musicPlan, videosPlan, biosPlan, lgptPlan]);
+  }, [gamesPlan, musicPlan, videosPlan, lgptPlan]);
 
   // Calculate global space from aggregated plan
   const globalSpace = useMemo(() => {
@@ -167,6 +177,7 @@ export default function App() {
     setVideosPlan(null);
     setBiosPlan(null);
     setLgptPlan(null);
+    setBiosPlanEntries([]);
     setError('');
     setSyncResult(null);
   }, []);
@@ -324,8 +335,9 @@ export default function App() {
 
   async function handleSync(force: boolean = false): Promise<any> {
     if (!sdPath) return { error: "No SD selected. Go to Overview." };
-    if (!globalPlan) return { error: "No sync plan. Scan at least one source folder." };
-    if (globalSpace?.status === "insufficient_space") return { error: "Insufficient space en la SD." };
+    const hasBios = biosPlanEntries.length > 0;
+    if (!globalPlan && !hasBios) return { error: "No sync plan. Scan at least one source folder." };
+    if (globalSpace?.status === "insufficient_space") return { error: "Insufficient space on the SD." };
 
     setLoading(true);
     setError("");
@@ -335,15 +347,31 @@ export default function App() {
         { src: gamesSource, plan: gamesPlan },
         { src: musicSource, plan: musicPlan },
         { src: videosSource, plan: videosPlan },
-        { src: biosSource, plan: biosPlan },
         { src: lgptSamplesSource, plan: lgptPlan },
         { src: lgptProjectsSource, plan: lgptPlan },
       ].filter((j, i, arr) => j.src && j.plan && arr.findIndex((x) => x.src === j.src) === i);
 
-      if (jobs.length === 0) return { error: "No source folders escaneadas. Go to Games/Music/Videos/BIOS/LGPT y pulsa Scan." };
+      const hasRomJobs = jobs.length > 0;
+      if (!hasRomJobs && !hasBios) return { error: "No source folders scanned. Go to Games/Music/Videos/BIOS/LGPT and press Scan." };
 
-      for (const job of jobs) {
-        const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force, selectedFiles: null, userDecisions: systemOverrides })) as any;
+      // BIOS entries are sent separately and copied directly to cubegm/bios/ without planner
+      const biosEntriesForDeploy = hasBios ? biosPlanEntries : null;
+
+      if (hasRomJobs) {
+        for (let idx = 0; idx < jobs.length; idx++) {
+          const job = jobs[idx];
+          const isFirst = idx === 0;
+          const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force, selectedFiles: null, userDecisions: systemOverrides, biosEntries: isFirst ? biosEntriesForDeploy : null })) as any;
+          agg.deployed += res.deployed || 0;
+          agg.skipped += res.skipped || 0;
+          agg.failed += res.failed || 0;
+          agg.errors.push(...(res.errors || []));
+          agg.warnings.push(...(res.warnings || []));
+          agg.breakdown.push(...(res.breakdown || []));
+        }
+      } else if (hasBios) {
+        // Only BIOS, no ROMs: still need a sourcePath for deploy_to_sd, use a dummy existing path (sdPath itself)
+        const res = (await invoke("deploy_to_sd", { sourcePath: sdPath, sdPath, force, selectedFiles: [], userDecisions: systemOverrides, biosEntries: biosEntriesForDeploy })) as any;
         agg.deployed += res.deployed || 0;
         agg.skipped += res.skipped || 0;
         agg.failed += res.failed || 0;
@@ -380,13 +408,13 @@ export default function App() {
     if (!sdAnalysis) {
       return { Games: 0, Music: 0, Videos: 0, BIOS: 0, "LGPT Samples": 0, "LGPT Projects": 0 };
     }
-    if (globalPlan) {
-      const gamesFromPlan = globalPlan.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped")).length;
-      const musicFromPlan = globalPlan.entries.filter((e) => e.content_type === "music").length;
-      const videosFromPlan = globalPlan.entries.filter((e) => e.content_type === "video").length;
-      const biosFromPlan = globalPlan.entries.filter((e) => e.content_type === "bios").length;
-      const lgptSamplesFromPlan = globalPlan.entries.filter((e) => e.content_type === "lgpt/sample").length;
-      const lgptProjectsFromPlan = globalPlan.entries.filter((e) => e.content_type === "lgpt/project").length;
+    if (globalPlan || biosPlanEntries.length > 0) {
+      const gamesFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped")).length : 0;
+      const musicFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "music").length : 0;
+      const videosFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "video").length : 0;
+      const biosFromPlan = biosPlanEntries.length;
+      const lgptSamplesFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "lgpt/sample").length : 0;
+      const lgptProjectsFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "lgpt/project").length : 0;
       return {
         Games: gamesFromPlan + (sdAnalysis.rom_dirs.length > 0 ? sdAnalysis.existing_count : 0),
         Music: musicFromPlan + (sdAnalysis.media_dirs.includes("music") ? sdAnalysis.existing_count : 0),
@@ -627,7 +655,22 @@ export default function App() {
         <BiosManager visible={activeTab === "bios"} 
           globalSdPath={sdPath}
           onSourceChange={setBiosSource}
-          onPlanChange={setBiosPlan as any}
+          onPlanChange={(plan: any) => {
+            if (plan && plan.entries) {
+              const entries = plan.entries.map((e: any) => ({
+                source: e.source,
+                destination: e.destination,
+                action: e.action || 'copy',
+                reason: e.reason || 'BIOS file selected by user',
+                content_type: e.content_type || 'bios',
+                is_bios: true,
+              }));
+              setBiosPlanEntries(entries);
+            } else {
+              setBiosPlanEntries([]);
+            }
+            setBiosPlan(plan);
+          }}
           onNext={() => setActiveTab("lgpt")} 
         />
       </div>

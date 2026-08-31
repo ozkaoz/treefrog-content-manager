@@ -340,8 +340,18 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
     Ok(out)
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BiosPlanEntry {
+    pub source: String,
+    pub destination: String,
+    pub action: String,
+    pub reason: String,
+    pub content_type: String,
+    pub is_bios: bool,
+}
+
 #[tauri::command]
-async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>, selected_files: Option<Vec<String>>, user_decisions: Option<std::collections::HashMap<String, String>>) -> Result<serde_json::Value, String> {
+async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>, selected_files: Option<Vec<String>>, user_decisions: Option<std::collections::HashMap<String, String>>, bios_entries: Option<Vec<BiosPlanEntry>>) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
     let target_val = analyze_target_cached(&sd_path)?;
     let target: sd_target::TargetAnalysis = serde_json::from_value(target_val).unwrap();
@@ -362,6 +372,55 @@ async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: Strin
             sd_path
         ));
     }
+
+    // BIOS: copy directly without planner (triple guard for cubegm/bios already in delete, here for deploy)
+    let mut bios_deployed = 0usize;
+    let mut bios_failed = 0usize;
+    let mut bios_errors: Vec<String> = Vec::new();
+    if let Some(entries) = &bios_entries {
+        let total_bios = entries.len();
+        let mut completed_bios = 0usize;
+        for entry in entries {
+            let dest_abs = std::path::Path::new(&sd_path).join(&entry.destination);
+            let filename_lower = dest_abs.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+            const STOCK_BIOS: &[&str] = &["scph1001.bin","scph5501.bin","scph5502.bin","gba_bios.bin","o2rom.bin","neogeo.zip","disksys.rom","bios_cd_u.bin","bios_cd_e.bin","bios_cd_j.bin"];
+            if STOCK_BIOS.contains(&filename_lower.as_str()) {
+                // Still allow overwrite if force, but log
+                if !force {
+                    tracing::info!("Skipping stock BIOS overwrite: {}", dest_abs.display());
+                    continue;
+                }
+            }
+            // Normalize and check for cubegm/bios protection (should always be bios)
+            let normalized = entry.destination.to_lowercase().replace('\\', "/");
+            if !normalized.starts_with("cubegm/bios") {
+                tracing::warn!("Skipping non-BIOS destination for BIOS entry: {}", entry.destination);
+                continue;
+            }
+            let _ = std::fs::create_dir_all(dest_abs.parent().unwrap_or(std::path::Path::new(&sd_path)));
+            match std::fs::copy(std::path::Path::new(&entry.source), &dest_abs) {
+                Ok(_) => {
+                    bios_deployed += 1;
+                    tracing::info!("BIOS copied: {} -> {}", entry.source, dest_abs.display());
+                }
+                Err(e) => {
+                    bios_failed += 1;
+                    bios_errors.push(format!("BIOS {} -> {}: {}", entry.source, dest_abs.display(), e));
+                    tracing::error!("BIOS copy failed: {}", e);
+                }
+            }
+            completed_bios += 1;
+            let _ = app.emit("deploy-progress", serde_json::json!({
+                "current": completed_bios,
+                "total": total_bios,
+                "percentage": ((completed_bios as f64 / total_bios.max(1) as f64) * 100.0) as u32,
+                "current_file": entry.source,
+                "message": format!("Copying BIOS {}/{}...", completed_bios, total_bios),
+                "isDeleting": false
+            }));
+        }
+    }
+
     let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
     let mut plan = if let Some(ref files) = selected_files {
         planner::plan_with_selection(scanned, &sd_path, &profile, Some(files.clone())).map_err(|e| e.to_string())?
@@ -401,11 +460,19 @@ async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: Strin
         // Never abort: deploy.rs has a runtime double-write guard as last resort.
         log::warn!("Leftover write collisions (deploy guard will skip them): {:?}", collisions);
     }
-    let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app)).map_err(|e| e.to_string())?;
+    let mut result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app)).map_err(|e| e.to_string())?;
+    result.deployed += bios_deployed;
+    result.failed += bios_failed;
+    result.errors.extend(bios_errors.clone());
+    if bios_deployed > 0 {
+        result.warnings.push(format!("BIOS: {} copied, {} failed", bios_deployed, bios_failed));
+    }
     let mut out = serde_json::to_value(&result).unwrap();
     out["target"] = serde_json::to_value(&target).unwrap();
     out["space"] = serde_json::to_value(&space).unwrap();
     out["plan"] = serde_json::to_value(&plan).unwrap();
+    out["bios_deployed"] = serde_json::json!(bios_deployed);
+    out["bios_failed"] = serde_json::json!(bios_failed);
     Ok(out)
 }
 

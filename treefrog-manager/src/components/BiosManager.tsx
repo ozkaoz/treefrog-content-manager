@@ -162,6 +162,18 @@ export default function BiosManager({
         {t.biosHelp || "Select BIOS files required by TreeFrogUI. All files are copied to cubegm/bios/ on the SD card."}
       </p>
 
+      <div style={{
+        padding: '12px 16px',
+        marginBottom: '16px',
+        backgroundColor: 'var(--info-bg, rgba(25, 118, 210, 0.1))',
+        border: '1px solid var(--info, #1976d2)',
+        borderRadius: '6px',
+        color: 'var(--text-primary)',
+        fontSize: '13px',
+      }}>
+        <strong>ℹ️ Note:</strong> Wolfenstein 3D engine (<code>ecwolf.pk3</code>) and DOS boot image (<code>x86BOOT.img</code>) are already included in TreeFrogUI and do not need to be installed.
+      </div>
+
       <input
         type="text"
         value={searchQuery}
