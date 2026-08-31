@@ -147,7 +147,8 @@ pub fn run() {
             scan_games,
             scan_music,
             scan_videos,
-            scan_bios_files
+            scan_bios_files,
+            list_files_in_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -548,7 +549,7 @@ async fn delete_roms_from_sd(
     let mut files_to_process = Vec::new();
     
     if delete_all {
-        for dir in ["roms", "cubegm/bios", "lgpt"] {
+        for dir in ["roms", "lgpt"] {
             let dir_path = sd.join(dir);
             if dir_path.exists() {
                 for entry in walkdir::WalkDir::new(&dir_path).into_iter().filter_map(|e| e.ok()) {
@@ -556,7 +557,7 @@ async fn delete_roms_from_sd(
                         let file_name = entry.file_name().to_string_lossy().to_lowercase();
                         let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
                         if is_stock_bios {
-                            tracing::info!("Preservado (BIOS stock): {}", entry.path().display());
+                            tracing::info!("Preserved (stock BIOS): {}", entry.path().display());
                             continue;
                         }
                         let ext = entry.path()
@@ -571,7 +572,7 @@ async fn delete_roms_from_sd(
                         if is_valid {
                             files_to_process.push(entry.path().to_path_buf());
                         } else {
-                            tracing::info!("Preservado (no valido): {}", entry.path().display());
+                            tracing::info!("Preserved (invalid extension): {}", entry.path().display());
                         }
                     }
                 }
@@ -579,6 +580,11 @@ async fn delete_roms_from_sd(
         }
     } else {
         for file_rel in &files_to_delete {
+            let normalized_rel = file_rel.to_lowercase().replace('\\', "/");
+            if normalized_rel.contains("cubegm/bios") {
+                tracing::warn!("Skipping BIOS folder from deletion (protected)");
+                continue;
+            }
             let file_path = sd.join(file_rel);
             if !file_path.exists() {
                 continue;
@@ -587,7 +593,7 @@ async fn delete_roms_from_sd(
                 let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
                 let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
                 if is_stock_bios {
-                    tracing::info!("Preservado (BIOS stock): {}", file_path.display());
+                    tracing::info!("Preserved (stock BIOS): {}", file_path.display());
                     continue;
                 }
                 let ext = file_path
@@ -599,14 +605,14 @@ async fn delete_roms_from_sd(
                 let lower_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
                 let is_doc = lower_name == "readme" || lower_name == "readme.txt" || lower_name.ends_with(".txt") && !valid_extensions.contains(&ext) || lower_name.ends_with(".md");
                 if is_doc && !is_bios && !valid_extensions.contains(&ext) {
-                    tracing::info!("Preservado (documentacion): {}", file_path.display());
+                    tracing::info!("Preserved (documentation): {}", file_path.display());
                     continue;
                 }
                 let is_valid = is_bios || valid_extensions.contains(&ext) || file_rel.starts_with("roms/") || file_rel.starts_with("roms\\");
                 if is_valid || file_path.to_string_lossy().contains("roms/") {
                     files_to_process.push(file_path);
                 } else {
-                    tracing::info!("Preservado: {}", file_path.display());
+                    tracing::info!("Preserved: {}", file_path.display());
                 }
             } else if file_path.is_dir() {
                 for entry in walkdir::WalkDir::new(&file_path).into_iter().filter_map(|e| e.ok()) {
@@ -614,7 +620,7 @@ async fn delete_roms_from_sd(
                         let file_name = entry.file_name().to_string_lossy().to_lowercase();
                         let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
                         if is_stock_bios {
-                            tracing::info!("Preservado (BIOS stock): {}", entry.path().display());
+                            tracing::info!("Preserved (stock BIOS): {}", entry.path().display());
                             continue;
                         }
                         let ext = entry.path()
@@ -627,7 +633,7 @@ async fn delete_roms_from_sd(
                         if is_valid {
                             files_to_process.push(entry.path().to_path_buf());
                         } else {
-                            tracing::info!("Preservado (no valido): {}", entry.path().display());
+                            tracing::info!("Preserved (invalid extension): {}", entry.path().display());
                         }
                     }
                 }
@@ -642,7 +648,7 @@ async fn delete_roms_from_sd(
             "total": 0,
             "percentage": 100,
             "current_file": "",
-            "message": "Nada que eliminar",
+            "message": "Nothing to delete",
             "isDeleting": false
         }));
         return Ok(DeleteResult {
@@ -657,15 +663,20 @@ async fn delete_roms_from_sd(
     let mut errors = Vec::new();
     
     for file_path in files_to_process {
+        let normalized = file_path.to_string_lossy().to_lowercase().replace('\\', "/");
+        if normalized.contains("cubegm/bios") {
+            tracing::warn!("Skipping BIOS file from deletion (protected): {}", file_path.display());
+            continue;
+        }
         match std::fs::remove_file(&file_path) {
             Ok(_) => {
                 deleted += 1;
-                tracing::info!("Eliminado: {}", file_path.display());
+                tracing::info!("Deleted: {}", file_path.display());
             }
             Err(e) => {
                 failed += 1;
-                errors.push(format!("Error eliminando {}: {}", file_path.display(), e));
-                tracing::error!("Error eliminando {}: {}", file_path.display(), e);
+                errors.push(format!("Error deleting {}: {}", file_path.display(), e));
+                tracing::error!("Error deleting {}: {}", file_path.display(), e);
             }
         }
         
@@ -674,7 +685,7 @@ async fn delete_roms_from_sd(
             "total": total_files,
             "percentage": ((deleted + failed) as f64 / total_files.max(1) as f64 * 100.0) as u32,
             "current_file": file_path.file_name().unwrap_or_default().to_string_lossy(),
-            "message": format!("Eliminando {}/{} archivos...", deleted + failed, total_files),
+            "message": format!("Deleting {}/{} files...", deleted + failed, total_files),
             "isDeleting": true
         }));
     }
@@ -684,7 +695,7 @@ async fn delete_roms_from_sd(
         "total": total_files,
         "percentage": 100,
         "current_file": "",
-        "message": "Eliminacion completada",
+        "message": "Deletion complete",
         "isDeleting": false
     }));
     
@@ -694,5 +705,23 @@ async fn delete_roms_from_sd(
         failed,
         errors,
     })
+}
+
+#[tauri::command]
+async fn list_files_in_folder(sd_path: String, folder_rel: String) -> Result<Vec<String>, String> {
+    use std::path::Path;
+    let folder = Path::new(&sd_path).join(&folder_rel);
+    if !folder.exists() { return Ok(vec![]); }
+    
+    let mut files = Vec::new();
+    for entry in walkdir::WalkDir::new(&folder).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            if let Ok(rel) = entry.path().strip_prefix(Path::new(&sd_path)) {
+                files.push(rel.to_string_lossy().to_string().replace('\\', "/"));
+            }
+        }
+    }
+    files.sort();
+    Ok(files)
 }
 

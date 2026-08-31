@@ -247,13 +247,13 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                         let d = dest_dir.join(m);
                         if !s.exists() { errors.push(format!("group member not found: {}", s.display())); ok = false; continue; }
                         if let Err(e) = validate_rom_file(&s) {
-                            errors.push(format!("validación fallida {}: {}", s.display(), e));
-                            warn!("validación fallida {}: {}", s.display(), e);
+                            errors.push(format!("validation failed {}: {}", s.display(), e));
+                            warn!("validation failed {}: {}", s.display(), e);
                             ok = false;
                             continue;
                         }
                         if let Ok(meta) = std::fs::metadata(&s) {
-                            info!("Copiando ROM (grupo): {} -> {} ({} bytes)", s.display(), d.display(), meta.len());
+                            info!("Copying ROM (grupo): {} -> {} ({} bytes)", s.display(), d.display(), meta.len());
                         }
                         match safe_copy_file(&s, &d) {
                             Ok(()) => { written_dests.insert(d.to_string_lossy().to_lowercase(), None); }
@@ -275,13 +275,13 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     continue;
                 }
                 if let Err(e) = validate_rom_file(src) {
-                    errors.push(format!("validación fallida {}: {}", src.display(), e));
-                    warn!("validación fallida {}: {}", src.display(), e);
+                    errors.push(format!("validation failed {}: {}", src.display(), e));
+                    warn!("validation failed {}: {}", src.display(), e);
                     failed += 1;
                     continue;
                 }
                 if let Ok(meta) = std::fs::metadata(src) {
-                    info!("Copiando ROM: {} -> {} ({} bytes)", src.display(), dest_abs.display(), meta.len());
+                    info!("Copying ROM: {} -> {} ({} bytes)", src.display(), dest_abs.display(), meta.len());
                 }
                 match safe_copy_file(src, &dest_abs) {
                     Ok(()) => {
@@ -296,7 +296,7 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                     "total": total,
                                     "percentage": (completed as f64 / total as f64 * 100.0) as u32,
                                     "current_file": entry.source,
-                                    "message": format!("Transfiriendo {}/{} archivos...", completed, total)
+                                    "message": format!("Transferring {}/{} files...", completed, total)
                                 }));
                             }
                         }
@@ -340,13 +340,13 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                 continue;
                             }
                             if let Err(e) = validate_rom_file(&p) {
-                                errors.push(format!("validación fallida {}: {}", p.display(), e));
-                                warn!("validación fallida {}: {}", p.display(), e);
+                                errors.push(format!("validation failed {}: {}", p.display(), e));
+                                warn!("validation failed {}: {}", p.display(), e);
                                 ok = false;
                                 continue;
                             }
                             if let Ok(meta) = std::fs::metadata(&p) {
-                                info!("Copiando ROM (extract): {} -> {} ({} bytes)", p.display(), dest_file.display(), meta.len());
+                                info!("Copying ROM (extract): {} -> {} ({} bytes)", p.display(), dest_file.display(), meta.len());
                             }
                             if let Err(e) = safe_copy_file(&p, &dest_file) {
                                 errors.push(format!("extract copy {} -> {}: {}", p.display(), dest_file.display(), e));
@@ -366,7 +366,7 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                         "total": total,
                                         "percentage": (completed as f64 / total as f64 * 100.0) as u32,
                                         "current_file": entry.source,
-                                        "message": format!("Transfiriendo {}/{} archivos...", completed, total)
+                                        "message": format!("Transferring {}/{} files...", completed, total)
                                     }));
                                 }
                             }
@@ -414,7 +414,7 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                     "total": total,
                                     "percentage": (completed as f64 / total as f64 * 100.0) as u32,
                                     "current_file": entry.source,
-                                    "message": format!("Transfiriendo {}/{} archivos...", completed, total)
+                                    "message": format!("Transferring {}/{} files...", completed, total)
                                 }));
                             }
                         }

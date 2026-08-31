@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
+import { t } from "../i18n";
 import EmptyState from "./EmptyState";
 
 type PlanEntry = {
@@ -183,7 +184,7 @@ export default function VideosPanel({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar archivo..."
+              placeholder={t.searchPlaceholder}
               style={{
                 width: '100%',
                 padding: '8px 12px',

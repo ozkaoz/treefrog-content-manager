@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { t } from "../i18n";
 
 import EmptyState from "./EmptyState";
-import MiniScraper from "./MiniScraper";
 
 type VolumeInfo = {
   path: string;
@@ -87,6 +87,8 @@ export default function SdCardPanel({
   const [confirming, setConfirming] = useState(false);
   const [forceCopy, setForceCopy] = useState(false);
   const [selectedRoms, setSelectedRoms] = useState<Set<string>>(new Set());
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [folderContents, setFolderContents] = useState<Record<string, string[]>>({});
   const [progress, setProgress] = useState({ current: 0, total: 0, percentage: 0, message: '' });
   const [deleteProgress, setDeleteProgress] = useState({ 
     current: 0, 
@@ -171,8 +173,50 @@ export default function SdCardPanel({
     });
   };
 
+  const handleFolderClick = async (folder: string) => {
+    if (expandedFolders.has(folder)) {
+      setExpandedFolders(prev => {
+        const ns = new Set(prev);
+        ns.delete(folder);
+        return ns;
+      });
+    } else {
+      try {
+        const files = await invoke('list_files_in_folder', { sdPath, folderRel: folder }) as string[];
+        setFolderContents(prev => ({ ...prev, [folder]: files }));
+        setExpandedFolders(prev => {
+          const ns = new Set(prev);
+          ns.add(folder);
+          return ns;
+        });
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const handleFolderToggle = (folder: string) => {
+    const files = folderContents[folder] || [];
+    if (files.length === 0) {
+      handleToggleRom(folder);
+      return;
+    }
+    const allSelected = files.every(f => selectedRoms.has(f));
+    setSelectedRoms(prev => {
+      const ns = new Set(prev);
+      if (allSelected) {
+        files.forEach(f => ns.delete(f));
+        ns.delete(folder);
+      } else {
+        files.forEach(f => ns.add(f));
+        ns.add(folder);
+      }
+      return ns;
+    });
+  };
+
   const handleDeleteSelected = async () => {
-    if (!confirm(`¿Eliminar ${selectedRoms.size} carpetas de ROMs? Esta acción no se puede deshacer.`)) {
+    if (!confirm(t.confirmDelete(selectedRoms.size))) {
       return;
     }
     
@@ -186,7 +230,7 @@ export default function SdCardPanel({
       }) as any;
       
       if (result.success) {
-        alert(`Eliminadas ${result.deleted} carpetas`);
+        alert(t.deleted(result.deleted));
         setSelectedRoms(new Set());
         await handleAnalyze();
       } else {
@@ -202,7 +246,7 @@ export default function SdCardPanel({
   };
 
   const handleDeleteAll = async () => {
-    if (!confirm('¿Eliminar todas las ROMs, música, videos y BIOS del usuario? Los archivos de documentación y assets de TreeFrogUI serán preservados.')) {
+    if (!confirm(t.confirmDeleteAll)) {
       return;
     }
     
@@ -216,7 +260,7 @@ export default function SdCardPanel({
       }) as any;
       
       if (result.success) {
-        alert('Todas las ROMs eliminadas');
+        alert(t.deletedAll);
         setSelectedRoms(new Set());
         await handleAnalyze();
       } else {
@@ -389,13 +433,12 @@ export default function SdCardPanel({
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
           <input type="checkbox" checked={forceCopy} onChange={(e) => setForceCopy(e.target.checked)} />
-          Forzar copia (re-copiar aunque los archivos ya existan o estén sin cambios)
+          {t.forceCopy}
         </label>
         {confirming ? (
           <div style={{ padding: 12, border: "1px solid var(--accent)", borderRadius: 6, background: "var(--surface-elevated)" }}>
             <div style={{ fontSize: 13, marginBottom: 8 }}>
-              ¿Sincronizar a <strong>{sdPath}</strong>? {globalPlan?.summary.new ?? 0} nuevos, {globalPlan?.summary.changed ?? 0} modificados
-              {forceCopy ? " + FORZAR re-copia de todos los archivos" : ""}.
+              {t.confirmSync(sdPath, globalPlan?.summary.new ?? 0, globalPlan?.summary.changed ?? 0, forceCopy)}
             </div>
             <div className="row">
               <button className="primary" onClick={async () => {
@@ -405,8 +448,8 @@ export default function SdCardPanel({
                   const r = await onSync?.(forceCopy);
                   setSyncResult(r);
                 } catch (e) { setError(String(e)); }
-              }}>Sí, sincronizar</button>
-              <button onClick={() => setConfirming(false)}>Cancelar</button>
+              }}>{t.yes}</button>
+              <button onClick={() => setConfirming(false)}>{t.cancel}</button>
             </div>
           </div>
         ) : (
@@ -520,30 +563,55 @@ export default function SdCardPanel({
         backgroundColor: 'var(--danger-bg, rgba(211, 47, 47, 0.1))'
       }}>
         <h3 style={{ color: 'var(--danger)', marginBottom: '15px' }}>
-          ⚠️ Zona de Peligro: Eliminar ROMs
+          ⚠️ {t.dangerZone}
         </h3>
         
         <div style={{ marginBottom: '15px', color: 'var(--text-primary)' }}>
-          <h4 style={{ color: 'var(--text-primary)' }}>Carpetas de ROMs en la SD:</h4>
+          <h4 style={{ color: 'var(--text-primary)' }}>{t.romFoldersOnSd}:</h4>
           {romList.length === 0 ? (
-            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No hay carpetas de ROMs detectadas. Analiza la SD primero.</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No ROM folders detected. Analyze the SD first.</div>
           ) : (
-            romList.map(({ folder, count }) => (
-              <label key={folder} style={{ 
-                display: 'block', 
-                marginBottom: '5px',
-                color: 'var(--text-primary)',
-                cursor: 'pointer'
-              }}>
-                <input
-                  type="checkbox"
-                  checked={selectedRoms.has(folder)}
-                  onChange={() => handleToggleRom(folder)}
-                  style={{ marginRight: '8px' }}
-                />
-                {folder} <span style={{ color: 'var(--text-secondary)' }}>({count} archivos)</span>
-              </label>
-            ))
+            romList.map(({ folder, count }) => {
+              const isExpanded = expandedFolders.has(folder);
+              const files = folderContents[folder] || [];
+              const isFolderSelected = selectedRoms.has(folder) || (files.length > 0 && files.every(f => selectedRoms.has(f)));
+              return (
+                <div key={folder} style={{ marginBottom: '8px' }}>
+                  <label style={{ 
+                    display: 'flex', 
+                    alignItems: 'center',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer'
+                  }}>
+                    <input
+                      type="checkbox"
+                      checked={isFolderSelected}
+                      onChange={() => handleFolderToggle(folder)}
+                      style={{ marginRight: '8px' }}
+                    />
+                    <span onClick={(e) => { e.preventDefault(); handleFolderClick(folder); }} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ fontSize: '10px', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', display: 'inline-block' }}>▶</span>
+                      {folder} <span style={{ color: 'var(--text-secondary)' }}>({count} files)</span>
+                    </span>
+                  </label>
+                  {isExpanded && files && (
+                    <div style={{ marginLeft: '24px', marginTop: '8px', paddingLeft: '12px', borderLeft: '2px solid var(--border-color)' }}>
+                      {files.map(filePath => (
+                        <label key={filePath} style={{ display: 'block', marginBottom: '4px', fontSize: '13px', cursor: 'pointer' }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedRoms.has(filePath)}
+                            onChange={() => handleToggleRom(filePath)}
+                            style={{ marginRight: '8px' }}
+                          />
+                          {filePath.split('/').pop()}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
         
@@ -561,7 +629,7 @@ export default function SdCardPanel({
               fontWeight: 'bold',
             }}
           >
-            Eliminar Seleccionadas ({selectedRoms.size})
+            {t.deleteSelected} ({selectedRoms.size})
           </button>
           
           <button
@@ -576,7 +644,7 @@ export default function SdCardPanel({
               fontWeight: 'bold',
             }}
           >
-            Eliminar TODAS las ROMs
+            {t.deleteAll}
           </button>
         </div>
         {deleteProgress.isDeleting && (
@@ -607,9 +675,9 @@ export default function SdCardPanel({
       </div>
 
       <div style={{ marginTop: '15px' }}>
-        <h4 style={{ color: 'var(--text-primary)' }}>🎨 Artwork (Mini Scraper)</h4>
+        <h4 style={{ color: 'var(--text-primary)' }}>{t.artworkTitle}</h4>
         <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-          Descarga Mini Scraper v2.4.0 para añadir box art automático a tus ROMs (compatible con TreeFrogUI).
+          {t.artworkDesc}
         </p>
         <button
           onClick={() => {
@@ -628,11 +696,9 @@ export default function SdCardPanel({
             cursor: 'pointer',
           }}
         >
-          Descargar Mini Scraper v2.4.0
+          {t.downloadMiniScraper}
         </button>
       </div>
-
-      <MiniScraper sdPath={sdPath} />
     </div>
   );
 }
