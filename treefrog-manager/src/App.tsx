@@ -64,22 +64,19 @@ export default function App() {
   const [gamesSource, setGamesSource] = useState("");
   const [musicSource, setMusicSource] = useState("");
   const [videosSource, setVideosSource] = useState("");
-  const [biosSource, setBiosSource] = useState("");
+  const [_biosSource, setBiosSource] = useState("");
   const [lgptSamplesSource, setLgptSamplesSource] = useState("");
   const [lgptProjectsSource, setLgptProjectsSource] = useState("");
-  void biosSource; void lgptSamplesSource; void lgptProjectsSource;
 
   // Individual plans per content type
   const [gamesPlan, setGamesPlan] = useState<Plan | null>(null);
   const [musicPlan, setMusicPlan] = useState<Plan | null>(null);
   const [videosPlan, setVideosPlan] = useState<Plan | null>(null);
-  const [biosPlan, setBiosPlan] = useState<Plan | null>(null);
-  void biosPlan;
+  const [_biosPlan, setBiosPlan] = useState<Plan | null>(null);
   const [lgptPlan, setLgptPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [syncResult, setSyncResult] = useState<any | null>(null);
-  void syncResult;
+  const [_syncResult, setSyncResult] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [systemOverrides, setSystemOverrides] = useState<Record<string, string>>({});
   const [biosPlanEntries, setBiosPlanEntries] = useState<BiosPlanEntry[]>([]);

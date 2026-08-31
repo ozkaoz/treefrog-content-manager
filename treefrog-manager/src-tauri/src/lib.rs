@@ -440,6 +440,17 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
                 }));
             }
             
+            tracing::info!(
+                "BIOS sync: {} files to process, {} deployed, {} skipped, {} failed",
+                total, deployed, skipped, failed
+            );
+            if skipped > 0 {
+                tracing::warn!(
+                    "{} BIOS files were skipped (stock BIOS already exist on SD)",
+                    skipped
+                );
+            }
+
             return Ok(serde_json::json!({
                 "success": failed == 0,
                 "deployed": deployed,
