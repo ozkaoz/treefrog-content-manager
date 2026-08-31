@@ -115,7 +115,8 @@ pub fn run() {
             lgpt_scan_samples,
             lgpt_scan_projects,
             build_info,
-            clear_cache
+            clear_cache,
+            delete_roms_from_sd
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -397,4 +398,76 @@ fn build_info() -> serde_json::Value {
 fn clear_cache() -> Result<(), String> {
     cleanup_state();
     Ok(())
+}
+
+#[tauri::command]
+fn delete_roms_from_sd(sd_path: String, files_to_delete: Vec<String>, delete_all: bool) -> Result<serde_json::Value, String> {
+    use std::path::Path;
+    let sd = Path::new(&sd_path);
+    if !sd.exists() {
+        return Err(format!("SD path no existe: {}", sd_path));
+    }
+    // Validate SD is TreeFrog to avoid accidental deletion elsewhere
+    let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
+    if !target.is_treefrog {
+        return Err(format!("No es una SD TreeFrog válida (status: {}): {}", target.status, sd_path));
+    }
+    let mut deleted: usize = 0;
+    let mut errors: Vec<String> = Vec::new();
+    if delete_all {
+        let roms_dir = sd.join("roms");
+        if roms_dir.exists() {
+            let entries = std::fs::read_dir(&roms_dir).map_err(|e| e.to_string())?;
+            for entry in entries {
+                match entry {
+                    Ok(e) => {
+                        let p = e.path();
+                        // Safety: only delete inside roms/
+                        if !p.starts_with(&roms_dir) {
+                            continue;
+                        }
+                        let res = if p.is_dir() {
+                            std::fs::remove_dir_all(&p)
+                        } else {
+                            std::fs::remove_file(&p)
+                        };
+                        match res {
+                            Ok(()) => deleted += 1,
+                            Err(err) => errors.push(format!("{}: {}", p.display(), err)),
+                        }
+                    }
+                    Err(err) => errors.push(err.to_string()),
+                }
+            }
+        }
+    } else {
+        for rel in files_to_delete {
+            // Only allow deletion inside roms/
+            if !rel.starts_with("roms/") && !rel.starts_with("roms\\") {
+                errors.push(format!("Ruta no permitida (solo roms/): {}", rel));
+                continue;
+            }
+            let p = sd.join(&rel);
+            // Ensure p is inside sd (prevent traversal)
+            if let Err(e) = sd_target::validate_destination_path(&rel) {
+                errors.push(format!("Ruta inválida {}: {}", rel, e));
+                continue;
+            }
+            if !p.exists() {
+                errors.push(format!("No existe: {}", rel));
+                continue;
+            }
+            let res = if p.is_dir() {
+                std::fs::remove_dir_all(&p)
+            } else {
+                std::fs::remove_file(&p)
+            };
+            match res {
+                Ok(()) => deleted += 1,
+                Err(err) => errors.push(format!("{}: {}", p.display(), err)),
+            }
+        }
+    }
+    cleanup_state();
+    Ok(serde_json::json!({ "success": errors.is_empty(), "deleted": deleted, "errors": errors }))
 }

@@ -86,6 +86,9 @@ export default function SdCardPanel({
   const [syncResult, setSyncResult] = useState<any | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [forceCopy, setForceCopy] = useState(false);
+  const [selectedRoms, setSelectedRoms] = useState<Set<string>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<'selected' | 'all' | null>(null);
   const [progress, setProgress] = useState({ current: 0, total: 0, percentage: 0, message: '' });
 
   const [volumesState, setVolumesState] = useState<VolumeInfo[]>(propVolumes || []);
@@ -132,6 +135,61 @@ export default function SdCardPanel({
       setLoading(false);
     }
   }
+
+  const romList = Object.entries(analysis?.folder_breakdown || {}).flatMap(([folder, count]) => {
+    return [{ folder, count }];
+  });
+
+  const handleToggleRom = (folder: string) => {
+    setSelectedRoms(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(folder)) {
+        newSet.delete(folder);
+      } else {
+        newSet.add(folder);
+      }
+      return newSet;
+    });
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedRoms.size === 0) return;
+    setShowDeleteConfirm(false);
+    try {
+      const result = await invoke('delete_roms_from_sd', {
+        sdPath: sdPath,
+        filesToDelete: Array.from(selectedRoms),
+        deleteAll: false,
+      }) as any;
+      
+      if (result.success) {
+        setSelectedRoms(new Set());
+        await handleAnalyze();
+      }
+      setSyncResult(result);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setShowDeleteConfirm(false);
+    try {
+      const result = await invoke('delete_roms_from_sd', {
+        sdPath: sdPath,
+        filesToDelete: [],
+        deleteAll: true,
+      }) as any;
+      
+      if (result.success) {
+        setSelectedRoms(new Set());
+        await handleAnalyze();
+      }
+      setSyncResult(result);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
 
 
   return (
@@ -413,6 +471,81 @@ export default function SdCardPanel({
           )}
         </div>
       )}
+
+      <div style={{ 
+        marginTop: '30px', 
+        padding: '20px', 
+        border: '2px solid #d32f2f', 
+        borderRadius: '8px',
+        backgroundColor: '#ffebee'
+      }}>
+        <h3 style={{ color: '#d32f2f', marginBottom: '15px' }}>
+          ⚠️ Zona de Peligro: Eliminar ROMs
+        </h3>
+        
+        <div style={{ marginBottom: '15px' }}>
+          <h4>Carpetas de ROMs en la SD:</h4>
+          {romList.length === 0 ? (
+            <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No hay carpetas de ROMs detectadas. Analiza la SD primero.</div>
+          ) : (
+            romList.map(({ folder, count }) => (
+              <label key={folder} style={{ display: 'block', marginBottom: '5px' }}>
+                <input
+                  type="checkbox"
+                  checked={selectedRoms.has(folder)}
+                  onChange={() => handleToggleRom(folder)}
+                />
+                {' '}{folder} ({count} archivos)
+              </label>
+            ))
+          )}
+        </div>
+        
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={() => { setDeleteTarget('selected'); setShowDeleteConfirm(true); }}
+            disabled={selectedRoms.size === 0}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: selectedRoms.size === 0 ? '#ccc' : '#d32f2f',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: selectedRoms.size === 0 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            Eliminar Seleccionadas ({selectedRoms.size})
+          </button>
+          
+          <button
+            onClick={() => { setDeleteTarget('all'); setShowDeleteConfirm(true); }}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: '#d32f2f',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+          >
+            Eliminar TODAS las ROMs
+          </button>
+        </div>
+        {showDeleteConfirm && (
+          <div style={{ marginTop: 12, padding: 12, border: "1px solid var(--danger)", borderRadius: 6, background: "white" }}>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>¿Confirmar eliminación? Esta acción no se puede deshacer.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="primary" style={{ backgroundColor: "#d32f2f", borderColor: "#d32f2f" }} onClick={() => {
+                if (deleteTarget === 'selected') handleDeleteSelected();
+                else if (deleteTarget === 'all') handleDeleteAll();
+                setShowDeleteConfirm(false);
+                setDeleteTarget(null);
+              }}>Sí, eliminar</button>
+              <button onClick={() => { setShowDeleteConfirm(false); setDeleteTarget(null); }}>Cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <MiniScraper sdPath={sdPath} />
     </div>

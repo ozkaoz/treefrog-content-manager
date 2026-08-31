@@ -3,6 +3,7 @@ use crate::profile::LoadedProfile;
 use crate::sd_target;
 use std::path::Path;
 use log::{info, warn};
+use std::io::Read;
 use tauri::{Emitter, AppHandle};
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +33,20 @@ fn ensure_parent_exists(dest: &Path) -> anyhow::Result<()> {
         std::fs::create_dir_all(parent)?;
     }
     Ok(())
+}
+
+fn validate_rom_file(src: &Path) -> anyhow::Result<()> {
+    let metadata = std::fs::metadata(src)?;
+    if metadata.len() == 0 {
+        anyhow::bail!("Archivo vacío: {}", src.display());
+    }
+    let mut file = std::fs::File::open(src)?;
+    let mut buffer = [0; 1024];
+    match file.read(&mut buffer) {
+        Ok(0) => anyhow::bail!("No se pudo leer el archivo: {}", src.display()),
+        Ok(_) => Ok(()),
+        Err(e) => anyhow::bail!("Error leyendo archivo {}: {}", src.display(), e),
+    }
 }
 
 fn safe_copy_file(src: &Path, dest: &Path) -> anyhow::Result<()> {
@@ -224,6 +239,15 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                         let s = src_dir.join(m);
                         let d = dest_dir.join(m);
                         if !s.exists() { errors.push(format!("group member not found: {}", s.display())); ok = false; continue; }
+                        if let Err(e) = validate_rom_file(&s) {
+                            errors.push(format!("validación fallida {}: {}", s.display(), e));
+                            warn!("validación fallida {}: {}", s.display(), e);
+                            ok = false;
+                            continue;
+                        }
+                        if let Ok(meta) = std::fs::metadata(&s) {
+                            info!("Copiando ROM (grupo): {} -> {} ({} bytes)", s.display(), d.display(), meta.len());
+                        }
                         match safe_copy_file(&s, &d) {
                             Ok(()) => { written_dests.insert(d.to_string_lossy().to_lowercase(), None); }
                             Err(e) => { errors.push(format!("copy {} -> {}: {}", s.display(), d.display(), e)); ok = false; }
@@ -242,6 +266,15 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     errors.push(format!("source not found: {}", src.display()));
                     failed += 1;
                     continue;
+                }
+                if let Err(e) = validate_rom_file(src) {
+                    errors.push(format!("validación fallida {}: {}", src.display(), e));
+                    warn!("validación fallida {}: {}", src.display(), e);
+                    failed += 1;
+                    continue;
+                }
+                if let Ok(meta) = std::fs::metadata(src) {
+                    info!("Copiando ROM: {} -> {} ({} bytes)", src.display(), dest_abs.display(), meta.len());
                 }
                 match safe_copy_file(src, &dest_abs) {
                     Ok(()) => {
@@ -298,6 +331,15 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                 errors.push(format!("extracted path invalid {} -> {}: {}", p.display(), dest_file.display(), e));
                                 ok = false;
                                 continue;
+                            }
+                            if let Err(e) = validate_rom_file(&p) {
+                                errors.push(format!("validación fallida {}: {}", p.display(), e));
+                                warn!("validación fallida {}: {}", p.display(), e);
+                                ok = false;
+                                continue;
+                            }
+                            if let Ok(meta) = std::fs::metadata(&p) {
+                                info!("Copiando ROM (extract): {} -> {} ({} bytes)", p.display(), dest_file.display(), meta.len());
                             }
                             if let Err(e) = safe_copy_file(&p, &dest_file) {
                                 errors.push(format!("extract copy {} -> {}: {}", p.display(), dest_file.display(), e));
