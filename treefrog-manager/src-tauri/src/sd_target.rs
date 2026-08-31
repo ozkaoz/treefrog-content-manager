@@ -530,7 +530,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
 
     let lgpt_detected = p.join("lgpt").exists();
 
-    // Enumerate existing content read-only
+    // Enumerate existing content read-only - whitelist: only valid system folders + media/bios/lgpt
     let mut rom_dirs = Vec::new();
     let mut media_dirs = Vec::new();
     let mut bios_dirs = Vec::new();
@@ -539,6 +539,13 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     let mut total_size = 0u64;
     let mut folder_breakdown: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
 
+    // Load profile for valid system folders (used for whitelist at depth 2)
+    let valid_system_folders: std::collections::HashSet<String> = crate::profile::load_profile()
+        .map(|prof| prof.systems.iter().flat_map(|s| s.folder_aliases.iter().map(|a| a.to_lowercase())).collect())
+        .unwrap_or_default();
+    let valid_media_folders = ["music", "videos", "images"];
+
+    // Populate rom_dirs/media_dirs/bios_dirs based on actual dirs (for UI badges), but only those that are valid
     let roms_path = p.join("roms");
     if roms_path.exists() {
         if let Ok(entries) = std::fs::read_dir(&roms_path) {
@@ -546,32 +553,15 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
                 if let Ok(ft) = ent.file_type() {
                     if ft.is_dir() {
                         let name = ent.file_name().to_string_lossy().to_string();
-                        // Classify media vs rom
-                        match name.to_lowercase().as_str() {
-                            "music" | "videos" | "images" | "ebook" => media_dirs.push(name),
-                            "bios" => bios_dirs.push(name),
-                            _ => rom_dirs.push(name),
+                        let lower = name.to_lowercase();
+                        // Only count valid system/media folders for the badge lists (whitelist)
+                        if valid_system_folders.contains(&lower) || valid_media_folders.contains(&lower.as_str()) {
+                            match lower.as_str() {
+                                "music" | "videos" | "images" | "ebook" => media_dirs.push(name),
+                                "bios" => bios_dirs.push(name),
+                                _ => rom_dirs.push(name),
+                            }
                         }
-                    }
-                }
-            }
-        }
-        // Count files recursively for existing_count and total_size (read-only) - whitelist: only roms/cubegm/bios/lgpt, ignore hidden/.tmp
-        for entry in walkdir::WalkDir::new(&roms_path).follow_links(false).into_iter().filter_entry(|e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") { return false; }
-            true
-        }).filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() && !entry.file_type().is_symlink() {
-                existing_count += 1;
-                if let Ok(m) = entry.metadata() {
-                    total_size += m.len();
-                }
-                // Per-folder breakdown
-                if let Ok(rel) = entry.path().strip_prefix(p) {
-                    if let Some(parent) = rel.parent() {
-                        let key = parent.to_string_lossy().replace("\\", "/");
-                        *folder_breakdown.entry(key).or_insert(0) += 1;
                     }
                 }
             }
@@ -581,38 +571,50 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         if !bios_dirs.contains(&"cubegm/bios".to_string()) {
             bios_dirs.push("cubegm/bios".to_string());
         }
-        for entry in walkdir::WalkDir::new(p.join("cubegm/bios")).follow_links(false).into_iter().filter_entry(|e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") { return false; }
-            true
-        }).filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() {
-                existing_count += 1;
-                if let Ok(m) = entry.metadata() { total_size += m.len(); }
-                if let Ok(rel) = entry.path().strip_prefix(p) {
-                    if let Some(parent) = rel.parent() {
-                        let key = parent.to_string_lossy().replace("\\", "/");
-                        *folder_breakdown.entry(key).or_insert(0) += 1;
-                    }
-                }
-            }
-        }
     }
     if lgpt_detected {
         if p.join("lgpt/samples").exists() { lgpt_dirs.push("lgpt/samples".to_string()); }
         if p.join("lgpt/projects").exists() { lgpt_dirs.push("lgpt/projects".to_string()); }
         if p.join("lgpt").exists() && lgpt_dirs.is_empty() { lgpt_dirs.push("lgpt".to_string()); }
-        for entry in walkdir::WalkDir::new(p.join("lgpt")).follow_links(false).into_iter().filter_entry(|e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") { return false; }
-            true
-        }).filter_map(|e| e.ok()) {
-            if entry.file_type().is_file() {
-                existing_count += 1;
-                if let Ok(m) = entry.metadata() { total_size += m.len(); }
-                if let Ok(rel) = entry.path().strip_prefix(p) {
-                    if let Some(parent) = rel.parent() {
-                        let key = parent.to_string_lossy().replace("\\", "/");
+    }
+
+    // Single walk from SD root with strict whitelist filter (depth-aware)
+    for entry in walkdir::WalkDir::new(p).follow_links(false).into_iter().filter_entry(|e| {
+        let path = e.path();
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        // 1. Ignorar ocultos y temporales
+        if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") {
+            return false;
+        }
+        // 2. Permitir raíz
+        if path == p { return true; }
+        // 3. Nivel 1: Solo entrar en roms, cubegm, lgpt
+        if e.depth() == 1 {
+            return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
+        }
+        // 4. Nivel 2: Si el padre es "roms", solo permitir sistemas válidos o medios legítimos
+        if let Some(parent_name) = path.parent().and_then(|pp| pp.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+            if parent_name == "roms" {
+                return valid_system_folders.contains(&name) || valid_media_folders.contains(&name.as_str());
+            }
+            if parent_name == "cubegm" {
+                return name == "bios";
+            }
+        }
+        // 5. Por defecto, permitir si ya pasamos los filtros anteriores
+        true
+    }).filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() && !entry.file_type().is_symlink() {
+            // Count only files that are inside the whitelisted tree (roms/*, cubegm/bios/*, lgpt/*)
+            // walkdir already filtered, so any file here is legitimate
+            existing_count += 1;
+            if let Ok(m) = entry.metadata() {
+                total_size += m.len();
+            }
+            if let Ok(rel) = entry.path().strip_prefix(p) {
+                if let Some(parent) = rel.parent() {
+                    let key = parent.to_string_lossy().replace("\\", "/");
+                    if !key.is_empty() {
                         *folder_breakdown.entry(key).or_insert(0) += 1;
                     }
                 }
