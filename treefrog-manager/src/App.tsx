@@ -180,6 +180,8 @@ export default function App() {
         let vols: VolumeInfo[] = [];
         try {
           vols = (await invoke("list_volumes")) as VolumeInfo[];
+          // Filtrar solo volúmenes con letra de unidad y accesibles
+          vols = vols.filter(v => v.path && !v.path.startsWith('\\\\?\\') && v.accessible !== false && v.path.length >= 2 && v.path[1] === ':');
         } catch (e) {
           console.warn("list_volumes failed", e);
         }

@@ -1,7 +1,7 @@
 use crate::profile::LoadedProfile;
 use std::path::Path;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub enum Kind {
     Rom,
     Music,
@@ -16,7 +16,7 @@ pub enum Kind {
     Ambiguous,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Classification {
     pub kind: Kind,
     pub system_id: Option<String>,

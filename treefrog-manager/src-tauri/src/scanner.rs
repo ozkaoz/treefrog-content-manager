@@ -2,8 +2,9 @@ use crate::profile::LoadedProfile;
 use crate::classify;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct ScannedFile {
     pub source_path: PathBuf,
     pub relative_hint: String,
@@ -114,6 +115,42 @@ pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> a
         deduped.push(sf);
     }
     Ok(deduped)
+}
+
+pub fn scan_games(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
+    let all_files = scan_directory(path, profile, false)?;
+    Ok(all_files.into_iter().filter(|sf| matches!(sf.classification.kind, classify::Kind::Rom)).collect())
+}
+
+pub fn scan_music(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
+    let all_files = scan_directory(path, profile, false)?;
+    let audio_exts = [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"];
+    Ok(all_files.into_iter().filter(|sf| {
+        let ext = sf.source_path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
+        audio_exts.contains(&ext.as_str())
+    }).collect())
+}
+
+pub fn scan_videos(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
+    let all_files = scan_directory(path, profile, false)?;
+    let video_exts = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"];
+    Ok(all_files.into_iter().filter(|sf| {
+        let ext = sf.source_path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
+        video_exts.contains(&ext.as_str())
+    }).collect())
+}
+
+pub fn scan_bios(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
+    let all_files = scan_directory(path, profile, false)?;
+    Ok(all_files.into_iter().filter(|sf| {
+        let path_str = sf.source_path.to_string_lossy().to_lowercase();
+        path_str.contains("cubegm/bios/") || path_str.contains("cubegm\\bios\\") || matches!(sf.classification.kind, classify::Kind::Bios)
+    }).collect())
+}
+
+pub fn scan_lgpt_samples(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
+    let all_files = scan_directory(path, profile, false)?;
+    Ok(all_files.into_iter().filter(|sf| matches!(sf.classification.kind, classify::Kind::LgptSample)).collect())
 }
 
 fn detect_group(path: &Path, class: &classify::Classification) -> Option<Vec<PathBuf>> {

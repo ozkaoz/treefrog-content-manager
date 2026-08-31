@@ -50,6 +50,7 @@ export default function LgptManager({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [filter, setFilter] = useState<"all" | "new" | "duplicate" | "conflict" | "unchanged">("all");
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
   async function handlePickSamples() {
     try {
@@ -82,6 +83,7 @@ export default function LgptManager({
     try {
       const res = (await invoke("lgpt_scan_samples", { samplesSource, sdPath: globalSdPath })) as LgptScanResult;
       setSamplesResult(res);
+      if (res.plan?.entries) setSelectedFiles(prev => new Set([...prev, ...res.plan!.entries.map(e => e.source)]));
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
 
@@ -92,8 +94,35 @@ export default function LgptManager({
     try {
       const res = (await invoke("lgpt_scan_projects", { projectsSource, sdPath: globalSdPath })) as LgptScanResult;
       setProjectsResult(res);
+      if (res.plan?.entries) setSelectedFiles(prev => new Set([...prev, ...res.plan!.entries.map(e => e.source)]));
     } catch (e) { setError(String(e)); } finally { setLoading(false); }
   }
+
+  const toggleFileSelection = (id: string) => {
+    setSelectedFiles(prev => {
+      const ns = new Set(prev);
+      if (ns.has(id)) ns.delete(id); else ns.add(id);
+      return ns;
+    });
+  };
+  const toggleAllSamples = (checked: boolean) => {
+    const entries = samplesResult?.plan?.entries || [];
+    setSelectedFiles(prev => {
+      const ns = new Set(prev);
+      if (checked) entries.forEach(e => ns.add(e.source));
+      else entries.forEach(e => ns.delete(e.source));
+      return ns;
+    });
+  };
+  const toggleAllProjects = (checked: boolean) => {
+    const entries = projectsResult?.plan?.entries || [];
+    setSelectedFiles(prev => {
+      const ns = new Set(prev);
+      if (checked) entries.forEach(e => ns.add(e.source));
+      else entries.forEach(e => ns.delete(e.source));
+      return ns;
+    });
+  };
 
   async function handleScanBoth() {
     setError("");
@@ -114,14 +143,18 @@ export default function LgptManager({
     const allEntries: PlanEntry[] = [];
     
     if (samplesResult?.plan?.entries) {
-      allEntries.push(...samplesResult.plan.entries.map(e => ({
+      const filtered = samplesResult.plan.entries.filter(e => selectedFiles.has(e.source));
+      const effective = selectedFiles.size > 0 ? filtered : samplesResult.plan.entries;
+      allEntries.push(...effective.map(e => ({
         ...e,
         content_type: 'lgpt/sample',
       })));
     }
     
     if (projectsResult?.plan?.entries) {
-      allEntries.push(...projectsResult.plan.entries.map(e => ({
+      const filtered = projectsResult.plan.entries.filter(e => selectedFiles.has(e.source));
+      const effective = selectedFiles.size > 0 ? filtered : projectsResult.plan.entries;
+      allEntries.push(...effective.map(e => ({
         ...e,
         content_type: 'lgpt/project',
       })));
@@ -145,7 +178,7 @@ export default function LgptManager({
     
     const plan: Plan = { entries: allEntries, summary, warnings: [] };
     onPlanChange?.(plan);
-  }, [samplesResult, projectsResult, onPlanChange]);
+  }, [samplesResult, projectsResult, selectedFiles, onPlanChange]);
 
   const currentResult = activeSubTab === "samples" ? samplesResult : projectsResult;
   const currentPlan = currentResult?.plan;
@@ -255,7 +288,7 @@ export default function LgptManager({
               </div>
               <table>
                 <thead>
-                  <tr><th>Source</th><th>Destination</th><th>Action</th><th>Reason</th></tr>
+                  <tr><th><input type="checkbox" checked={samplesResult?.plan ? samplesResult.plan.entries.every(e => selectedFiles.has(e.source)) : false} onChange={(e) => toggleAllSamples(e.target.checked)} /></th><th>Source</th><th>Destination</th><th>Action</th><th>Reason</th></tr>
                 </thead>
                 <tbody>
                   {(currentPlan?.entries.filter((e) => {
@@ -266,7 +299,8 @@ export default function LgptManager({
                     if (filter === "unchanged") return e.action === "skip_unchanged";
                     return true;
                   }) || []).map((e, idx) => (
-                    <tr key={idx}>
+                    <tr key={idx} style={{ opacity: selectedFiles.has(e.source) ? 1 : 0.5 }}>
+                      <td><input type="checkbox" checked={selectedFiles.has(e.source)} onChange={() => toggleFileSelection(e.source)} /></td>
                       <td style={{ fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={e.source}>{e.source}</td>
                       <td style={{ fontSize: 11 }}>{e.destination}</td>
                       <td><span className={`badge badge-${e.action === "copy" ? "copy" : e.action === "skip_duplicate" ? "skip" : e.action === "conflict" ? "conflict" : "skip"}`}>{e.action}</span></td>
@@ -294,11 +328,12 @@ export default function LgptManager({
               </div>
               <table>
                 <thead>
-                  <tr><th>Project</th><th>Destination</th><th>Members</th><th>Action</th><th>Reason</th></tr>
+                  <tr><th><input type="checkbox" checked={projectsResult?.plan ? projectsResult.plan.entries.every(e => selectedFiles.has(e.source)) : false} onChange={(e) => toggleAllProjects(e.target.checked)} /></th><th>Project</th><th>Destination</th><th>Members</th><th>Action</th><th>Reason</th></tr>
                 </thead>
                 <tbody>
                   {(currentPlan?.entries || []).map((e, idx) => (
-                    <tr key={idx}>
+                    <tr key={idx} style={{ opacity: selectedFiles.has(e.source) ? 1 : 0.5 }}>
+                      <td><input type="checkbox" checked={selectedFiles.has(e.source)} onChange={() => toggleFileSelection(e.source)} /></td>
                       <td style={{ fontSize: 11 }}>{e.source.split(/[\\/]/).pop()}</td>
                       <td style={{ fontSize: 11 }}>{e.destination}</td>
                       <td style={{ fontSize: 10, color: "var(--text-muted)" }}>{(projectsResult.projects[idx]?.members || []).join(", ") || "-"}</td>

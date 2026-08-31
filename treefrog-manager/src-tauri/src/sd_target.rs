@@ -403,6 +403,27 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
             }
         }
     }
+    // Filtrar volúmenes sin letra asignada o inaccesibles
+    out.retain(|v| {
+        if v.path.is_empty() || v.path.starts_with("\\\\?\\") {
+            tracing::info!("Skipping volume without drive letter: {:?}", v);
+            return false;
+        }
+        if !Path::new(&v.path).exists() {
+            tracing::info!("Skipping inaccessible volume: {}", v.path);
+            return false;
+        }
+        if !v.accessible {
+            tracing::info!("Skipping inaccessible volume: {}", v.path);
+            return false;
+        }
+        // Solo volúmenes con letra de unidad (ej: G:\)
+        if v.path.len() < 2 || v.path.chars().nth(1) != Some(':') {
+            tracing::info!("Skipping volume without drive letter: {}", v.path);
+            return false;
+        }
+        true
+    });
     // Also include fallback for any drives not found via FindFirstVolume (should be rare)
     if out.is_empty() {
         return list_volumes_fallback().into_iter().map(|v| VolumeInfo {

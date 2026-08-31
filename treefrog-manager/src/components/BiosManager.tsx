@@ -96,6 +96,7 @@ export default function BiosManager({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>("");
   const [definitions, setDefinitions] = useState<BiosDefinition[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
   async function loadDefinitions() {
     try {
@@ -129,12 +130,25 @@ export default function BiosManager({
       const res = (await invoke("bios_scan", { biosSource })) as { results: BiosValidation[] };
       setResults(res.results);
       if (res.results.length > 0) setSelected(res.results[0]);
+      setSelectedFiles(new Set(res.results.filter(r => r.file).map(r => r.file!)));
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
   }
+
+  const toggleFileSelection = (file: string) => {
+    setSelectedFiles(prev => {
+      const ns = new Set(prev);
+      if (ns.has(file)) ns.delete(file); else ns.add(file);
+      return ns;
+    });
+  };
+  const toggleAll = (checked: boolean) => {
+    if (checked && results) setSelectedFiles(new Set(results.filter(r => r.file).map(r => r.file!)));
+    else setSelectedFiles(new Set());
+  };
 
   const lastScanKey = useRef("");
   useEffect(() => {
@@ -151,8 +165,9 @@ export default function BiosManager({
       return;
     }
     
-    // Convert BIOS validation results to Plan format
-    const entries: PlanEntry[] = results.map(r => {
+    // Convert BIOS validation results to Plan format - solo seleccionados
+    const filteredResults = results.filter(r => !r.file || selectedFiles.has(r.file));
+    const entries: PlanEntry[] = filteredResults.map(r => {
       const action = r.state === 'found_valid' ? 'copy' : 
                      r.state === 'missing' ? 'manual_review' :
                      r.state === 'found_invalid' ? 'conflict' :
@@ -181,7 +196,7 @@ export default function BiosManager({
     
     const plan: Plan = { entries, summary, warnings: [] };
     onPlanChange?.(plan);
-  }, [results, onPlanChange]);
+  }, [results, selectedFiles, onPlanChange]);
 
   if (definitions.length === 0) {
     setTimeout(() => loadDefinitions(), 0);
@@ -249,6 +264,7 @@ export default function BiosManager({
             <table>
               <thead>
                 <tr>
+                  <th><input type="checkbox" checked={results.length > 0 && results.filter(r => r.file).every(r => selectedFiles.has(r.file!))} onChange={(e) => toggleAll(e.target.checked)} /></th>
                   <th>System</th>
                   <th>BIOS</th>
                   <th>Status</th>
@@ -265,7 +281,8 @@ export default function BiosManager({
                   const statusLabel = STATUS_LABEL[r.state] || r.state;
                   const action = r.state === "found_valid" ? "copy" : r.state === "missing" ? "manual_review" : r.state === "found_invalid" ? "conflict" : r.state === "duplicate" ? "skip" : "manual_review";
                   return (
-                    <tr key={idx} onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.bios_id === r.bios_id ? "var(--surface)" : undefined }}>
+                    <tr key={idx} onClick={() => setSelected(r)} style={{ cursor: "pointer", background: selected?.bios_id === r.bios_id ? "var(--surface)" : undefined, opacity: r.file && !selectedFiles.has(r.file) ? 0.5 : 1 }}>
+                      <td><input type="checkbox" checked={r.file ? selectedFiles.has(r.file) : false} onChange={(e) => { e.stopPropagation(); if (r.file) toggleFileSelection(r.file); }} onClick={(e) => e.stopPropagation()} /></td>
                       <td style={{ fontSize: 11 }}>{def?.system_name || r.system_id || r.bios_id}</td>
                       <td style={{ fontSize: 11 }}>{def?.name || r.bios_id}</td>
                       <td><span className="badge" style={{ background: STATUS_COLOR[r.state] || "var(--text-muted)", color: "white", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{statusLabel}</span></td>

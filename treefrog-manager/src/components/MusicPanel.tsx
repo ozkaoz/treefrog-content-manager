@@ -34,6 +34,7 @@ export default function MusicPanel({
   const [plan, setPlan] = useState<Plan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
   async function handlePickSource() {
     try {
@@ -59,13 +60,18 @@ export default function MusicPanel({
     setLoading(true);
     setError("");
     try {
-      // Escaneo REAL de la carpeta seleccionada contra la SD seleccionada
       const result = (await invoke("dry_run_with_target", {
         sourcePath: source,
         sdPath: globalSdPath,
       })) as any;
-      setPlan(result);
-      onPlanChange?.(result);
+      // Filtrado correcto: solo audio
+      const audioExts = [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"];
+      const filtered = (result.entries as PlanEntry[]).filter(e => {
+        const ext = '.' + (e.source.split('.').pop() || '').toLowerCase();
+        return audioExts.includes(ext) || e.content_type === "music";
+      });
+      const filteredPlan = { ...result, entries: filtered };
+      setPlan(filteredPlan);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -73,13 +79,35 @@ export default function MusicPanel({
     }
   }
 
-  // Group by playlist (subfolder under roms/music)
+  useEffect(() => {
+    if (plan) setSelectedFiles(new Set(plan.entries.map(e => e.source)));
+    else setSelectedFiles(new Set());
+  }, [plan]);
+
+  useEffect(() => {
+    if (!plan) { onPlanChange?.(null); return; }
+    if (selectedFiles.size === 0 || selectedFiles.size === plan.entries.length) {
+      onPlanChange?.(plan);
+    } else {
+      const filtered = plan.entries.filter(e => selectedFiles.has(e.source));
+      const newSummary = { ...plan.summary, new: filtered.filter(e => e.action === 'copy' || e.action === 'extract').length, unchanged: filtered.filter(e => e.action === 'skip_unchanged').length, duplicate_content: filtered.filter(e => e.action === 'skip_duplicate').length, conflicts: filtered.filter(e => e.action === 'conflict').length };
+      onPlanChange?.({ ...plan, entries: filtered, summary: newSummary } as any);
+    }
+  }, [selectedFiles, plan, onPlanChange]);
+
+  const toggleFileSelection = (id: string) => {
+    setSelectedFiles(prev => {
+      const ns = new Set(prev);
+      if (ns.has(id)) ns.delete(id); else ns.add(id);
+      return ns;
+    });
+  };
+
   const playlists = (() => {
     if (!plan) return [];
     const map = new Map<string, PlanEntry[]>();
     for (const e of plan.entries) {
       const parts = e.destination.split("/");
-      // roms/music/<playlist>/...
       const playlist = parts.length >= 3 ? parts[2] : "unknown";
       if (!map.has(playlist)) map.set(playlist, []);
       map.get(playlist)!.push(e);
@@ -147,6 +175,17 @@ export default function MusicPanel({
               <table>
                 <thead>
                   <tr>
+                    <th><input type="checkbox" checked={entries.length > 0 && entries.every(e => selectedFiles.has(e.source))} onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedFiles(prev => new Set([...prev, ...entries.map(en => en.source)]));
+                      } else {
+                        setSelectedFiles(prev => {
+                          const ns = new Set(prev);
+                          entries.forEach(en => ns.delete(en.source));
+                          return ns;
+                        });
+                      }
+                    }} /></th>
                     <th>Track</th>
                     <th>Destination</th>
                     <th>Action</th>
@@ -154,7 +193,8 @@ export default function MusicPanel({
                 </thead>
                 <tbody>
                   {entries.map((e, idx) => (
-                    <tr key={idx}>
+                    <tr key={idx} style={{ opacity: selectedFiles.has(e.source) ? 1 : 0.5 }}>
+                      <td><input type="checkbox" checked={selectedFiles.has(e.source)} onChange={() => toggleFileSelection(e.source)} /></td>
                       <td style={{ fontSize: 11 }}>{e.source.split(/[\\/]/).pop()}</td>
                       <td style={{ fontSize: 11 }}>{e.destination}</td>
                       <td>

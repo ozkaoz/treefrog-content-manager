@@ -20,6 +20,13 @@ type Plan = {
   warnings: string[];
 };
 
+type SystemOption = {
+  id: string;
+  folder: string;
+  display_name: string;
+  core: string;
+};
+
 export default function GamesPanel({ 
   globalSdPath, 
   onSourceChange, 
@@ -38,6 +45,9 @@ export default function GamesPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filterSystem, setFilterSystem] = useState<string>("all");
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [editingSystem, setEditingSystem] = useState<string | null>(null);
+  const [systemOptions, setSystemOptions] = useState<SystemOption[]>([]);
 
   async function handlePickSource() {
     try {
@@ -63,19 +73,96 @@ export default function GamesPanel({
     setLoading(true);
     setError("");
     try {
-      // Escaneo REAL de la carpeta seleccionada contra la SD seleccionada
       const result = (await invoke("dry_run_with_target", {
         sourcePath: source,
         sdPath: globalSdPath,
       })) as any;
-      setPlan(result);
-      onPlanChange?.(result);
+      // Filtrado correcto: solo ROMs
+      const filteredEntries = (result.entries as PlanEntry[]).filter(e => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped"));
+      const filteredPlan = { ...result, entries: filteredEntries };
+      setPlan(filteredPlan);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (plan) {
+      setSelectedFiles(new Set(plan.entries.map(e => e.source)));
+    } else {
+      setSelectedFiles(new Set());
+    }
+  }, [plan]);
+
+  useEffect(() => {
+    if (!plan) {
+      onPlanChange?.(null);
+      return;
+    }
+    if (selectedFiles.size === 0 || selectedFiles.size === plan.entries.length) {
+      onPlanChange?.(plan);
+    } else {
+      const filtered = plan.entries.filter(e => selectedFiles.has(e.source));
+      const newSummary = {
+        ...plan.summary,
+        new: filtered.filter(e => e.action === 'copy' || e.action === 'extract').length,
+        unchanged: filtered.filter(e => e.action === 'skip_unchanged').length,
+        duplicate_content: filtered.filter(e => e.action === 'skip_duplicate').length,
+        conflicts: filtered.filter(e => e.action === 'conflict').length,
+      };
+      onPlanChange?.({ ...plan, entries: filtered, summary: newSummary } as any);
+    }
+  }, [selectedFiles, plan, onPlanChange]);
+
+  const toggleFileSelection = (fileId: string) => {
+    setSelectedFiles(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(fileId)) newSet.delete(fileId);
+      else newSet.add(fileId);
+      return newSet;
+    });
+  };
+
+  const toggleAll = (checked: boolean) => {
+    if (checked && plan) {
+      setSelectedFiles(new Set(plan.entries.map(e => e.source)));
+    } else {
+      setSelectedFiles(new Set());
+    }
+  };
+
+  const handleSystemClick = async (romId: string, sourcePath: string) => {
+    setEditingSystem(romId);
+    const ext = sourcePath.split('.').pop() ? '.' + sourcePath.split('.').pop()!.toLowerCase() : '';
+    try {
+      const options = await invoke('get_valid_systems_for_extension', { ext }) as SystemOption[];
+      setSystemOptions(options);
+      if (options.length === 0) {
+        // fallback: show all systems if extension not found
+        setSystemOptions([]);
+      }
+    } catch {
+      setSystemOptions([]);
+    }
+  };
+
+  const handleSystemChange = (romId: string, newFolder: string) => {
+    if (!plan) return;
+    const newEntries = plan.entries.map(e => {
+      if (e.source === romId) {
+        const fileName = e.source.split(/[\\/]/).pop() || e.source;
+        const newDest = `roms/${newFolder}/${fileName}`;
+        return { ...e, destination: newDest, content_type: `rom/${newFolder}` };
+      }
+      return e;
+    });
+    const newPlan = { ...plan, entries: newEntries };
+    setPlan(newPlan);
+    onPlanChange?.(newPlan as any);
+    setEditingSystem(null);
+  };
 
   const lastScanKey = useRef("");
   useEffect(() => {
@@ -89,6 +176,9 @@ export default function GamesPanel({
   const systems = Array.from(new Set(plan?.entries.map((e) => e.content_type?.replace("rom/", "") || "unknown") || []));
 
   const filtered = plan?.entries.filter((e) => filterSystem === "all" || e.content_type?.includes(filterSystem)) || [];
+
+  // Expose selected files for parent if needed
+  (GamesPanel as any).getSelectedFiles = () => selectedFiles;
 
   return (
     <div className="card">
@@ -148,6 +238,13 @@ export default function GamesPanel({
           <table style={{ marginTop: 8 }}>
             <thead>
               <tr>
+                <th>
+                  <input 
+                    type="checkbox" 
+                    checked={plan.entries.length > 0 && selectedFiles.size === plan.entries.length}
+                    onChange={(e) => toggleAll(e.target.checked)}
+                  />
+                </th>
                 <th>Source</th>
                 <th>Destination</th>
                 <th>System</th>
@@ -156,12 +253,39 @@ export default function GamesPanel({
             </thead>
             <tbody>
               {filtered.map((e, idx) => (
-                <tr key={idx}>
+                <tr key={idx} style={{ opacity: selectedFiles.has(e.source) ? 1 : 0.5 }}>
+                  <td>
+                    <input 
+                      type="checkbox" 
+                      checked={selectedFiles.has(e.source)}
+                      onChange={() => toggleFileSelection(e.source)}
+                    />
+                  </td>
                   <td style={{ fontSize: 11, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }} title={e.source}>
                     {e.source.split(/[\\/]/).pop()}
                   </td>
                   <td style={{ fontSize: 11 }}>{e.destination}</td>
-                  <td style={{ fontSize: 11 }}>{e.content_type?.replace("rom/", "") || "—"}</td>
+                  <td onClick={() => handleSystemClick(e.source, e.source)} style={{ cursor: 'pointer', fontSize: 11, textDecoration: 'underline', color: 'var(--accent)' }}>
+                    {editingSystem === e.source ? (
+                      <select 
+                        value={e.destination.split('/')[1] || e.content_type?.replace("rom/", "") || ""}
+                        onChange={(ev) => handleSystemChange(e.source, ev.target.value)}
+                        onBlur={() => setEditingSystem(null)}
+                        autoFocus
+                        onClick={(ev) => ev.stopPropagation()}
+                      >
+                        {systemOptions.length > 0 ? systemOptions.map(opt => (
+                          <option key={opt.id} value={opt.folder}>
+                            {opt.folder} ({opt.core})
+                          </option>
+                        )) : (
+                          <option value={e.destination.split('/')[1]}>{e.destination.split('/')[1]}</option>
+                        )}
+                      </select>
+                    ) : (
+                      e.content_type?.replace("rom/", "") || e.destination.split('/')[1] || "—"
+                    )}
+                  </td>
                   <td>
                     <span className={`badge badge-${e.action === "copy" ? "copy" : e.action === "extract" ? "extract" : e.action === "conflict" ? "conflict" : "skip"}`}>
                       {e.action}

@@ -141,7 +141,12 @@ pub fn run() {
             build_info,
             clear_cache,
             delete_roms_from_sd,
-            reset_app_state
+            reset_app_state,
+            get_valid_systems_for_extension,
+            scan_games,
+            scan_music,
+            scan_videos,
+            scan_bios_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -327,7 +332,7 @@ async fn dry_run_with_target(source_path: String, sd_path: String) -> Result<ser
 }
 
 #[tauri::command]
-async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>) -> Result<serde_json::Value, String> {
+async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: String, force: Option<bool>, selected_files: Option<Vec<String>>) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
     let target_val = analyze_target_cached(&sd_path)?;
     let target: sd_target::TargetAnalysis = serde_json::from_value(target_val).unwrap();
@@ -349,7 +354,11 @@ async fn deploy_to_sd(app: tauri::AppHandle, source_path: String, sd_path: Strin
         ));
     }
     let scanned = scanner::scan(&source_path, &profile).map_err(|e| e.to_string())?;
-    let plan = planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?;
+    let plan = if let Some(ref files) = selected_files {
+        planner::plan_with_selection(scanned, &sd_path, &profile, Some(files.clone())).map_err(|e| e.to_string())?
+    } else {
+        planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?
+    };
     let plan = planner::resolve_write_collisions(plan);
     for e in &plan.entries {
         sd_target::validate_destination_path(&e.destination).map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
@@ -431,6 +440,56 @@ pub struct DeleteResult {
     pub deleted: usize,
     pub failed: usize,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SystemOption {
+    pub id: String,
+    pub folder: String,
+    pub display_name: String,
+    pub core: String,
+}
+
+#[tauri::command]
+async fn get_valid_systems_for_extension(ext: String) -> Result<Vec<SystemOption>, String> {
+    let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
+    let mut systems = Vec::new();
+    let ext_lower = if ext.starts_with('.') { ext.to_lowercase() } else { format!(".{}", ext.to_lowercase()) };
+    for sys in &profile.systems {
+        if sys.extensions.iter().any(|e| e.to_lowercase() == ext_lower) {
+            systems.push(SystemOption {
+                id: sys.id.clone(),
+                folder: sys.folder_aliases.first().cloned().unwrap_or_default(),
+                display_name: sys.display_name.clone().unwrap_or(sys.id.clone()),
+                core: sys.core.clone().unwrap_or_default(),
+            });
+        }
+    }
+    Ok(systems)
+}
+
+#[tauri::command]
+async fn scan_games(path: String) -> Result<Vec<scanner::ScannedFile>, String> {
+    let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
+    scanner::scan_games(&path, &profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn scan_music(path: String) -> Result<Vec<scanner::ScannedFile>, String> {
+    let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
+    scanner::scan_music(&path, &profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn scan_videos(path: String) -> Result<Vec<scanner::ScannedFile>, String> {
+    let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
+    scanner::scan_videos(&path, &profile).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn scan_bios_files(path: String) -> Result<Vec<scanner::ScannedFile>, String> {
+    let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
+    scanner::scan_bios(&path, &profile).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

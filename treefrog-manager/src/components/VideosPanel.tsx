@@ -38,6 +38,7 @@ export default function VideosPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "compatible" | "convert" | "error">("all");
+  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
 
   async function handlePickSource() {
     try {
@@ -63,13 +64,17 @@ export default function VideosPanel({
     setLoading(true);
     setError("");
     try {
-      // Escaneo REAL de la carpeta seleccionada contra la SD seleccionada
       const result = (await invoke("dry_run_with_target", {
         sourcePath: source,
         sdPath: globalSdPath,
       })) as any;
-      setPlan(result);
-      onPlanChange?.(result);
+      const videoExts = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg", ".ts"];
+      const filtered = (result.entries as PlanEntry[]).filter(e => {
+        const ext = '.' + (e.source.split('.').pop() || '').toLowerCase();
+        return videoExts.includes(ext) || e.content_type === "video";
+      });
+      const filteredPlan = { ...result, entries: filtered };
+      setPlan(filteredPlan);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -77,7 +82,33 @@ export default function VideosPanel({
     }
   }
 
-  const filtered = (() => {
+  useEffect(() => {
+    if (plan) setSelectedFiles(new Set(plan.entries.map(e => e.source)));
+    else setSelectedFiles(new Set());
+  }, [plan]);
+
+  useEffect(() => {
+    if (!plan) { onPlanChange?.(null); return; }
+    if (selectedFiles.size === 0 || selectedFiles.size === plan.entries.length) onPlanChange?.(plan);
+    else {
+      const filtered = plan.entries.filter(e => selectedFiles.has(e.source));
+      const newSummary = { ...plan.summary, new: filtered.filter(e => e.action === 'copy' || e.action === 'extract').length, unchanged: filtered.filter(e => e.action === 'skip_unchanged').length, duplicate_content: filtered.filter(e => e.action === 'skip_duplicate').length, conflicts: filtered.filter(e => e.action === 'conflict').length };
+      onPlanChange?.({ ...plan, entries: filtered, summary: newSummary } as any);
+    }
+  }, [selectedFiles, plan, onPlanChange]);
+  const toggleFileSelection = (id: string) => {
+    setSelectedFiles(prev => {
+      const ns = new Set(prev);
+      if (ns.has(id)) ns.delete(id); else ns.add(id);
+      return ns;
+    });
+  };
+  const toggleAll = (checked: boolean) => {
+    if (checked && plan) setSelectedFiles(new Set(plan.entries.map(e => e.source)));
+    else setSelectedFiles(new Set());
+  };
+
+  const displayFiltered = (() => {
     if (!plan) return [];
     if (filter === "compatible") return plan.entries.filter((e) => e.action === "copy");
     if (filter === "convert") return plan.entries.filter((e) => e.action === "convert_then_copy");
@@ -150,6 +181,7 @@ export default function VideosPanel({
           <table style={{ marginTop: 8 }}>
             <thead>
               <tr>
+                <th><input type="checkbox" checked={plan.entries.length > 0 && selectedFiles.size === plan.entries.length} onChange={(e) => toggleAll(e.target.checked)} /></th>
                 <th>Source</th>
                 <th>Destination</th>
                 <th>Codec</th>
@@ -157,8 +189,9 @@ export default function VideosPanel({
               </tr>
             </thead>
             <tbody>
-              {filtered.map((e, idx) => (
-                <tr key={idx} style={{ background: e.action === "convert_then_copy" ? "var(--warning-bg)" : e.action === "manual_review" ? "#fff8e1" : undefined }}>
+              {displayFiltered.map((e, idx) => (
+                <tr key={idx} style={{ background: e.action === "convert_then_copy" ? "var(--warning-bg)" : e.action === "manual_review" ? "#fff8e1" : undefined, opacity: selectedFiles.has(e.source) ? 1 : 0.5 }}>
+                  <td><input type="checkbox" checked={selectedFiles.has(e.source)} onChange={() => toggleFileSelection(e.source)} /></td>
                   <td style={{ fontSize: 11, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }} title={e.source}>
                     {e.source.split(/[\\/]/).pop()}
                   </td>
@@ -175,7 +208,7 @@ export default function VideosPanel({
               ))}
             </tbody>
           </table>
-          {filtered.length === 0 && <EmptyState kind="empty" title="No Videos found" description="No video files (MP4, MKV, AVI, etc.) matched in the selected source. Check media.json and video_presets.json." />}
+          {displayFiltered.length === 0 && <EmptyState kind="empty" title="No Videos found" description="No video files (MP4, MKV, AVI, etc.) matched in the selected source. Check media.json and video_presets.json." />}
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
             Conversión: staging en <code>temp</code>, re-probe, solo si válido se copia a SD. Original intacto. Preset conservador <code>PROVISIONAL_UNVALIDATED</code> hasta validación física R36SX.
           </p>

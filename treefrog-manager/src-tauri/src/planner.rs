@@ -255,8 +255,22 @@ pub fn apply_resolutions(plan: crate::Plan, decisions: &std::collections::HashMa
     crate::Plan { summary: plan.summary.clone(), entries: new_entries, warnings: plan.warnings.clone() }
 }
 
+pub fn plan_with_selection(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile, selected_files: Option<Vec<String>>) -> anyhow::Result<Plan> {
+    let files_to_plan = if let Some(selected) = selected_files {
+        scanned.into_iter().filter(|sf| selected.contains(&sf.source_path.to_string_lossy().to_string())).collect()
+    } else {
+        scanned
+    };
+    plan_internal(files_to_plan, sd_root, profile)
+}
+
 #[allow(unused_assignments, unused_variables)]
 pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -> anyhow::Result<Plan> {
+    plan_internal(scanned, sd_root, profile)
+}
+
+#[allow(unused_assignments, unused_variables)]
+fn plan_internal(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -> anyhow::Result<Plan> {
     let sd_path = Path::new(sd_root);
     let mut entries: Vec<PlanEntry> = Vec::new();
     let mut unchanged = 0usize;
