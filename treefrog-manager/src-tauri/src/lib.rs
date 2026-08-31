@@ -155,7 +155,8 @@ pub fn run() {
             get_temp_path,
             open_folder,
             get_bios_catalog,
-            validate_bios_file
+            validate_bios_file,
+            scan_music_structured
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -652,6 +653,116 @@ pub struct SystemOption {
     pub folder: String,
     pub display_name: String,
     pub core: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MusicTrack {
+    pub path: String,
+    pub filename: String,
+    pub size: u64,
+    pub folder: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MusicPlaylist {
+    pub name: String,
+    pub path: String,
+    pub tracks: Vec<MusicTrack>,
+    pub total_size: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MusicScanResult {
+    pub standalone_tracks: Vec<MusicTrack>,
+    pub playlists: Vec<MusicPlaylist>,
+    pub total_tracks: usize,
+    pub total_playlists: usize,
+}
+
+#[tauri::command]
+async fn scan_music_structured(path: String) -> Result<MusicScanResult, String> {
+    let root = std::path::Path::new(&path);
+    if !root.exists() {
+        return Err(format!("Path does not exist: {}", path));
+    }
+    
+    let audio_extensions = [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"];
+    
+    let mut standalone_tracks = Vec::new();
+    let mut playlist_map: std::collections::HashMap<String, MusicPlaylist> = std::collections::HashMap::new();
+    
+    for entry in walkdir::WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        
+        let ext = entry.path()
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|e| format!(".{}", e.to_lowercase()))
+            .unwrap_or_default();
+        
+        if !audio_extensions.contains(&ext.as_str()) {
+            continue;
+        }
+        
+        let file_path = entry.path();
+        let filename = file_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let size = std::fs::metadata(file_path).map(|m| m.len()).unwrap_or(0);
+        
+        let parent = file_path.parent().unwrap_or(root);
+        let relative_parent = parent.strip_prefix(root)
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        
+        let track = MusicTrack {
+            path: file_path.to_string_lossy().to_string(),
+            filename: filename.clone(),
+            size,
+            folder: relative_parent.clone(),
+        };
+        
+        if relative_parent.is_empty() {
+            standalone_tracks.push(track);
+        } else {
+            let playlist_name = relative_parent.split(std::path::MAIN_SEPARATOR)
+                .next()
+                .unwrap_or(&relative_parent)
+                .to_string();
+            
+            let playlist = playlist_map.entry(playlist_name.clone()).or_insert_with(|| {
+                MusicPlaylist {
+                    name: playlist_name.clone(),
+                    path: parent.to_string_lossy().to_string(),
+                    tracks: Vec::new(),
+                    total_size: 0,
+                }
+            });
+            
+            playlist.tracks.push(track);
+            playlist.total_size += size;
+        }
+    }
+    
+    let mut playlists: Vec<MusicPlaylist> = playlist_map.into_values().collect();
+    for p in &mut playlists {
+        p.tracks.sort_by(|a, b| a.filename.cmp(&b.filename));
+    }
+    playlists.sort_by(|a, b| a.name.cmp(&b.name));
+    standalone_tracks.sort_by(|a, b| a.filename.cmp(&b.filename));
+    
+    let total_tracks = standalone_tracks.len() + playlists.iter().map(|p| p.tracks.len()).sum::<usize>();
+    let total_playlists = playlists.len();
+    
+    Ok(MusicScanResult {
+        standalone_tracks,
+        playlists,
+        total_tracks,
+        total_playlists,
+    })
 }
 
 #[tauri::command]
