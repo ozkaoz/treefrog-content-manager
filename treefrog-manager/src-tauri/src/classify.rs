@@ -27,6 +27,11 @@ pub struct Classification {
 pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     let ext = path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
     let lower_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+    // Defensa en profundidad: ignorar archivos del sistema que no son contenido de usuario
+    let lower_path = path.to_string_lossy().to_lowercase();
+    if (lower_path.contains("/cubegm/") && !lower_path.contains("/cubegm/bios/")) || lower_path.contains("/frogui/") {
+        return Classification { kind: Kind::Unknown, system_id: None, destination: "roms/UNKNOWN".into(), archive_valid: false, multi_file: false };
+    }
 
     // Archives recognized first — but we still peek inside later via archive.rs
     if [".zip", ".7z", ".rar"].contains(&ext.as_str()) {

@@ -21,8 +21,27 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
     let mut out = Vec::new();
     let mut seen_sources: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut consumed: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    // Walk recursively, skip hidden .res artwork folders? No — we classify everything, but planner will filter
-    for entry in WalkDir::new(root).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+    // Walk recursively with whitelist: only roms/cubegm/lgpt at depth 1, and cubegm/bios at depth 2+
+    for entry in WalkDir::new(root).follow_links(false).into_iter().filter_entry(|e| {
+        let path = e.path();
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        // 1. Ignorar ocultos
+        if name.starts_with('.') { return false; }
+        // 2. Permitir raíz
+        if path == root { return true; }
+        // 3. Nivel 1: Solo entrar en roms, cubegm, lgpt
+        if e.depth() == 1 {
+            return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
+        }
+        // 4. Nivel 2+: Si el padre es "cubegm", solo permitir "bios"
+        if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+            if parent_name == "cubegm" {
+                return name == "bios";
+            }
+        }
+        // 5. Por defecto, permitir si ya pasamos los filtros anteriores (estamos dentro de roms, bios, lgpt)
+        true
+    }).filter_map(|e| e.ok()) {
         let p = entry.path();
         let canon = std::fs::canonicalize(entry.path()).unwrap_or_else(|_| entry.path().to_path_buf());
         if !seen_sources.insert(canon.clone()) {
