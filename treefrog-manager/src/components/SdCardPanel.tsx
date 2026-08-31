@@ -402,7 +402,7 @@ export default function SdCardPanel({
                       })}
                     </tbody>
                   </table>
-                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Folders with [DEMO]/[ASSET]/[SYSTEM] are default TreeFrogUI content. [User] are your personal content. E.g.: <code>roms/FC/</code> 12 juegos, <code>roms/pico8/</code> 28 carts [DEMO].</p>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Folders with [DEMO]/[ASSET]/[SYSTEM] are default TreeFrogUI content. [User] are your personal content. E.g.: <code>roms/FC/</code> 12 games, <code>roms/pico8/</code> 28 carts [DEMO].</p>
                 </div>
               </details>
             </div>
@@ -461,10 +461,10 @@ export default function SdCardPanel({
             style={{ width: "100%", padding: "12px", fontSize: 14, fontWeight: 600 }}
             title={
               !globalPlan 
-                ? "Go to Overview and press ANALYZE primero"
+                ? "Go to Overview and press ANALYZE first"
                 : globalPlan.summary.new === 0 && globalPlan.summary.changed === 0
-                ? "No new or modified files para sincronizar"
-                : `Sincronizar ${globalPlan.summary.new} nuevos a ${sdPath}`
+                ? "No new or modified files to synchronize"
+                : `Synchronize ${globalPlan.summary.new} new to ${sdPath}`
             }
           >
             {loading ? "Synchronizing…" : "Sync to SD"}
@@ -491,13 +491,13 @@ export default function SdCardPanel({
           
           {syncResult.breakdown && syncResult.breakdown.length > 0 && (
             <details style={{ marginTop: 8 }}>
-              <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Ver detalle de files ({syncResult.breakdown.length})</summary>
+              <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 600 }}>View file details ({syncResult.breakdown.length})</summary>
               <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
                 <table style={{ width: "100%", fontSize: 11 }}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: "left", padding: "4px" }}>File</th>
-                      <th style={{ textAlign: "left", padding: "4px" }}>Destino</th>
+                      <th style={{ textAlign: "left", padding: "4px" }}>Destination</th>
                       <th style={{ textAlign: "left", padding: "4px" }}>Action</th>
                       <th style={{ textAlign: "left", padding: "4px" }}>Reason</th>
                     </tr>
@@ -528,7 +528,7 @@ export default function SdCardPanel({
             </details>
           )}
             <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>
-              Destination existence (✓/✕) is verified on disk en el momento de sincronizar. If a file does not exist on the SD, it is copied automatically.
+              Destination existence (✓/✕) is verified on disk at sync time. If a file does not exist on the SD, it is copied automatically.
             </p>
           
           {syncResult.warnings && syncResult.warnings.length > 0 && (
