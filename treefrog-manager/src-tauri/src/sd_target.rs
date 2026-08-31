@@ -556,8 +556,12 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
                 }
             }
         }
-        // Count files recursively for existing_count and total_size (read-only)
-        for entry in walkdir::WalkDir::new(&roms_path).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+        // Count files recursively for existing_count and total_size (read-only) - whitelist: only roms/cubegm/bios/lgpt, ignore hidden/.tmp
+        for entry in walkdir::WalkDir::new(&roms_path).follow_links(false).into_iter().filter_entry(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") { return false; }
+            true
+        }).filter_map(|e| e.ok()) {
             if entry.file_type().is_file() && !entry.file_type().is_symlink() {
                 existing_count += 1;
                 if let Ok(m) = entry.metadata() {
@@ -577,7 +581,11 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         if !bios_dirs.contains(&"cubegm/bios".to_string()) {
             bios_dirs.push("cubegm/bios".to_string());
         }
-        for entry in walkdir::WalkDir::new(p.join("cubegm/bios")).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+        for entry in walkdir::WalkDir::new(p.join("cubegm/bios")).follow_links(false).into_iter().filter_entry(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") { return false; }
+            true
+        }).filter_map(|e| e.ok()) {
             if entry.file_type().is_file() {
                 existing_count += 1;
                 if let Ok(m) = entry.metadata() { total_size += m.len(); }
@@ -594,7 +602,11 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         if p.join("lgpt/samples").exists() { lgpt_dirs.push("lgpt/samples".to_string()); }
         if p.join("lgpt/projects").exists() { lgpt_dirs.push("lgpt/projects".to_string()); }
         if p.join("lgpt").exists() && lgpt_dirs.is_empty() { lgpt_dirs.push("lgpt".to_string()); }
-        for entry in walkdir::WalkDir::new(p.join("lgpt")).follow_links(false).into_iter().filter_map(|e| e.ok()) {
+        for entry in walkdir::WalkDir::new(p.join("lgpt")).follow_links(false).into_iter().filter_entry(|e| {
+            let name = e.file_name().to_string_lossy().to_lowercase();
+            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") { return false; }
+            true
+        }).filter_map(|e| e.ok()) {
             if entry.file_type().is_file() {
                 existing_count += 1;
                 if let Ok(m) = entry.metadata() { total_size += m.len(); }

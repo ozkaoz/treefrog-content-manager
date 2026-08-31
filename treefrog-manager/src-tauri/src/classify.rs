@@ -126,13 +126,18 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     }
     let video_exts = [".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts", ".webm"];
     if video_exts.contains(&ext.as_str()) {
-        return Classification {
-            kind: Kind::Video,
-            system_id: None,
-            destination: "roms/videos".into(),
-            archive_valid: false,
-            multi_file: false,
-        };
+        let lower_path_v = path.to_string_lossy().to_lowercase().replace('\\', "/");
+        // Only classify as Video if inside roms/videos/ (TreeFrogUI stock has 1 video there, not elsewhere)
+        if lower_path_v.contains("roms/videos/") || lower_path_v.contains("/videos/") {
+            return Classification {
+                kind: Kind::Video,
+                system_id: None,
+                destination: "roms/videos".into(),
+                archive_valid: false,
+                multi_file: false,
+            };
+        }
+        // Fall through to Unknown for videos outside roms/videos/ (will go to roms/UNKNOWN)
     }
     let image_exts = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif", ".tga", ".ico"];
     if image_exts.contains(&ext.as_str()) {
