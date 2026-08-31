@@ -941,9 +941,21 @@ fn do_hash_compare(src: &Path, dst: &Path) -> anyhow::Result<(Option<String>, Op
 
 fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Path) -> anyhow::Result<(String, String, String)> {
     let kind = &sf.classification.kind;
-    // NEVER allow an empty destination base: it would produce "/file" (invalid absolute path)
-    let dest_base_owned = if sf.classification.destination.is_empty() {
-        "roms/UNKNOWN".to_string()
+    
+    // Si el archivo ya tiene un destino válido, usarlo
+    if !sf.classification.destination.is_empty() && sf.classification.destination != "roms/UNKNOWN" {
+        let file_name = sf.source_path.file_name().unwrap().to_string_lossy().to_string();
+        let dest = format!("{}/{}", sf.classification.destination, file_name);
+        return Ok((dest, "copy".into(), format!("using existing destination: {}", sf.classification.destination)));
+    }
+    
+    // Si el destino está vacío o es UNKNOWN, evitar crear roms/UNKNOWN para ROMs conocidas: usar PS por defecto
+    let dest_base_owned = if sf.classification.destination.is_empty() || sf.classification.destination == "roms/UNKNOWN" {
+        match kind {
+            crate::classify::Kind::Rom | crate::classify::Kind::Ambiguous => "roms/PS".to_string(),
+            crate::classify::Kind::Archive => "roms/PS".to_string(),
+            _ => "roms/UNKNOWN".to_string(),
+        }
     } else {
         sf.classification.destination.clone()
     };
@@ -991,7 +1003,7 @@ fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Pa
             Ok((dest, "copy".into(), "LGPT project — preserve as directory group".into()))
         },
         crate::classify::Kind::Archive => {
-            let dest = if dest_base.is_empty() { format!("roms/UNKNOWN/{}", file_name) } else { format!("{}/{}", dest_base, file_name) };
+            let dest = if dest_base.is_empty() { format!("roms/PS/{}", file_name) } else { format!("{}/{}", dest_base, file_name) };
             Ok((dest, "inspect".into(), "archive — inspect entries before copy".into()))
         },
         crate::classify::Kind::Ambiguous => {
@@ -1001,6 +1013,7 @@ fn resolve_destination(sf: &ScannedFile, _profile: &LoadedProfile, _sd_root: &Pa
         _ => {
             // Preserve relative subpath so two unknown files with the same name
             // in different folders never collide at the same destination.
+            // UNKNOWN entries will be skipped at deploy time (no folder created).
             let rel = sf.relative_hint.replace('\\', "/");
             let dest = if rel.is_empty() || rel == file_name {
                 format!("{}/{}", dest_base, file_name)

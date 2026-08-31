@@ -139,6 +139,13 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
             entry.reason
         );
         let dest_rel = &entry.destination;
+        // Skip UNKNOWN destinations (no file should ever be written to roms/UNKNOWN)
+        if dest_rel.contains("roms/UNKNOWN") {
+            tracing::warn!("Skipping file with UNKNOWN destination: {}", entry.source);
+            warnings.push(format!("Archivo omitido por destino desconocido: {}", entry.source));
+            skipped += 1;
+            continue;
+        }
         // Validate (for relative dest)
         let dest_for_validation = if dest_rel.contains(':') || dest_rel.starts_with('/') || dest_rel.starts_with('\\') {
             // If it's an absolute Windows path, extract the file name for validation

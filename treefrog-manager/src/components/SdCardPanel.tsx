@@ -130,6 +130,13 @@ export default function SdCardPanel({
     return () => { unlisten.then(f => f()); };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      setAnalysis(null);
+      setSelectedRoms(new Set());
+    };
+  }, []);
+
   async function handleAnalyze(p?: string) {
     const target = p ?? sdPath;
     if (!target) {

@@ -35,7 +35,47 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         return Classification { kind: Kind::Bios, system_id: None, destination: "cubegm/bios".into(), archive_valid: false, multi_file: false, possible_destinations: None };
     }
     if lower_path.contains("/frogui/") || lower_path.contains("/cubegm/cores/") {
-        return Classification { kind: Kind::Unknown, system_id: None, destination: "roms/UNKNOWN".into(), archive_valid: false, multi_file: false, possible_destinations: None };
+        return Classification { kind: Kind::Unknown, system_id: None, destination: "".into(), archive_valid: false, multi_file: false, possible_destinations: None };
+    }
+
+    // .nes SIEMPRE a FC (fceumm) — antes que cualquier otra lógica de ROM
+    if ext == ".nes" {
+        return Classification {
+            kind: Kind::Rom,
+            system_id: Some("nes_fceumm".into()),
+            destination: "roms/FC".into(),
+            archive_valid: false,
+            multi_file: false,
+            possible_destinations: None,
+        };
+    }
+
+    // .cue/.bin con contexto de carpeta padre — no UNKNOWN, default PS
+    if ext == ".cue" || ext == ".bin" {
+        if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+            if let Some(sys_id) = profile.alias_to_system.get(&parent_name) {
+                let sys = profile.systems.iter().find(|s| &s.id == sys_id);
+                let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+                return Classification {
+                    kind: Kind::Rom,
+                    system_id: Some(sys_id.clone()),
+                    destination: folder,
+                    archive_valid: false,
+                    multi_file: true,
+                    possible_destinations: None,
+                };
+            }
+        }
+        let sys = profile.systems.iter().find(|s| s.id == "ps_psx");
+        let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+        return Classification {
+            kind: Kind::Rom,
+            system_id: Some("ps_psx".into()),
+            destination: folder,
+            archive_valid: false,
+            multi_file: true,
+            possible_destinations: None,
+        };
     }
 
     // Archives recognized first — but we still peek inside later via archive.rs
@@ -295,11 +335,11 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         }
     }
 
-    // Fallback: unknown -> let user decide, but we still propose roms/UNKNOWN for dry-run visibility
+    // Fallback: unknown -> no destination (planner will skip, evita crear roms/UNKNOWN)
     Classification {
         kind: Kind::Unknown,
         system_id: None,
-        destination: "roms/UNKNOWN".into(),
+        destination: "".into(),
         archive_valid: false,
         multi_file: false,
         possible_destinations: None,

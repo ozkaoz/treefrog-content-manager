@@ -143,6 +143,32 @@ export default function App() {
     return cleanup;
   }, []);
 
+  useEffect(() => {
+    // Limpiar cualquier estado persistente
+    localStorage.clear();
+    sessionStorage.clear();
+    
+    // Llamar al backend para resetear estado
+    invoke('reset_app_state').catch(console.error);
+    
+    // Resetear estado local
+    setSdPath('');
+    setSdAnalysis(null);
+    setGamesSource('');
+    setMusicSource('');
+    setVideosSource('');
+    setBiosSource('');
+    setLgptSamplesSource('');
+    setLgptProjectsSource('');
+    setGamesPlan(null);
+    setMusicPlan(null);
+    setVideosPlan(null);
+    setBiosPlan(null);
+    setLgptPlan(null);
+    setError('');
+    setSyncResult(null);
+  }, []);
+
   // Auto-detect SD on mount + polling for arrival/removal (Rufus-like, no A-Z assumption)
   useEffect(() => {
     let interval: number | null = null;

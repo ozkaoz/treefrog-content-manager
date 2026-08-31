@@ -13,9 +13,11 @@ pub mod video;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 use tauri::Emitter;
 static ANALYZE_CACHE: Mutex<Option<(String, Instant, serde_json::Value)>> = Mutex::new(None);
+static APP_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
 fn analyze_target_cached(path: &str) -> Result<serde_json::Value, String> {
     if let Ok(g) = ANALYZE_CACHE.lock() {
@@ -36,6 +38,25 @@ fn cleanup_state() {
     // Clear any on-disk state that might persist between sessions (e.g., temp files, stale DB)
     // For now, just clear the cache; DB is not used for transferred files persistence
     // If a SQLite DB exists at the default location, we could delete it here, but it's not currently used for sync state
+}
+
+pub fn reset_all_state() {
+    tracing::info!("Resetting all application state...");
+    
+    // Limpiar caché de análisis
+    if let Ok(mut cache) = ANALYZE_CACHE.lock() {
+        *cache = None;
+    }
+    
+    APP_INITIALIZED.store(true, Ordering::SeqCst);
+    
+    tracing::info!("Application state reset complete");
+}
+
+#[tauri::command]
+async fn reset_app_state() -> Result<(), String> {
+    reset_all_state();
+    Ok(())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -98,7 +119,9 @@ pub struct Plan {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    cleanup_state();
+    // Resetear estado al iniciar
+    reset_all_state();
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -117,7 +140,8 @@ pub fn run() {
             lgpt_scan_projects,
             build_info,
             clear_cache,
-            delete_roms_from_sd
+            delete_roms_from_sd,
+            reset_app_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -418,7 +442,23 @@ async fn delete_roms_from_sd(
 ) -> Result<DeleteResult, String> {
     use std::path::Path;
     let sd = Path::new(&sd_path);
+    if !sd.exists() {
+        return Err(format!("SD path no existe: {}", sd_path));
+    }
+    let target = sd_target::analyze_target(&sd_path).map_err(|e| e.to_string())?;
+    if !target.is_treefrog {
+        return Err(format!("No es una SD TreeFrog válida (status: {}): {}", target.status, sd_path));
+    }
     let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
+
+    const STOCK_BIOS_FILES: &[&str] = &[
+        "scph1001.bin", "scph5501.bin", "scph5502.bin",
+        "gba_bios.bin",
+        "o2rom.bin",
+        "neogeo.zip",
+        "disksys.rom",
+        "bios_cd_u.bin", "bios_cd_e.bin", "bios_cd_j.bin",
+    ];
     
     let mut valid_extensions: std::collections::HashSet<String> = std::collections::HashSet::new();
     
@@ -442,6 +482,12 @@ async fn delete_roms_from_sd(
             if dir_path.exists() {
                 for entry in walkdir::WalkDir::new(&dir_path).into_iter().filter_map(|e| e.ok()) {
                     if entry.file_type().is_file() {
+                        let file_name = entry.file_name().to_string_lossy().to_lowercase();
+                        let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
+                        if is_stock_bios {
+                            tracing::info!("Preservado (BIOS stock): {}", entry.path().display());
+                            continue;
+                        }
                         let ext = entry.path()
                             .extension()
                             .and_then(|e| e.to_str())
@@ -467,6 +513,12 @@ async fn delete_roms_from_sd(
                 continue;
             }
             if file_path.is_file() {
+                let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+                let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
+                if is_stock_bios {
+                    tracing::info!("Preservado (BIOS stock): {}", file_path.display());
+                    continue;
+                }
                 let ext = file_path
                     .extension()
                     .and_then(|e| e.to_str())
@@ -488,6 +540,12 @@ async fn delete_roms_from_sd(
             } else if file_path.is_dir() {
                 for entry in walkdir::WalkDir::new(&file_path).into_iter().filter_map(|e| e.ok()) {
                     if entry.file_type().is_file() {
+                        let file_name = entry.file_name().to_string_lossy().to_lowercase();
+                        let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
+                        if is_stock_bios {
+                            tracing::info!("Preservado (BIOS stock): {}", entry.path().display());
+                            continue;
+                        }
                         let ext = entry.path()
                             .extension()
                             .and_then(|e| e.to_str())
