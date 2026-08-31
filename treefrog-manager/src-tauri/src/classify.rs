@@ -27,9 +27,12 @@ pub struct Classification {
 pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     let ext = path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
     let lower_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
-    // Defensa en profundidad: ignorar archivos del sistema que no son contenido de usuario
-    let lower_path = path.to_string_lossy().to_lowercase();
-    if (lower_path.contains("/cubegm/") && !lower_path.contains("/cubegm/bios/")) || lower_path.contains("/frogui/") {
+    let lower_path = path.to_string_lossy().to_lowercase().replace('\\', "/");
+    // Prioridad absoluta de BIOS: todo dentro de cubegm/bios es BIOS, sin importar extensión
+    if lower_path.contains("/cubegm/bios/") {
+        return Classification { kind: Kind::Bios, system_id: None, destination: "cubegm/bios".into(), archive_valid: false, multi_file: false };
+    }
+    if lower_path.contains("/frogui/") || lower_path.contains("/cubegm/cores/") {
         return Classification { kind: Kind::Unknown, system_id: None, destination: "roms/UNKNOWN".into(), archive_valid: false, multi_file: false };
     }
 
@@ -231,6 +234,17 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
                 return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
             }
+        }
+    }
+
+    // Clasificación Contextual (Context-Aware): si la carpeta padre coincide con un alias, usar ese sistema
+    if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+        if let Some(sys_id) = profile.alias_to_system.get(&parent_name) {
+            let sys = profile.systems.iter().find(|s| &s.id == sys_id);
+            let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/UNKNOWN".into());
+            let multi = sys.and_then(|s| s.multi_file).unwrap_or(false);
+            let archive_valid = sys.and_then(|s| s.archive_payload_valid.as_ref()).map(|v| v.iter().any(|e| e.to_lowercase()==ext)).unwrap_or(false);
+            return Classification { kind: Kind::Rom, system_id: Some(sys_id.clone()), destination: folder, archive_valid, multi_file: multi };
         }
     }
 

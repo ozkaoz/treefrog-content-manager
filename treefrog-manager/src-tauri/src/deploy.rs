@@ -61,6 +61,11 @@ fn safe_copy_file(src: &Path, dest: &Path) -> anyhow::Result<()> {
     let tmp_name = format!(".treefrog_staging_{}_{}_{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), dest.file_name().unwrap_or_default().to_string_lossy());
     let tmp_path = parent.join(tmp_name);
     std::fs::copy(src, &tmp_path)?;
+    // Integrity check: temp file size must match source exactly
+    if std::fs::metadata(&tmp_path)?.len() != std::fs::metadata(src)?.len() {
+        let _ = std::fs::remove_file(&tmp_path);
+        anyhow::bail!("copy verification failed: size mismatch for {} -> {}", src.display(), dest.display());
+    }
     // On Windows FAT32/exFAT, rename is atomic if same directory, but not across volumes
     // Since tmp is in same parent as dest, rename should be atomic
     match std::fs::rename(&tmp_path, dest) {
