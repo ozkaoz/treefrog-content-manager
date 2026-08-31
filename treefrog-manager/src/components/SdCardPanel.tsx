@@ -195,7 +195,7 @@ export default function SdCardPanel({
   };
 
   const handleDeleteAll = async () => {
-    if (!confirm('¿Eliminar TODAS las ROMs de la SD? Esta acción no se puede deshacer.')) {
+    if (!confirm('¿Eliminar todas las ROMs, música, videos y BIOS del usuario? Los archivos de documentación y assets de TreeFrogUI serán preservados.')) {
       return;
     }
     
