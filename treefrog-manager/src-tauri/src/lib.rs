@@ -364,38 +364,72 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
 
     let force = force.unwrap_or(false);
 
-    // HARD GUARD: never write to a non-removable drive unless the user explicitly forces it
-    // (some USB card readers report as fixed; force covers that case).
-    if target.volume.removable != Some(true) && !force {
-        return Err(format!(
-            "REFUSADO: {} no es una unidad removible (SD/USB). Conecta la SD y selecciónala en Overview. Activa 'Forzar copia' en SD Card solo si tu lector reporta la SD como unidad fija.",
-            sd_path
-        ));
-    }
-
-    // Handle source_path is None -> only BIOS
+    // Handle BIOS-only FIRST (before removable check - BIOS can go to any writable target)
     if source_path.is_none() {
         if let Some(bios) = &bios_entries {
             if bios.is_empty() {
                 return Err("No files to sync".to_string());
             }
+            
+            if target.volume.removable != Some(true) && !force {
+                return Err(format!(
+                    "REFUSED: {} is not a removable drive. Connect the SD and select it in Overview. Enable 'Force copy' in SD Card only if your reader reports the SD as a fixed drive.",
+                    sd_path
+                ));
+            }
+            
             let mut deployed = 0usize;
+            let mut skipped = 0usize;
             let mut failed = 0usize;
             let mut errors = Vec::new();
+            let mut warnings = Vec::new();
             let total = bios.len();
+            
             for (idx, entry) in bios.iter().enumerate() {
                 let dest_abs = std::path::Path::new(&sd_path).join(&entry.destination);
-                let filename_lower = dest_abs.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
-                const STOCK_BIOS: &[&str] = &["scph1001.bin","scph5501.bin","scph5502.bin","gba_bios.bin","o2rom.bin","neogeo.zip","disksys.rom","bios_cd_u.bin","bios_cd_e.bin","bios_cd_j.bin"];
-                if STOCK_BIOS.contains(&filename_lower.as_str()) {
-                    tracing::info!("Skipping stock BIOS overwrite: {}", dest_abs.display());
+                let filename_lower = dest_abs.file_name()
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                    .unwrap_or_default();
+                
+                const STOCK_BIOS: &[&str] = &[
+                    "scph1001.bin", "scph5501.bin", "scph5502.bin",
+                    "gba_bios.bin", "o2rom.bin", "neogeo.zip",
+                    "disksys.rom", "bios_cd_u.bin", "bios_cd_e.bin", "bios_cd_j.bin"
+                ];
+                
+                let already_exists = dest_abs.exists();
+                let is_stock_bios = STOCK_BIOS.contains(&filename_lower.as_str());
+                
+                if already_exists && is_stock_bios {
+                    tracing::info!("Skipping stock BIOS overwrite (already exists): {}", dest_abs.display());
+                    skipped += 1;
+                    warnings.push(format!(
+                        "Skipped {} - stock BIOS already exists on SD",
+                        entry.source.split('/').last().unwrap_or(&entry.source)
+                    ));
                     continue;
                 }
-                let _ = std::fs::create_dir_all(dest_abs.parent().unwrap_or(std::path::Path::new(&sd_path)));
+                
+                let _ = std::fs::create_dir_all(
+                    dest_abs.parent().unwrap_or(std::path::Path::new(&sd_path))
+                );
+                
                 match std::fs::copy(std::path::Path::new(&entry.source), &dest_abs) {
-                    Ok(_) => { deployed += 1; tracing::info!("BIOS copied: {} -> {}", entry.source, dest_abs.display()); }
-                    Err(e) => { failed += 1; errors.push(format!("BIOS {} -> {}: {}", entry.source, dest_abs.display(), e)); }
+                    Ok(_) => {
+                        deployed += 1;
+                        tracing::info!("BIOS copied: {} -> {}", entry.source, dest_abs.display());
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        errors.push(format!(
+                            "BIOS {} -> {}: {}",
+                            entry.source,
+                            dest_abs.display(),
+                            e
+                        ));
+                    }
                 }
+                
                 let _ = app.emit("deploy-progress", serde_json::json!({
                     "current": idx + 1,
                     "total": total,
@@ -405,23 +439,33 @@ async fn deploy_to_sd(app: tauri::AppHandle, sd_path: String, force: Option<bool
                     "isDeleting": false
                 }));
             }
+            
             return Ok(serde_json::json!({
                 "success": failed == 0,
                 "deployed": deployed,
-                "skipped": 0,
+                "skipped": skipped,
                 "failed": failed,
                 "errors": errors,
-                "warnings": Vec::<String>::new(),
+                "warnings": warnings,
                 "breakdown": serde_json::Value::Null,
                 "target": serde_json::to_value(&target).unwrap(),
                 "space": serde_json::json!({"status": "ok"}),
                 "plan": serde_json::json!({"entries": [], "summary": {}}),
                 "bios_deployed": deployed,
+                "bios_skipped": skipped,
                 "bios_failed": failed
             }));
         }
         return Err("No files to sync".to_string());
     }
+    
+    if target.volume.removable != Some(true) && !force {
+        return Err(format!(
+            "REFUSED: {} is not a removable drive. Connect the SD and select it in Overview. Enable 'Force copy' in SD Card only if your reader reports the SD as a fixed drive.",
+            sd_path
+        ));
+    }
+    
     let source_path_str = source_path.unwrap();
 
     // BIOS: copy directly without planner (triple guard for cubegm/bios already in delete, here for deploy)
