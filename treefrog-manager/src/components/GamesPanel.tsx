@@ -189,7 +189,7 @@ export default function GamesPanel({
     <div className="card">
       <h3>Games — ROM library (profile-driven)</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        Manage ROMs by system. Cada carpeta bajo <code>roms/</code> selecciona el core (ej. <code>GBA</code> para GBA, <code>PS</code> para PlayStation). Preserve multi-file logical units (CUE/BIN) y respeta <code>archive_policy.json</code> (arcade <code>cps1/neogeo/m2k</code> como <code>payload</code>, no extraído). Duplicates by <code>SHA-256</code>, no por nombre.
+        Manage ROMs by system. Each folder under <code>roms/</code> selects the core (e.g. <code>GBA</code> for GBA, <code>PS</code> for PlayStation). Preserve multi-file logical units (CUE/BIN) and respect <code>archive_policy.json</code> (arcade <code>cps1/neogeo/m2k</code> as <code>payload</code>, not extracted). Duplicates by <code>SHA-256</code>, not by name.
       </p>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
@@ -200,7 +200,7 @@ export default function GamesPanel({
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy a la carpeta correcta según extensión (perfil TreeFrogUI).</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to the correct folder according to extension (TreeFrogUI profile).</div>
       </div>
 
       <div className="row">
@@ -209,13 +209,13 @@ export default function GamesPanel({
         </button>
         <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → Music
+          Skip → Music
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
-          Continuar a Music →
+          Continue to Music →
         </button>
       </div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza <strong>recursivamente</strong> subcarpetas (ej. <code>{source || "D:\\ROMs"}\\GBA\game.gba</code> y subcarpetas). Omitir si no tienes Games.</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze <strong>recursively</strong> subfolders (e.g. <code>{source || "D:\\ROMs"}\\GBA\game.gba</code> and subfolders). Skip if you don't have Games.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 

@@ -141,7 +141,7 @@ export default function VideosPanel({
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy a <code>roms/videos/</code> según extensión.</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to <code>roms/videos/</code> according to extension.</div>
       </div>
 
       <div className="row">
@@ -150,13 +150,13 @@ export default function VideosPanel({
         </button>
         <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → BIOS
+          Skip → BIOS
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
-          Continuar a BIOS →
+          Continue to BIOS →
         </button>
       </div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze recursively; the app will automatically copy a <code>roms/videos/</code> según extensión, with conversion if necessary.</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze recursively; the app will automatically copy to <code>roms/videos/</code> according to extension, with conversion if necessary.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
@@ -237,7 +237,7 @@ export default function VideosPanel({
           </table>
           {displayFiltered.length === 0 && <EmptyState kind="empty" title="No Videos found" description="No video files (MP4, MKV, AVI, etc.) matched in the selected source. Check media.json and video_presets.json." />}
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-            Conversion: staging en <code>temp</code>, re-probe, solo si válido se copia a SD. Original intact. Preset conservador <code>PROVISIONAL_UNVALIDATED</code> until physical validation R36SX.
+            Conversion: staging in <code>temp</code>, re-probe, only if valid is copied to SD. Original intact. Conservative preset <code>PROVISIONAL_UNVALIDATED</code> until physical validation R36SX.
           </p>
         </>
       )}

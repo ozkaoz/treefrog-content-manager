@@ -147,7 +147,7 @@ export default function MusicPanel({
           </div>
           <button onClick={handlePickSource}>Browse</button>
         </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy a <code>roms/music/</code> según extensión.</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to <code>roms/music/</code> according to extension.</div>
       </div>
 
       <div className="row">
@@ -156,13 +156,13 @@ export default function MusicPanel({
         </button>
         <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → Videos
+          Skip → Videos
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
-          Continuar a Videos →
+          Continue to Videos →
         </button>
       </div>
-      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analiza recursivamente subcarpetas; cada subcarpeta se preserva como playlist en <code>roms/music/</code>.</div>
+      <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze recursively; each subfolder is preserved as a playlist in <code>roms/music/</code>.</div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 

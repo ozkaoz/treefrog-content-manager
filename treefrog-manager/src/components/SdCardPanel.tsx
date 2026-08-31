@@ -286,7 +286,7 @@ export default function SdCardPanel({
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
           <span>SD seleccionada (global)</span>
-          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— ya elegida en Overview, no se repite aquí</span>
+          <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— already selected in Overview, not repeated here</span>
         </div>
         <div
           style={{
@@ -302,22 +302,22 @@ export default function SdCardPanel({
             fontWeight: sdPath ? 600 : 400,
           }}
         >
-          {sdPath ? `${sdPath} — ${analysis?.label || "TreeFrogUI"} ✓` : "No SD selected — go to Overview para detección automática"}
+          {sdPath ? `${sdPath} — ${analysis?.label || "TreeFrogUI"} ✓` : "No SD selected — go to Overview for automatic detection"}
         </div>
 
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
-          La SD seleccionada en Overview se muestra aquí. El análisis ya se realizó. Solo puedes ejecutar la sincronización.
+          The SD selected in Overview is shown here. Analysis already done. You can only run synchronization.
         </div>
 
       </div>
 
       {error && (
         <div className="status-error" style={{ fontSize: 12, marginBottom: 8, padding: 10, border: "2px solid var(--danger)", background: "var(--danger-bg)", borderRadius: 6 }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Error de selección de SD</div>
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ SD Selection Error</div>
           <div>{error}</div>
           {error.includes("You selected the 'roms'") && (
             <div style={{ marginTop: 8, fontSize: 11, color: "var(--text)" }}>
-              <strong>Solution:</strong> Select the <strong>root</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>. La app creará automáticamente <code>roms/SYSTEM/</code>.
+              <strong>Solution:</strong> Select the <strong>root</strong> of the SD card (e.g. <code>E:\</code>) instead of the subfolder <code>roms</code>. The app will automatically create <code>roms/SYSTEM/</code>.
             </div>
           )}
         </div>
@@ -381,7 +381,7 @@ export default function SdCardPanel({
           {analysis.folder_breakdown && Object.keys(analysis.folder_breakdown).length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--surface)", gridColumn: "span 2", marginTop: 12 }}>
               <details open>
-                <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Folder breakdown — {Object.keys(analysis.folder_breakdown).length} carpetas</summary>
+                <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 13 }}>Folder breakdown — {Object.keys(analysis.folder_breakdown).length} folders</summary>
                 <div style={{ marginTop: 8, maxHeight: 300, overflowY: "auto" }}>
                   <table style={{ width: "100%", fontSize: 11 }}>
                     <thead><tr><th style={{ textAlign: "left", padding: "4px" }}>Folder</th><th style={{ textAlign: "right", padding: "4px" }}>Files</th><th style={{ textAlign: "left", padding: "4px" }}>Type</th></tr></thead>

@@ -255,10 +255,10 @@ export default function LgptManager({
           Clear
         </button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → SD Card
+          Skip → SD Card
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
-          Continuar a SD Card →
+          Continue to SD Card →
         </button>
       </div>
 
@@ -357,10 +357,10 @@ export default function LgptManager({
 
       <div className="row" style={{ marginTop: 16 }}>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → SD Card
+          Skip → SD Card
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!samplesResult && !projectsResult}>
-          Continuar a SD Card →
+          Continue to SD Card →
         </button>
       </div>
     </div>

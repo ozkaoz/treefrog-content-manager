@@ -245,10 +245,10 @@ export default function BiosManager({
           Clear
         </button>
         <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
-          Omitir → LGPT
+          Skip → LGPT
         </button>
         <button className="primary" onClick={() => onNext?.()} disabled={!biosSource && !results}>
-          Continuar a LGPT →
+          Continue to LGPT →
         </button>
       </div>
 

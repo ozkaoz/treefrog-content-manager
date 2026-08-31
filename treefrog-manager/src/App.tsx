@@ -303,7 +303,7 @@ export default function App() {
 
   async function handleAnalyze() {
     if (!sdPath) {
-      setError("Selecciona una SD primero (SD Card)");
+      setError("Select an SD first (SD Card)");
       return;
     }
     setLoading(true);
@@ -314,7 +314,7 @@ export default function App() {
       setSdAnalysis(target);
       
       // Do not generate plan here, se construye progresivamente en cada panel
-      // globalPlan and globalSpace are calculated vía useMemo
+      // globalPlan and globalSpace are calculated via useMemo
     } catch (e) {
       setError(String(e));
     } finally {
@@ -572,9 +572,9 @@ export default function App() {
             <div className="status-error" style={{ fontSize: 12, marginBottom: 8, padding: 10, border: "2px solid var(--danger)", background: "var(--danger-bg)", borderRadius: 6 }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Error</div>
               <div>{error}</div>
-              {error.includes("You selected la carpeta 'roms'") && (
+              {error.includes("You selected the 'roms' folder") && (
                 <div style={{ marginTop: 8, fontSize: 11, color: "var(--text)" }}>
-                  <strong>Solution:</strong> Select the <strong>raíz</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>.
+                  <strong>Solution:</strong> Select the <strong>root</strong> of the SD card (e.g. <code>E:\</code>) instead of the <code>roms</code> subfolder.
                 </div>
               )}
             </div>
@@ -589,13 +589,13 @@ export default function App() {
                 TRANSFER FILES →
               </button>
             ) : (
-              <button disabled title="Primero Analizar la SD">TRANSFER FILES</button>
+              <button disabled title="First Analyze the SD">TRANSFER FILES</button>
             )}
             <button className="primary" onClick={() => handleSync()} disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading} style={{ display: "none" }}>
-              SINCRONIZAR
+              SYNC
             </button>
           </div>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flow: <code>ANALYZE</code> (real SD state) → <code>TRANSFER FILES</code> (Games → Music → Videos → BIOS → LGPT → SD Card) → <code>Sync to SD</code> en SD Card. The app verifies la extensión y copia automáticamente a la carpeta correcta (perfil TreeFrogUI, no eliges carpeta en SD). Análisis recursivo de subcarpetas.</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flow: <code>ANALYZE</code> (real SD state) → <code>TRANSFER FILES</code> (Games → Music → Videos → BIOS → LGPT → SD Card) → <code>Sync to SD</code> in SD Card. The app verifies the extension and automatically copies to the correct folder (TreeFrogUI profile, you don't choose the folder on SD). Recursive analysis of subfolders.</p>
         </div>
       </div>
       <div style={{ display: activeTab === "games" ? "block" : "none" }}>

@@ -42,7 +42,7 @@ export default function SettingsPanel() {
     <div className="card">
       <h3>Settings</h3>
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-        Configuración global de TreeFrog Content Manager. Todo es perfil-impulsado; no hay forks por dispositivo.
+        Global configuration of TreeFrog Content Manager. Everything is profile-driven; no device forks.
       </p>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -72,7 +72,7 @@ export default function SettingsPanel() {
               <span style={{ padding: "4px 8px", borderRadius: 4, background: "var(--success)", color: "white" }}>Success</span>
               <span style={{ padding: "4px 8px", borderRadius: 4, background: "var(--danger)", color: "white" }}>Danger</span>
             </div>
-            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>No custom dark/light toggle — la app sigue al sistema automáticamente.</p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>No custom dark/light toggle — the app follows the system automatically.</p>
           </div>
         </div>
 
@@ -81,7 +81,7 @@ export default function SettingsPanel() {
           <div style={{ fontSize: 12 }}>
             <div><strong>Target:</strong> TreeFrogUI SD (exFAT/FAT32, `cubegm/` + `roms/` markers)</div>
             <div><strong>Health:</strong> check <code>mounted && healthy && writable && not read-only</code> before culpar al runtime</div>
-            <div><strong>Safety:</strong> bloquea `../`, absolutas, symlinks, colisiones, límites 1 GiB/1024, sin sobrescritura silenciosa</div>
+            <div><strong>Safety:</strong> blocks `../`, absolute paths, symlinks, collisions, limits 1 GiB/1024, no silent overwrite</div>
             <div><strong>Duplicate:</strong> <code>SHA-256</code> exact, barato primero</div>
           </div>
         </div>
@@ -102,7 +102,7 @@ export default function SettingsPanel() {
       <div style={{ marginTop: 12, padding: 10, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 6 }}>
         <h4 style={{ margin: "0 0 6px 0" }}>Storage & Index</h4>
         <p style={{ fontSize: 12, margin: 0, color: "var(--text-muted)" }}>
-          Índice local vía <code>SQLite</code> (o robust local) para bibliotecas, fingerprints, despliegues, versión de perfil, versión de herramienta, historial de jobs. Nunca se commitean rutas de usuario. Staging + <code>atomic rename</code> para Sync, reanudable si se interrumpe, sin eliminar en Sync normal.
+          Local index via <code>SQLite</code> (o robust local) for libraries, fingerprints, deployments, profile version, tool version, job history. User paths are never committed. Staging + <code>atomic rename</code> for Sync, resumable if interrupted, no deletion in normal Sync.
         </p>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
