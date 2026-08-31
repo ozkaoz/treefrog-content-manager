@@ -65,7 +65,8 @@ export default function SdCardPanel({
   volumes: propVolumes,
   globalPlan,
   globalSpace,
-  onSync
+  onSync,
+  isSyncing
 }: { 
   sdPath: string; 
   onChange: (v: string) => void; 
@@ -73,6 +74,7 @@ export default function SdCardPanel({
   globalPlan?: any;
   globalSpace?: any;
   onSync?: (force: boolean) => Promise<any>;
+  isSyncing?: boolean;
 }) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
   const [space] = useState<SpaceInfo | null>(null);
@@ -227,6 +229,15 @@ export default function SdCardPanel({
         </div>
       )}
 
+      {(loading || isSyncing) && (
+        <div style={{ padding: 12, border: "2px solid var(--accent)", borderRadius: 6, background: "var(--accent)", color: "white", textAlign: "center", fontWeight: 600, fontSize: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <span style={{ display: "inline-block", width: 16, height: 16, border: "2px solid white", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+            Transfiriendo archivos a la SD — por favor espera...
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 400, marginTop: 4 }}>No desconectes la tarjeta SD</div>
+        </div>
+      )}
       <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, cursor: "pointer" }}>
           <input type="checkbox" checked={forceCopy} onChange={(e) => setForceCopy(e.target.checked)} />

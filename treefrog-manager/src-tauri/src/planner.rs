@@ -409,6 +409,12 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     if eff_base.is_empty() {
                         eff_base = "roms/UNKNOWN".to_string();
                     }
+                    // PS1 CUE/BIN heuristic: if eff_base is MD/segacd/UNKNOWN but group contains CUE, default to PS (most common for TreeFrogUI)
+                    if (eff_base == "roms/MD" || eff_base == "roms/segacd" || eff_base == "roms/UNKNOWN") && e.name.to_lowercase().ends_with(".cue") {
+                        if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
+                            eff_base = format!("roms/{}", sys.folder_aliases[0]);
+                        }
+                    }
                     let fname = Path::new(&e.name).file_name().unwrap().to_string_lossy().to_string();
                     let dr = format!("{}/{}", eff_base, fname);
                     group_infos.push((grp.clone(), dr));
@@ -426,6 +432,12 @@ pub fn plan(scanned: Vec<ScannedFile>, sd_root: &str, profile: &LoadedProfile) -
                     }
                     if eff_base.is_empty() {
                         eff_base = "roms/UNKNOWN".to_string();
+                    }
+                    // PS1 CUE/BIN grouped heuristic: default to PS if CUE present and eff_base is generic
+                    if (eff_base == "roms/MD" || eff_base == "roms/segacd" || eff_base == "roms/UNKNOWN") && grp.iter().any(|e| e.name.to_lowercase().ends_with(".cue")) {
+                        if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
+                            eff_base = format!("roms/{}", sys.folder_aliases[0]);
+                        }
                     }
                     let group_name = Path::new(&cue.name).file_stem().unwrap().to_string_lossy().to_string();
                     let dr = format!("{}/{}", eff_base, group_name);

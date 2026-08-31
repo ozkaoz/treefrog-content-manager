@@ -616,6 +616,7 @@ export default function App() {
           volumes={volumes}
           globalPlan={globalPlan}
           globalSpace={globalSpace}
+          isSyncing={loading}
           onSync={async (force) => {
             const result = await handleSync(force);
             setSyncResult(result);

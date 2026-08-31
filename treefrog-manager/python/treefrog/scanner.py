@@ -29,7 +29,7 @@ def scan(source_root: str, profile):
             continue
         # Skip junk/placeholder files that are never content and cause collisions
         fname_lower = p.name.lower()
-        if fname_lower.startswith('.') or fname_lower in ("thumbs.db", "desktop.ini", ".keep", ".gitkeep", ".ds_store"):
+        if fname_lower.startswith('.') or fname_lower in ("thumbs.db", "desktop.ini", ".keep", ".gitkeep", ".ds_store") or fname_lower.endswith(".tmp") or fname_lower.endswith(".temp"):
             continue
         # classify
         c = cl.classify(p, profile)

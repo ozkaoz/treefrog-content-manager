@@ -173,6 +173,62 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         }
     }
 
+    // Special handling for CUE/BIN: disambiguate PS1 vs MD/SegaCD via path/content/size
+    if ext == ".cue" || ext == ".bin" {
+        let lower_path = path.to_string_lossy().to_lowercase();
+        // Heuristic: if path contains PS indicators, force PS
+        let is_ps_hint = lower_path.contains("ps") || lower_path.contains("playstation") || lower_path.contains("psx") || lower_path.contains("ps1");
+        let is_segacd_hint = lower_path.contains("segacd") || lower_path.contains("mega cd") || lower_path.contains("sega cd");
+        if is_ps_hint {
+            if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
+                let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+                return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+            }
+        }
+        if is_segacd_hint {
+            if let Some(sys) = profile.systems.iter().find(|s| s.id == "segacd") {
+                let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/segacd".into());
+                return Classification { kind: Kind::Rom, system_id: Some("segacd".into()), destination: folder, archive_valid: false, multi_file: true };
+            }
+        }
+        // For .cue, check content for PS-specific strings
+        if ext == ".cue" {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let upper = content.to_uppercase();
+                if upper.contains("PLAYSTATION") || upper.contains("PSX") {
+                    if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
+                        let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+                    }
+                }
+            }
+        }
+        // For .bin, large file (>50MB) is likely PS/SegaCD, not MD (MD ROMs are <4MB)
+        if ext == ".bin" {
+            if let Ok(meta) = std::fs::metadata(path) {
+                if meta.len() > 50 * 1024 * 1024 {
+                    // Large BIN -> PS or SegaCD, default to PS (most common for TreeFrogUI)
+                    if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
+                        let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+                    }
+                }
+            }
+        }
+        // Fallback: for CUE/BIN without clear hint, default to PS (most common for TreeFrogUI) if the file is likely PS1
+        // Check if the file's parent folder or the archive's name suggests PS
+        // For now, if the file is .cue and no other system matched, default to PS for CUE, and for .bin check size
+        if ext == ".cue" {
+            // Default CUE to PS if no other clue (PS is more common than SegaCD for TreeFrogUI)
+            if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
+                // Only default to PS if the file is not obviously MD (MD never uses CUE)
+                // MD uses .bin/.md/.smd/.gen, not .cue, so CUE is never MD
+                let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+                return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true };
+            }
+        }
+    }
+
     // ROM by profile: extension maps to system
     if let Some(ids) = profile.ext_to_system.get(&ext) {
         // pick first system for destination; keep system_id

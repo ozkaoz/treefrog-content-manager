@@ -192,3 +192,4 @@ td { background: var(--surface-elevated); }
 .brand-header img { width: 32px; height: 32px; border-radius: 6px; }
 .brand-header h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
 .placeholder { border: 1px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; color: var(--text-muted); background: var(--surface); }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }

@@ -47,6 +47,8 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
             || fname_lower == ".keep"
             || fname_lower == ".gitkeep"
             || fname_lower == ".ds_store"
+            || fname_lower.ends_with(".tmp")
+            || fname_lower.ends_with(".temp")
         {
             continue;
         }
