@@ -544,6 +544,21 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         .map(|prof| prof.systems.iter().flat_map(|s| s.folder_aliases.iter().map(|a| a.to_lowercase())).collect())
         .unwrap_or_default();
     let valid_media_folders = ["music", "videos", "images"];
+    // Build system -> extensions map and media extensions for file filtering
+    let mut system_extensions: std::collections::HashMap<String, std::collections::HashSet<String>> = std::collections::HashMap::new();
+    let valid_media_extensions: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::from([
+        ("music", vec![".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"]),
+        ("videos", vec![".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"]),
+        ("images", vec![".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff"]),
+    ]);
+    if let Ok(prof) = crate::profile::load_profile() {
+        for sys in &prof.systems {
+            let exts: std::collections::HashSet<String> = sys.extensions.iter().map(|e| e.to_lowercase()).collect();
+            for alias in &sys.folder_aliases {
+                system_extensions.insert(alias.to_lowercase(), exts.clone());
+            }
+        }
+    }
 
     // Populate rom_dirs/media_dirs/bios_dirs based on actual dirs (for UI badges), but only those that are valid
     let roms_path = p.join("roms");
@@ -578,7 +593,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         if p.join("lgpt").exists() && lgpt_dirs.is_empty() { lgpt_dirs.push("lgpt".to_string()); }
     }
 
-    // Single walk from SD root with strict whitelist filter (depth-aware)
+    // Single walk from SD root with strict whitelist filter (depth-aware) + extension filtering for files
     for entry in walkdir::WalkDir::new(p).follow_links(false).into_iter().filter_entry(|e| {
         let path = e.path();
         let name = e.file_name().to_string_lossy().to_lowercase();
@@ -601,7 +616,38 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
                 return name == "bios";
             }
         }
-        // 5. Por defecto, permitir si ya pasamos los filtros anteriores
+        // 5. Si es un archivo, validar extensión según la carpeta de sistema/medios
+        if e.file_type().is_file() {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())) {
+                if let Ok(rel_path) = path.strip_prefix(p) {
+                    let components: Vec<String> = rel_path.components().map(|c| c.as_os_str().to_string_lossy().to_lowercase()).collect();
+                    if components.len() >= 2 && components[0] == "roms" {
+                        let folder_name = &components[1];
+                        if let Some(valid_exts) = system_extensions.get(folder_name) {
+                            return valid_exts.contains(&ext);
+                        }
+                        if let Some(valid_exts) = valid_media_extensions.get(folder_name.as_str()) {
+                            return valid_exts.contains(&ext.as_str());
+                        }
+                        // For roms/<system> where system is valid, any file with invalid ext should be filtered
+                        // If folder is a valid system but ext not in its list, filter it
+                        if valid_system_folders.contains(folder_name) || valid_media_folders.contains(&folder_name.as_str()) {
+                            return false;
+                        }
+                    }
+                    if rel_path.to_string_lossy().to_lowercase().contains("cubegm/bios") {
+                        return true;
+                    }
+                    if rel_path.to_string_lossy().to_lowercase().contains("lgpt") {
+                        return true;
+                    }
+                }
+            }
+            // If we can't determine, allow by default (for unknown files, let planner handle)
+            // But for strict filtering, we should be permissive for now
+            return true;
+        }
+        // 6. Por defecto, permitir directorios si ya pasamos los filtros anteriores
         true
     }).filter_map(|e| e.ok()) {
         if entry.file_type().is_file() && !entry.file_type().is_symlink() {
