@@ -145,4 +145,11 @@ export const t = {
   deletionCompleteMsg: "Deletion complete",
   searchFile: "Search file...",
   transferringMsg: "Transferring files to SD — please wait...",
+  updateCheck: "Software Updates",
+  checkForUpdates: "Check for Updates",
+  checking: "Checking...",
+  newVersionAvailable: "New version available!",
+  downloadUpdate: "Download Update",
+  downloading: "Downloading...",
+  upToDate: "You are running the latest version.",
 };

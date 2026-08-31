@@ -10,6 +10,7 @@ import VideosPanel from "./components/VideosPanel";
 import SettingsPanel from "./components/SettingsPanel";
 import BiosManager from "./components/BiosManager";
 import LgptManager from "./components/LgptManager";
+import { UpdateChecker } from "./components/UpdateChecker";
 import { initTheme } from "./services/theme";
 
 type Tab = "overview" | "games" | "music" | "videos" | "bios" | "lgpt" | "sdcard" | "settings" | "about";
@@ -224,11 +225,11 @@ export default function App() {
               const a = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
               if (a.status === "inaccessible" || !a.volume.accessible) {
                 setSdAnalysis({ ...a, status: "inaccessible" } as any);
-                setError(`SD desconectada: ${sdPath} ya no está accesible`);
+                setError(`SD disconnected: ${sdPath} is no longer accessible`);
               }
             } catch {
               setSdAnalysis(null);
-              setError(`SD desconectada: ${sdPath} ya no está accesible`);
+              setError(`SD disconnected: ${sdPath} is no longer accessible`);
             }
           }
         }
@@ -322,9 +323,9 @@ export default function App() {
   }
 
   async function handleSync(force: boolean = false): Promise<any> {
-    if (!sdPath) return { error: "No hay SD seleccionada. Ve a Overview." };
-    if (!globalPlan) return { error: "No hay plan de sincronización. Escanea al menos una carpeta de origen." };
-    if (globalSpace?.status === "insufficient_space") return { error: "Espacio insuficiente en la SD." };
+    if (!sdPath) return { error: "No SD selected. Go to Overview." };
+    if (!globalPlan) return { error: "No plan de sincronización. Scan at least una carpeta de origen." };
+    if (globalSpace?.status === "insufficient_space") return { error: "Insufficient space en la SD." };
 
     setLoading(true);
     setError("");
@@ -339,7 +340,7 @@ export default function App() {
         { src: lgptProjectsSource, plan: lgptPlan },
       ].filter((j, i, arr) => j.src && j.plan && arr.findIndex((x) => x.src === j.src) === i);
 
-      if (jobs.length === 0) return { error: "No hay carpetas de origen escaneadas. Ve a Games/Music/Videos/BIOS/LGPT y pulsa Scan." };
+      if (jobs.length === 0) return { error: "No source folders escaneadas. Go to Games/Music/Videos/BIOS/LGPT y pulsa Scan." };
 
       for (const job of jobs) {
         const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force, selectedFiles: null, userDecisions: systemOverrides })) as any;
@@ -536,17 +537,17 @@ export default function App() {
           <div className="card">
             <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>ESTADO</h4>
             {!sdAnalysis ? (
-              <div style={{ fontSize: 13, color: "var(--warning)" }}>⚠ No hay SD detectada — conecta una SD TreeFrogUI o selecciónala en SD Card.</div>
+              <div style={{ fontSize: 13, color: "var(--warning)" }}>⚠ No SD detected — connect a TreeFrogUI SD or select one in SD Card.</div>
             ) : (estado as any).noSd ? (
-              <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Conecta una SD para ver el estado.</div>
+              <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Connect an SD to see status.</div>
             ) : (
               <div style={{ fontSize: 13, display: "grid", gap: 4 }}>
-                <div>✓ {estado.sync} archivos ya están sincronizados</div>
-                <div>+ {estado.nuevos} archivos nuevos</div>
+                <div>✓ {estado.sync} files already synchronized</div>
+                <div>+ {estado.nuevos} new files</div>
                 {estado.conflictos > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.conflictos} conflictos</div>}
-                {estado.conversion > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.conversion} vídeos necesitan conversión</div>}
-                {estado.biosFaltantes > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.biosFaltantes} BIOS faltantes</div>}
-                {globalPlan && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Plan: {globalPlan.summary.new} nuevos, {globalPlan.summary.unchanged} sin cambios, {globalPlan.summary.duplicate_content} duplicados</div>}
+                {estado.conversion > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.conversion} videos need conversion</div>}
+                {estado.biosFaltantes > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.biosFaltantes} missing BIOS</div>}
+                {globalPlan && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Plan: {globalPlan.summary.new} new, {globalPlan.summary.unchanged} unchanged, {globalPlan.summary.duplicate_content} duplicates</div>}
               </div>
             )}
           </div>
@@ -554,15 +555,15 @@ export default function App() {
           <div className="card">
             <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>ESPACIO</h4>
             {!sdAnalysis ? (
-              <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Sin SD — no hay información de espacio.</div>
+              <div style={{ fontSize: 13, color: "var(--text-muted)" }}>No SD — no space information.</div>
             ) : (
               <>
                 <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px" }}>
                   <span>Necesario:</span><span style={{ textAlign: "right", fontWeight: 600 }}>{globalSpace ? fmtBytes(globalSpace.required_bytes) : sdAnalysis ? "— (analiza primero)" : "—"}</span>
                   <span>Disponible:</span><span style={{ textAlign: "right", fontWeight: 600 }}>{sdAnalysis ? fmtBytes(sdAnalysis.free_bytes) : "—"}</span>
                 </div>
-                {globalSpace?.status === "insufficient_space" && <div className="status-error" style={{ marginTop: 8 }}>Espacio insuficiente: libera espacio o reduce selección.</div>}
-                {globalSpace && globalSpace.status === "ok" && <div style={{ fontSize: 11, color: "var(--success)", marginTop: 4 }}>✓ Espacio suficiente</div>}
+                {globalSpace?.status === "insufficient_space" && <div className="status-error" style={{ marginTop: 8 }}>Insufficient space: free up space or reduce selection.</div>}
+                {globalSpace && globalSpace.status === "ok" && <div style={{ fontSize: 11, color: "var(--success)", marginTop: 4 }}>✓ Enough space</div>}
               </>
             )}
           </div>
@@ -571,9 +572,9 @@ export default function App() {
             <div className="status-error" style={{ fontSize: 12, marginBottom: 8, padding: 10, border: "2px solid var(--danger)", background: "var(--danger-bg)", borderRadius: 6 }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>⚠ Error</div>
               <div>{error}</div>
-              {error.includes("Has seleccionado la carpeta 'roms'") && (
+              {error.includes("You selected la carpeta 'roms'") && (
                 <div style={{ marginTop: 8, fontSize: 11, color: "var(--text)" }}>
-                  <strong>Solución:</strong> Selecciona la <strong>raíz</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>.
+                  <strong>Solution:</strong> Select the <strong>raíz</strong> de la tarjeta SD (ej. <code>E:\</code>) en lugar de la subcarpeta <code>roms</code>.
                 </div>
               )}
             </div>
@@ -581,20 +582,20 @@ export default function App() {
 
           <div className="row" style={{ marginTop: 12 }}>
             <button className="primary" onClick={handleAnalyze} disabled={loading || !sdPath}>
-              {loading ? "Analizando…" : "ANALIZAR"}
+              {loading ? "Analyzing..." : "ANALYZE"}
             </button>
             {sdAnalysis ? (
               <button className="primary" onClick={() => setActiveTab("games")}>
-                TRANSFERIR ARCHIVOS →
+                TRANSFER FILES →
               </button>
             ) : (
-              <button disabled title="Primero Analizar la SD">TRANSFERIR ARCHIVOS</button>
+              <button disabled title="Primero Analizar la SD">TRANSFER FILES</button>
             )}
             <button className="primary" onClick={() => handleSync()} disabled={!globalPlan || globalSpace?.status === "insufficient_space" || loading} style={{ display: "none" }}>
               SINCRONIZAR
             </button>
           </div>
-          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flujo: <code>ANALIZAR</code> (estado real SD) → <code>TRANSFERIR ARCHIVOS</code> (Games → Music → Videos → BIOS → LGPT → SD Card) → <code>Sync to SD</code> en SD Card. La app verifica la extensión y copia automáticamente a la carpeta correcta (perfil TreeFrogUI, no eliges carpeta en SD). Análisis recursivo de subcarpetas.</p>
+          <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>Flow: <code>ANALYZE</code> (real SD state) → <code>TRANSFER FILES</code> (Games → Music → Videos → BIOS → LGPT → SD Card) → <code>Sync to SD</code> en SD Card. The app verifies la extensión y copia automáticamente a la carpeta correcta (perfil TreeFrogUI, no eliges carpeta en SD). Análisis recursivo de subcarpetas.</p>
         </div>
       </div>
       <div style={{ display: activeTab === "games" ? "block" : "none" }}>
@@ -654,7 +655,7 @@ export default function App() {
           }}
         />
       </div>
-      <div style={{ display: activeTab === "settings" ? "block" : "none" }}><SettingsPanel /></div>
+      <div style={{ display: activeTab === "settings" ? "block" : "none" }}><SettingsPanel /><UpdateChecker /></div>
       <div style={{ display: activeTab === "about" ? "block" : "none" }}><About /></div>
     </div>
   );

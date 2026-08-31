@@ -148,7 +148,11 @@ pub fn run() {
             scan_music,
             scan_videos,
             scan_bios_files,
-            list_files_in_folder
+            list_files_in_folder,
+            check_for_updates,
+            download_update,
+            get_temp_path,
+            open_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -723,5 +727,71 @@ async fn list_files_in_folder(sd_path: String, folder_rel: String) -> Result<Vec
     }
     files.sort();
     Ok(files)
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GitHubRelease {
+    pub tag_name: String,
+    pub name: String,
+    pub html_url: String,
+    pub assets: Vec<GitHubAsset>,
+    pub published_at: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct GitHubAsset {
+    pub name: String,
+    pub browser_download_url: String,
+    pub size: u64,
+}
+
+#[tauri::command]
+async fn check_for_updates(current_version: String) -> Result<Option<GitHubRelease>, String> {
+    let client = reqwest::Client::new();
+    let url = "https://api.github.com/repos/ozkaoz/treefrog-content-manager/releases/latest";
+    let response = client
+        .get(url)
+        .header("User-Agent", "TreeFrog-Content-Manager")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch release info: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("GitHub API returned status: {}", response.status()));
+    }
+    let release: GitHubRelease = response.json().await.map_err(|e| format!("Failed to parse release info: {}", e))?;
+    let latest_version = release.tag_name.trim_start_matches('v');
+    let current = current_version.trim_start_matches('v');
+    if latest_version != current {
+        Ok(Some(release))
+    } else {
+        Ok(None)
+    }
+}
+
+#[tauri::command]
+async fn download_update(url: String, save_path: String) -> Result<(), String> {
+    let client = reqwest::Client::new();
+    let response = client.get(&url).send().await.map_err(|e| format!("Failed to download: {}", e))?;
+    if !response.status().is_success() {
+        return Err(format!("Download failed with status: {}", response.status()));
+    }
+    let bytes = response.bytes().await.map_err(|e| format!("Failed to read bytes: {}", e))?;
+    std::fs::write(&save_path, &bytes).map_err(|e| format!("Failed to save file: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_temp_path() -> Result<String, String> {
+    let temp = std::env::temp_dir();
+    Ok(temp.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn open_folder(path: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer").arg(&path).spawn().map_err(|e| format!("Failed to open folder: {}", e))?;
+    }
+    Ok(())
 }
 
