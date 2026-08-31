@@ -699,11 +699,11 @@ export default function App() {
         />
       </div>
       <div style={{ display: activeTab === "music" ? "block" : "none" }}>
-        <MusicPanel visible={activeTab === "music"} 
-          globalSdPath={sdPath} 
-          onSourceChange={setMusicSource} 
+        <MusicPanel 
+          visible={activeTab === "music"}
           onPlanChange={setMusicPlan as any}
-          onNext={() => setActiveTab("videos")} 
+          onNext={() => setActiveTab("videos")}
+          onSkip={() => setActiveTab("videos")}
         />
       </div>
       <div style={{ display: activeTab === "videos" ? "block" : "none" }}>

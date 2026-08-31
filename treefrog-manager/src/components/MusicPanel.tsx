@@ -25,65 +25,78 @@ interface MusicScanResult {
   total_playlists: number;
 }
 
-type PlanEntry = {
-  source: string;
-  destination: string;
-  action: string;
-  reason: string;
-  content_type?: string;
-  size?: number;
-};
-
-type Plan = {
-  summary: { new: number; unchanged: number; duplicate_content: number; conflicts: number; deletions: number; manual_review?: number; unsupported_archive?: number };
-  entries: PlanEntry[];
-  warnings: string[];
-};
-
 export default function MusicPanel({
-  globalSdPath,
-  onSourceChange,
   onPlanChange,
+  visible,
   onNext,
-  visible
+  onSkip,
 }: {
-  globalSdPath: string;
-  onSourceChange?: (v: string) => void;
-  onPlanChange?: (plan: Plan | null) => void;
-  onNext?: () => void;
+  onPlanChange?: (plan: any) => void;
   visible?: boolean;
+  onNext?: () => void;
+  onSkip?: () => void;
 }) {
-  void globalSdPath;
-  void onNext;
   void visible;
   const [musicSource, setMusicSource] = useState('');
   const [scanResult, setScanResult] = useState<MusicScanResult | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTracks, setSelectedTracks] = useState<Set<string>>(new Set());
   const [expandedPlaylists, setExpandedPlaylists] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(false);
-  void loading;
-  void setLoading;
+  const [isScanning, setIsScanning] = useState(false);
+  const [hasScanned, setHasScanned] = useState(false);
   const [error, setError] = useState("");
+  void setError;
 
   const handleBrowse = async () => {
     try {
       const selected = await open({ directory: true });
       if (selected) {
         setMusicSource(selected as string);
-        onSourceChange?.(selected as string);
-        const result = await invoke('scan_music_structured', { path: selected }) as MusicScanResult;
-        setScanResult(result);
-        const allTracks = new Set<string>();
-        result.standalone_tracks.forEach(t => allTracks.add(t.path));
-        result.playlists.forEach(p => p.tracks.forEach(t => allTracks.add(t.path)));
-        setSelectedTracks(allTracks);
-        setExpandedPlaylists(new Set(result.playlists.map(p => p.name)));
       }
     } catch (e) {
-      console.error('Music scan failed:', e);
-      setError(String(e));
+      console.error('Browse failed:', e);
     }
+  };
+
+  const handleScan = async () => {
+    if (!musicSource) {
+      alert(t.selectSourceFolder || 'Please select a source folder first.');
+      return;
+    }
+    setIsScanning(true);
+    try {
+      const result = await invoke('scan_music_structured', { path: musicSource }) as MusicScanResult;
+      setScanResult(result);
+      setHasScanned(true);
+      const allTracks = new Set<string>();
+      result.standalone_tracks.forEach(t => allTracks.add(t.path));
+      result.playlists.forEach(p => p.tracks.forEach(t => allTracks.add(t.path)));
+      setSelectedTracks(allTracks);
+      setExpandedPlaylists(new Set(result.playlists.map(p => p.name)));
+    } catch (e) {
+      console.error('Music scan failed:', e);
+      alert(`Scan failed: ${e}`);
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const handleClear = () => {
+    setMusicSource('');
+    setScanResult(null);
+    setSelectedTracks(new Set());
+    setExpandedPlaylists(new Set());
+    setHasScanned(false);
+    setSearchQuery('');
+    onPlanChange?.(null);
+  };
+
+  const handleSkip = () => {
+    onSkip?.();
+  };
+
+  const handleContinue = () => {
+    onNext?.();
   };
 
   useEffect(() => {
@@ -180,14 +193,114 @@ export default function MusicPanel({
         {t.musicHelp || "Standalone files go to roms/music/. Folders act as playlists in TreeFrogUI."}
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>Music source folder</label>
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: musicSource ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
-            {musicSource || "No folder selected — e.g., D:\\Music"}
-          </div>
-          <button onClick={handleBrowse}>Browse</button>
+      <div style={{ marginBottom: '16px' }}>
+        <label style={{ 
+          display: 'block', 
+          marginBottom: '8px', 
+          color: 'var(--text-primary)',
+          fontWeight: 'bold',
+        }}>
+          Music Source Folder
+        </label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <input
+            type="text"
+            value={musicSource}
+            onChange={(e) => setMusicSource(e.target.value)}
+            placeholder={t.selectSourceFolder || 'Select source folder...'}
+            style={{
+              flex: 1,
+              padding: '10px 14px',
+              borderRadius: '4px',
+              border: '1px solid var(--border-color)',
+              backgroundColor: 'var(--input-bg, transparent)',
+              color: 'var(--text-primary)',
+            }}
+          />
+          <button
+            onClick={handleBrowse}
+            style={{
+              padding: '10px 20px',
+              backgroundColor: 'var(--accent)',
+              color: 'var(--button-text)',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+          >
+            Browse...
+          </button>
         </div>
+      </div>
+
+      <div style={{ 
+        display: 'flex', 
+        gap: '10px', 
+        marginBottom: '16px',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+      }}>
+        <button
+          onClick={handleScan}
+          disabled={!musicSource || isScanning}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: musicSource ? 'var(--accent)' : 'var(--button-disabled-bg)',
+            color: 'var(--button-text)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: musicSource && !isScanning ? 'pointer' : 'not-allowed',
+            fontWeight: 'bold',
+          }}
+        >
+          {isScanning ? 'Scanning...' : 'Scan'}
+        </button>
+
+        <button
+          onClick={handleClear}
+          disabled={isScanning}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: 'var(--button-secondary-bg, #757575)',
+            color: 'var(--button-text)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: isScanning ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Clear
+        </button>
+
+        <div style={{ flex: 1 }} />
+
+        <button
+          onClick={handleSkip}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: 'transparent',
+            color: 'var(--text-secondary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: '4px',
+            cursor: 'pointer',
+          }}
+        >
+          Skip → Videos
+        </button>
+
+        <button
+          onClick={handleContinue}
+          disabled={!hasScanned}
+          style={{
+            padding: '10px 20px',
+            backgroundColor: hasScanned ? 'var(--success, #4CAF50)' : 'var(--button-disabled-bg)',
+            color: 'var(--button-text)',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: hasScanned ? 'pointer' : 'not-allowed',
+          }}
+        >
+          Continue to Videos
+        </button>
       </div>
 
       <div style={{ marginBottom: '10px' }}>
@@ -208,7 +321,6 @@ export default function MusicPanel({
       </div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
-      {loading && <EmptyState kind="loading" title="Scanning Music…" description="Scanning music files..." />}
 
       {scanResult && (
         <>
@@ -350,7 +462,7 @@ export default function MusicPanel({
         </>
       )}
 
-      {!scanResult && !loading && <EmptyState kind="empty" title="No scan yet" description="Select Music source and press Browse. Standalone files and folders will be shown separately." />}
+      {!scanResult && <EmptyState kind="empty" title="No scan yet" description="Select Music source and press Scan. Standalone files and folders will be shown separately." />}
     </div>
   );
 }
