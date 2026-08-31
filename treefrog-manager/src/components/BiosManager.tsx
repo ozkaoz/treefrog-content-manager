@@ -204,7 +204,7 @@ export default function BiosManager({
 
   return (
     <div className="card">
-      <h3>BIOS — TreeFrogUI (profile-driven, sin descargas)</h3>
+      <h3>BIOS — TreeFrogUI (profile-driven, no downloads)</h3>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
         <label style={{ fontSize: 13, fontWeight: 600 }}>BIOS source folder</label>

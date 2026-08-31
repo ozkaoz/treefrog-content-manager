@@ -309,7 +309,7 @@ export default function App() {
     setLoading(true);
     setError("");
     try {
-      // Solo analizar la SD, NO requiere fuentes
+      // Only analyze the SD, no sources required
       const target = (await invoke("analyze_target", { path: sdPath })) as TargetAnalysis;
       setSdAnalysis(target);
       
@@ -449,7 +449,7 @@ export default function App() {
                 {volumes.length > 1 && (
                   <div style={{ marginBottom: 8, padding: 8, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)", maxHeight: 120, overflowY: "auto" }}>
                     <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, color: "var(--text-muted)" }}>
-                      Dispositivos removibles detectados ({volumes.length}):
+                      Removable devices detected ({volumes.length}):
                     </div>
                     {volumes.map((v) => (
                       <label
@@ -509,9 +509,9 @@ export default function App() {
                   <>
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{sdAnalysis.label || "R36SX"} — {sdPath}</div>
                     <div style={{ fontSize: 13, color: sdAnalysis.is_treefrog ? "var(--success)" : "var(--danger)" }}>
-                      {sdAnalysis.is_treefrog ? "✓ TreeFrogUI detectado" : "✕ TreeFrogUI no detectado"}
+                      {sdAnalysis.is_treefrog ? "✓ TreeFrogUI detected" : "✕ TreeFrogUI not detected"}
                     </div>
-                    <div style={{ fontSize: 13, color: "var(--success)" }}>✓ {fmtBytes(sdAnalysis.free_bytes)} disponibles</div>
+                    <div style={{ fontSize: 13, color: "var(--success)" }}>✓ {fmtBytes(sdAnalysis.free_bytes)} available</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
                       {sdAnalysis.filesystem || "—"} • {fmtBytes(sdAnalysis.capacity_bytes)} total • Removible
                     </div>
@@ -521,7 +521,7 @@ export default function App() {
                 )}
               </div>
               <div>
-                <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>CONTENIDO</h4>
+                <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>CONTENT</h4>
                 <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px" }}>
                   <span>Games</span><span style={{ textAlign: "right", fontWeight: 600 }}>{contentCounts.Games}</span>
                   <span>Music</span><span style={{ textAlign: "right", fontWeight: 600 }}>{contentCounts.Music}</span>
@@ -535,7 +535,7 @@ export default function App() {
           </div>
 
           <div className="card">
-            <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>ESTADO</h4>
+            <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>STATUS</h4>
             {!sdAnalysis ? (
               <div style={{ fontSize: 13, color: "var(--warning)" }}>⚠ No SD detected — connect a TreeFrogUI SD or select one in SD Card.</div>
             ) : (estado as any).noSd ? (
@@ -553,14 +553,14 @@ export default function App() {
           </div>
 
           <div className="card">
-            <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>ESPACIO</h4>
+            <h4 style={{ margin: "0 0 8px 0", fontSize: 13, color: "var(--text-muted)" }}>SPACE</h4>
             {!sdAnalysis ? (
               <div style={{ fontSize: 13, color: "var(--text-muted)" }}>No SD — no space information.</div>
             ) : (
               <>
                 <div style={{ fontSize: 13, display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px" }}>
-                  <span>Necesario:</span><span style={{ textAlign: "right", fontWeight: 600 }}>{globalSpace ? fmtBytes(globalSpace.required_bytes) : sdAnalysis ? "— (analiza primero)" : "—"}</span>
-                  <span>Disponible:</span><span style={{ textAlign: "right", fontWeight: 600 }}>{sdAnalysis ? fmtBytes(sdAnalysis.free_bytes) : "—"}</span>
+                  <span>Required:</span><span style={{ textAlign: "right", fontWeight: 600 }}>{globalSpace ? fmtBytes(globalSpace.required_bytes) : sdAnalysis ? "— (analyze first)" : "—"}</span>
+                  <span>Available:</span><span style={{ textAlign: "right", fontWeight: 600 }}>{sdAnalysis ? fmtBytes(sdAnalysis.free_bytes) : "—"}</span>
                 </div>
                 {globalSpace?.status === "insufficient_space" && <div className="status-error" style={{ marginTop: 8 }}>Insufficient space: free up space or reduce selection.</div>}
                 {globalSpace && globalSpace.status === "ok" && <div style={{ fontSize: 11, color: "var(--success)", marginTop: 4 }}>✓ Enough space</div>}

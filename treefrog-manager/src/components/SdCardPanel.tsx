@@ -285,7 +285,7 @@ export default function SdCardPanel({
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
-          <span>SD seleccionada (global)</span>
+          <span>SD selected (global)</span>
           <span style={{ fontSize: 11, color: "var(--text-muted)" }}>— already selected in Overview, not repeated here</span>
         </div>
         <div
@@ -402,7 +402,7 @@ export default function SdCardPanel({
                       })}
                     </tbody>
                   </table>
-                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Folders with [DEMO]/[ASSET]/[SYSTEM] are default TreeFrogUI content. [User] are your personal content. Ej.: <code>roms/FC/</code> 12 juegos, <code>roms/pico8/</code> 28 carts [DEMO].</p>
+                  <p style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 6 }}>Folders with [DEMO]/[ASSET]/[SYSTEM] are default TreeFrogUI content. [User] are your personal content. E.g.: <code>roms/FC/</code> 12 juegos, <code>roms/pico8/</code> 28 carts [DEMO].</p>
                 </div>
               </details>
             </div>

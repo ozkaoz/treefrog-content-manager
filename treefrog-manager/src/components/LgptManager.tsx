@@ -78,7 +78,7 @@ export default function LgptManager({
 
   async function handleScanSamples() {
     if (!samplesSource) { setError("Select Samples source folder"); return; }
-    if (!globalSdPath) { setError("No hay SD seleccionada — ve a Overview"); return; }
+    if (!globalSdPath) { setError("No SD selected — go to Overview"); return; }
     setLoading(true); setError("");
     try {
       const res = (await invoke("lgpt_scan_samples", { samplesSource, sdPath: globalSdPath })) as LgptScanResult;
@@ -89,7 +89,7 @@ export default function LgptManager({
 
   async function handleScanProjects() {
     if (!projectsSource) { setError("Select Projects source folder"); return; }
-    if (!globalSdPath) { setError("No hay SD seleccionada — ve a Overview"); return; }
+    if (!globalSdPath) { setError("No SD selected — go to Overview"); return; }
     setLoading(true); setError("");
     try {
       const res = (await invoke("lgpt_scan_projects", { projectsSource, sdPath: globalSdPath })) as LgptScanResult;
