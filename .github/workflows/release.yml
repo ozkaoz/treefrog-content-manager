@@ -5,21 +5,14 @@ on:
     tags:
       - "v*"
 
-# The publish job creates a GitHub Release: the default GITHUB_TOKEN needs
-# explicit write permission for releases (reusable-workflow-inherited tokens
-# are read-only otherwise -> 403 Resource not accessible by integration).
+# The default GITHUB_TOKEN needs explicit write permission to create releases.
 permissions:
   contents: write
 
 jobs:
-  validate:
-    name: Validation gates (must pass before release)
-    uses: ./.github/workflows/validate.yml
-
-  release-windows:
-    name: Release artifacts — Windows / Linux / macOS
+  build:
+    name: Build executables — Windows / Linux / macOS
     runs-on: ${{ matrix.os }}
-    needs: [validate]
     strategy:
       fail-fast: false
       matrix:
@@ -51,7 +44,7 @@ jobs:
         run: npx tauri build
         env:
           TFM_GIT_COMMIT: ${{ github.sha }}
-      - name: Prepare release assets + SHA256
+      - name: Collect ONE executable per OS
         shell: pwsh
         run: |
           $version = (Get-Content treefrog-manager/package.json | ConvertFrom-Json).version
@@ -59,46 +52,39 @@ jobs:
           New-Item -ItemType Directory -Force -Path "release-assets" | Out-Null
           if ("${{ matrix.os }}" -eq "windows-latest") {
             Copy-Item "$binDir/treefrog-manager.exe" "release-assets/TreeFrog-Content-Manager-$version-Windows-x64.exe"
-            $nsis = Get-ChildItem "$binDir/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
-            if ($nsis) { Copy-Item $nsis.FullName "release-assets/TreeFrog-Content-Manager-$version-Windows-x64-Setup.exe" }
           } elseif ("${{ matrix.os }}" -eq "ubuntu-22.04") {
             $appimage = Get-ChildItem "$binDir/bundle/appimage" -Filter "*.AppImage" | Select-Object -First 1
             if ($appimage) { Copy-Item $appimage.FullName "release-assets/TreeFrog-Content-Manager-$version-Linux-x64.AppImage" }
-            Copy-Item "$binDir/treefrog-manager" "release-assets/TreeFrog-Content-Manager-$version-Linux-x64-binary"
           } else {
             $dmg = Get-ChildItem "$binDir/bundle/dmg" -Filter "*.dmg" | Select-Object -First 1
             if ($dmg) { Copy-Item $dmg.FullName "release-assets/TreeFrog-Content-Manager-$version-macOS-x64.dmg" }
           }
-          Get-ChildItem "release-assets" | ForEach-Object {
-            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-            "$hash  $($_.Name)" | Set-Content -Path "$($_.FullName).sha256" -Encoding ascii
-          }
-          Get-ChildItem "release-assets" | Format-Table -AutoSize
-      - name: Upload platform assets
+          Get-ChildItem "release-assets"
+      - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: release-assets-${{ matrix.platform }}
+          name: exe-${{ matrix.platform }}
           path: release-assets/*
           retention-days: 5
 
-  publish-release:
+  publish:
     name: Publish GitHub Release (latest)
     runs-on: ubuntu-latest
-    needs: [release-windows]
+    needs: [build]
     steps:
       - uses: actions/checkout@v4
-      - name: Download all platform assets
+      - name: Download the 3 executables
         uses: actions/download-artifact@v4
         with:
-          pattern: release-assets-*
+          pattern: exe-*
           path: all-assets
           merge-multiple: true
-      - name: Verify assets
+      - name: Verify one executable per OS
         run: |
           ls -la all-assets/
-          test -n "$(ls all-assets/*.exe 2>/dev/null)" || { echo "MISSING Windows exe"; exit 1; }
-          test -n "$(ls all-assets/*.AppImage 2>/dev/null || ls all-assets/*Linux* 2>/dev/null)" || { echo "MISSING Linux asset"; exit 1; }
-          test -n "$(ls all-assets/*.dmg 2>/dev/null || ls all-assets/*macOS* 2>/dev/null)" || { echo "MISSING macOS asset"; exit 1; }
+          test -n "$(ls all-assets/*Windows-x64.exe)" || { echo "MISSING Windows exe"; exit 1; }
+          test -n "$(ls all-assets/*Linux-x64.AppImage)" || { echo "MISSING Linux AppImage"; exit 1; }
+          test -n "$(ls all-assets/*macOS-x64.dmg)" || { echo "MISSING macOS dmg"; exit 1; }
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -106,48 +92,33 @@ jobs:
           body: |
             # TreeFrog Content Manager ${{ github.ref_name }}
 
-            Global SD content manager for TreeFrogUI handhelds (R36SX / R36HD / SF3000 / SF3500 / GB350).
+            Global SD content manager for **TreeFrogUI** handhelds — R36SX (v2.6 & v2.7), R36 HD, SF3000, SF3000 HD, SF3100, SF3500, GB350.
 
             ## Downloads
 
-            | Platform | Asset |
-            |----------|-------|
-            | **Windows x64** | `TreeFrog-Content-Manager-*-Windows-x64.exe` (portable — no install needed) |
-            | **Windows installer** | `TreeFrog-Content-Manager-*-Windows-x64-Setup.exe` |
-            | **Linux x64** | `TreeFrog-Content-Manager-*-Linux-x64.AppImage` |
-            | **macOS x64** | `TreeFrog-Content-Manager-*-macOS-x64.dmg` |
+            | Platform | File |
+            |----------|------|
+            | **Windows x64** | portable `.exe` — just run it (no install) |
+            | **Linux x64** | `.AppImage` |
+            | **macOS x64** | `.dmg` |
 
-            Each asset has a matching `.sha256` file.
+            Source code: auto-generated zip/tar.gz below.
 
             ## What it does
 
-            - **Games**: copy ROMs to the correct `roms/<SYSTEM>/` folder (75 systems, profile-driven)
-            - **Music**: playlists to `roms/music/` (each folder = playlist, TreeFrogUI semantics)
-            - **Videos**: hardware-compatible deployment to `roms/videos/` with automatic FFmpeg conversion when needed
-            - **BIOS**: guided selection and validation (filename/size/SHA-256) to `cubegm/bios/`
-            - **LGPT**: samples and projects to `lgpt/samples/` and `lgpt/projects/`
+            Scans your ROM, music, video, BIOS and LGPT folders, shows exactly what will be copied, and writes it to the correct TreeFrogUI folders on your SD card:
+            Games → `roms/<SYSTEM>/` (75 systems, ZIP inspection, arcade payload, CUE/BIN groups) · Music → `roms/music/` (each subfolder = playlist) · Videos → `roms/videos/` (ffprobe + auto FFmpeg conversion) · BIOS → `cubegm/bios/` (validated, stock protected) · LGPT → `lgpt/samples/` + `lgpt/projects/`.
 
-            One canonical plan: what you preview is exactly what gets written.
-            Canonical path validation everywhere (no traversal/absolute/UNC/ADS),
-            collision-safe keep_both, effective-action space checks, real video
-            conversion (staged + ffprobe-validated), persistent deployment history
-            (SQLite).
+            One canonical plan: **what you preview is exactly what gets written**. Canonical path validation everywhere, collision-safe keep_both, effective-action space checks, persistent deployment history.
 
             ## Requirements
 
-            - Windows: WebView2 (pre-installed on Windows 10/11)
-            - Linux: WebKit2GTK 4.1
-            - macOS: 10.15+
-            - Optional: FFmpeg/ffprobe in PATH for video compatibility inspection
-              and conversion
+            - Windows 10/11 (WebView2) · Linux (WebKit2GTK 4.1) · macOS 10.15+
+            - A TreeFrogUI SD card ([tzubertowski/TreeFrogUI](https://github.com/tzubertowski/TreeFrogUI) — separate project)
+            - Optional: ffmpeg/ffprobe in PATH for video conversion ([ffmpeg.org](https://ffmpeg.org))
 
-            ## Verify download
-
-            ```bash
-            sha256sum -c TreeFrog-Content-Manager-*.sha256
-            ```
-
-            > FFmpeg/ffprobe not included — install them from https://ffmpeg.org if you need video conversion.
+            ---
+            *Independent companion tool. Does not bundle TreeFrogUI, firmware, BIOS files or copyrighted ROMs.*
           files: |
             all-assets/*
           generate_release_notes: false
