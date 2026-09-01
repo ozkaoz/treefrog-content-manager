@@ -206,8 +206,11 @@ def test_release_workflow_exists():
     wf = REPO / ".github" / "workflows" / "release.yml"
     assert wf.exists(), "release workflow missing"
     txt = wf.read_text(encoding="utf-8")
+    # Release contract (v1.0.0+): exactly the per-OS executables, no setup/sha256
     assert "TreeFrog-Content-Manager-" in txt
     assert "-Windows-x64.exe" in txt
-    assert "-Windows-x64-Setup.exe" in txt
-    assert "SHA256" in txt or "sha256" in txt
+    assert "-Linux-x64.AppImage" in txt
+    assert "-macOS-x64.dmg" in txt
+    assert "-Windows-x64-Setup.exe" not in txt, "Setup removed from the release contract"
+    assert "make_latest: true" in txt, "release must be published as Latest"
     assert "on:" in txt and "tags:" in txt and "v*" in txt

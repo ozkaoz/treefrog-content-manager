@@ -44,6 +44,19 @@ jobs:
         run: npx tauri build
         env:
           TFM_GIT_COMMIT: ${{ github.sha }}
+      - name: Verify executable before shipping (self-check incl. BIOS catalog)
+        # Runs the JUST-BUILT executable headless: profile, systems, ffmpeg
+        # detection AND the embedded BIOS catalog (the portable contract —
+        # a BIOS section must never be empty on any platform).
+        working-directory: treefrog-manager
+        shell: pwsh
+        run: |
+          $bin = "src-tauri/target/release/treefrog-manager"
+          if ("${{ matrix.os }}" -eq "windows-latest") { $bin += ".exe" }
+          chmod +x $bin 2>$null
+          & $bin --self-check
+          if ($LASTEXITCODE -ne 0) { throw "self-check FAILED on ${{ matrix.platform }}" }
+          Write-Host "self-check PASS on ${{ matrix.platform }}"
       - name: Collect ONE executable per OS
         shell: pwsh
         run: |

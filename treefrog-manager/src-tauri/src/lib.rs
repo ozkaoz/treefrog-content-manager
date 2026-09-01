@@ -474,6 +474,11 @@ pub struct BiosPlanEntry {
     pub size: Option<u64>,
 }
 
+/// Embedded BIOS profile for the portable EXE (no external files required).
+/// Same pattern as profile.rs: the file system is checked first (dev/updates),
+/// and the embedded copy is the portable fallback — never an empty catalog.
+const EMBEDDED_BIOS_JSON: &str = include_str!("../../../profiles/treefrogui/bios.json");
+
 /// Single loader for the declarative BIOS profile (bios.json) — the ONLY
 /// authoritative BIOS definition source. Hardcoded lists are forbidden.
 pub fn bios_profile_json() -> serde_json::Value {
@@ -489,7 +494,10 @@ pub fn bios_profile_json() -> serde_json::Value {
             }
         }
     }
-    serde_json::json!({ "bios_definitions": [] })
+    // Portable fallback: embedded bios.json (the catalog must NEVER be empty
+    // just because the exe runs without a profiles/ folder next to it).
+    serde_json::from_str(EMBEDDED_BIOS_JSON)
+        .unwrap_or_else(|_| serde_json::json!({ "bios_definitions": [] }))
 }
 
 /// Public re-export for sibling modules (bios_catalog).
@@ -2183,5 +2191,48 @@ mod per_tab_deploy_tests {
         assert_eq!(result.deployed, 0, "UNKNOWN must not deploy");
         assert_eq!(result.skipped, 1);
         assert!(!sd_root.join("roms/UNKNOWN/mystery.xyz").exists());
+    }
+}
+
+#[cfg(test)]
+mod portable_embed_tests {
+    use super::*;
+
+    /// Regression (user report: BIOS section empty in the portable exe):
+    /// the BIOS catalog must NEVER be empty. When no bios.json exists on the
+    /// file system (portable exe without a profiles/ folder), the EMBEDDED
+    /// copy must provide the definitions — same portable contract as the
+    /// systems profile (profile.rs include_str!).
+    #[test]
+    fn bios_catalog_never_empty_portable() {
+        // Run from a working directory WITHOUT profiles/ next to it.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(tmp.path()).unwrap();
+        let json = bios_profile_json();
+        let defs = json
+            .get("bios_definitions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        std::env::set_current_dir(prev).unwrap();
+        assert!(
+            !defs.is_empty(),
+            "portable exe must show BIOS entries (embedded bios.json fallback)"
+        );
+        // Known entries exist (ps1/gba/neogeo are TreeFrogUI stock BIOS)
+        let ids: Vec<String> = defs
+            .iter()
+            .filter_map(|d| d.get("id").and_then(|x| x.as_str()).map(|s| s.to_string()))
+            .collect();
+        for expected in ["ps1_bios", "gba_bios", "neogeo_bios"] {
+            assert!(
+                ids.iter().any(|id| id == expected),
+                "embedded bios.json must contain {expected}: {ids:?}"
+            );
+        }
+        // The catalog (UI projection) is also non-empty
+        let catalog = crate::bios_catalog::get_bios_catalog();
+        assert!(!catalog.is_empty(), "BIOS catalog must not be empty");
     }
 }

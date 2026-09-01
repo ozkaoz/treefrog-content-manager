@@ -54,6 +54,17 @@ fn main() {
                 if !ffmpeg_ok {
                     println!("note: ffmpeg not found — video conversion will report conversion_error, UI will explain");
                 }
+                // BIOS catalog must load from the EMBEDDED bios.json in the
+                // portable exe (Windows/Linux/macOS) — the BIOS section must
+                // never be empty. FAIL if it is (portable contract violation).
+                let bios_catalog = treefrog_manager::bios_catalog::get_bios_catalog();
+                println!("bios catalog entries: {}", bios_catalog.len());
+                if bios_catalog.is_empty() {
+                    eprintln!(
+                        "self-check FAIL: BIOS catalog is empty (embedded bios.json missing)"
+                    );
+                    std::process::exit(1);
+                }
                 println!("self-check PASS");
                 std::process::exit(0);
             }

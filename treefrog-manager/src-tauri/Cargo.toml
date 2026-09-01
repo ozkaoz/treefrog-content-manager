@@ -1,6 +1,6 @@
 [package]
 name = "treefrog-manager"
-version = "0.1.0"
+version = "0.1.1"
 description = "TreeFrog Content Manager — global TreeFrogUI SD manager (Tauri 2 + Rust)"
 authors = ["TreeFrog Content Manager"]
 edition = "2021"
