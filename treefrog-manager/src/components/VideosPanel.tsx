@@ -156,7 +156,8 @@ export default function VideosPanel({
         <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!source && !plan}>
           Continue to BIOS →
         </button>
-        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={!plan || !globalSdPath}>
+        {/* Sync to SD is ALWAYS active (navigates + observable sync flow) */}
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()}>
           Sync to SD →
         </button>
       </div>

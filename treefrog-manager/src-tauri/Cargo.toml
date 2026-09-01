@@ -32,6 +32,10 @@ regex = "1"
 log = "0.4"
 tracing = "0.1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Windows-only APIs (volume GUID/serial, drive types). Target-specific so the
+# crate builds on Linux/macOS (non-Windows paths use the fallback stubs).
+[target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_WindowsProgramming"] }
 
 # Archive formats: ZIP only (maintained safe adapter in src/archive.rs).

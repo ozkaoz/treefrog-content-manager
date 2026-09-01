@@ -175,7 +175,7 @@ export default function BiosManager({
         <button className="panel-btn continue" onClick={() => onNext?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
           Continue to LGPT →
         </button>
-        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()}>
           Sync to SD →
         </button>
       </div>

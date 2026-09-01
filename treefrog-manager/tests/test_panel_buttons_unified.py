@@ -106,6 +106,23 @@ def test_bios_search_removed():
     assert "searchQuery" not in text, "BIOS searchQuery must be removed"
 
 
+def test_sync_button_always_active():
+    """Sync to SD must NEVER be disabled — with no files staged it navigates to
+    SD Card and the sync flow reports observably what is missing."""
+    for panel in PANELS:
+        p = SRC / "components" / panel
+        if not p.exists():
+            continue
+        text = p.read_text(encoding="utf-8")
+        i = text.find('className="panel-btn sync"')
+        assert i != -1, f"{panel}: sync button missing"
+        # The button element around the sync class must not contain disabled=
+        btn_start = text.rfind("<button", 0, i)
+        btn_end = text.find(">", i)
+        attrs = text[btn_start:btn_end]
+        assert "disabled" not in attrs, f"{panel}: sync button must stay active: {attrs[:80]}"
+
+
 def test_sd_status_bar_everywhere():
     """Point 4: every content panel shows the shared REAL SD status bar which
     refreshes after sync (refreshSignal)."""

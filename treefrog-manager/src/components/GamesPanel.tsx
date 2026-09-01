@@ -215,7 +215,9 @@ export default function GamesPanel({
         <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!source && !plan}>
           Continue to Music →
         </button>
-        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={!plan || !globalSdPath}>
+        {/* Sync to SD is ALWAYS active: with no plan it navigates to SD Card and
+            the sync flow reports what is missing (observable, never silently dead) */}
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()}>
           Sync to SD →
         </button>
       </div>

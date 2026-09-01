@@ -526,11 +526,19 @@ export default function SdCardPanel({
       {syncResult && (
         <div style={{ marginTop: 16, padding: 12, border: "1px solid var(--border)", borderRadius: 6, background: "var(--surface)" }}>
           <h4 style={{ margin: "0 0 8px 0" }}>Synchronization Result</h4>
+          {/* Observable outcome when Sync is pressed with nothing staged */}
+          {syncResult.error && (
+            <div className="status-error" style={{ fontSize: 12, marginBottom: 8 }}>
+              {syncResult.error}
+            </div>
+          )}
+          {syncResult.deployed != null && (
           <div style={{ fontSize: 13, marginBottom: 8 }}>
             <div><strong>Copied:</strong> <span style={{ color: "var(--success)" }}>{syncResult.deployed}</span></div>
             <div><strong>Skipped:</strong> <span style={{ color: "var(--warning)" }}>{syncResult.skipped}</span></div>
             <div><strong>Failed:</strong> <span style={{ color: "var(--danger)" }}>{syncResult.failed}</span></div>
           </div>
+          )}
           
           {syncResult.breakdown && syncResult.breakdown.length > 0 && (
             <details style={{ marginTop: 8 }}>

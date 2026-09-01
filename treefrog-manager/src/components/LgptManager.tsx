@@ -216,7 +216,8 @@ export default function LgptManager({
         <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
           Continue to SD Card →
         </button>
-        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={(!samplesResult && !projectsResult) || !globalSdPath}>
+        {/* Sync to SD is ALWAYS active (navigates + observable sync flow) */}
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()}>
           Sync to SD →
         </button>
       </div>

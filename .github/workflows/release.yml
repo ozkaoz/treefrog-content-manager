@@ -10,55 +10,141 @@ jobs:
     name: Validation gates (must pass before release)
     uses: ./.github/workflows/validate.yml
 
-  build-windows:
-    name: Build + Release artifacts
-    runs-on: windows-latest
+  release-windows:
+    name: Release artifacts — Windows / Linux / macOS
+    runs-on: ${{ matrix.os }}
     needs: [validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: Windows-x64
+          - os: ubuntu-22.04
+            platform: Linux-x64
+          - os: macos-latest
+            platform: macOS-x64
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "20"
           cache: "npm"
           cache-dependency-path: treefrog-manager/package-lock.json
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Linux system deps (webkit2gtk)
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Install frontend deps
         working-directory: treefrog-manager
         run: npm ci
-      - name: Build Windows x64 (Tauri)
+      - name: Build Tauri (${{ matrix.platform }})
         working-directory: treefrog-manager
         run: npx tauri build
         env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-      - name: Prepare portable + installer artifacts
+          TFM_GIT_COMMIT: ${{ github.sha }}
+      - name: Prepare release assets + SHA256
         shell: pwsh
         run: |
           $version = (Get-Content treefrog-manager/package.json | ConvertFrom-Json).version
-          $exe = "treefrog-manager/src-tauri/target/release/treefrog-manager.exe"
-          $portable = "TreeFrog-Content-Manager-$version-Windows-x64.exe"
-          Copy-Item -LiteralPath $exe -Destination $portable -Force
-          $hashP = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath "$portable.sha256" -Value "$hashP  $portable" -Encoding ascii
-          Write-Host "Portable $portable $hashP"
-          $nsis = Get-ChildItem -Path "treefrog-manager/src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
-          $installer = "TreeFrog-Content-Manager-$version-Windows-x64-Setup.exe"
-          Copy-Item -LiteralPath $nsis.FullName -Destination $installer -Force
-          $hashI = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath "$installer.sha256" -Value "$hashI  $installer" -Encoding ascii
-          Write-Host "Installer $installer $hashI"
-          Get-ChildItem -Filter "TreeFrog-Content-Manager-*.exe*" | Format-Table -AutoSize
+          $binDir = "treefrog-manager/src-tauri/target/release"
+          New-Item -ItemType Directory -Force -Path "release-assets" | Out-Null
+          if ("${{ matrix.os }}" -eq "windows-latest") {
+            Copy-Item "$binDir/treefrog-manager.exe" "release-assets/TreeFrog-Content-Manager-$version-Windows-x64.exe"
+            $nsis = Get-ChildItem "$binDir/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
+            if ($nsis) { Copy-Item $nsis.FullName "release-assets/TreeFrog-Content-Manager-$version-Windows-x64-Setup.exe" }
+          } elseif ("${{ matrix.os }}" -eq "ubuntu-22.04") {
+            $appimage = Get-ChildItem "$binDir/bundle/appimage" -Filter "*.AppImage" | Select-Object -First 1
+            if ($appimage) { Copy-Item $appimage.FullName "release-assets/TreeFrog-Content-Manager-$version-Linux-x64.AppImage" }
+            Copy-Item "$binDir/treefrog-manager" "release-assets/TreeFrog-Content-Manager-$version-Linux-x64-binary"
+          } else {
+            $dmg = Get-ChildItem "$binDir/bundle/dmg" -Filter "*.dmg" | Select-Object -First 1
+            if ($dmg) { Copy-Item $dmg.FullName "release-assets/TreeFrog-Content-Manager-$version-macOS-x64.dmg" }
+          }
+          Get-ChildItem "release-assets" | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $($_.Name)" | Set-Content -Path "$($_.FullName).sha256" -Encoding ascii
+          }
+          Get-ChildItem "release-assets" | Format-Table -AutoSize
+      - name: Upload platform assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ matrix.platform }}
+          path: release-assets/*
+          retention-days: 5
+
+  publish-release:
+    name: Publish GitHub Release (latest)
+    runs-on: ubuntu-latest
+    needs: [release-windows]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download all platform assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: all-assets
+          merge-multiple: true
+      - name: Verify assets
+        run: |
+          ls -la all-assets/
+          test -n "$(ls all-assets/*.exe 2>/dev/null)" || { echo "MISSING Windows exe"; exit 1; }
+          test -n "$(ls all-assets/*.AppImage 2>/dev/null || ls all-assets/*Linux* 2>/dev/null)" || { echo "MISSING Linux asset"; exit 1; }
+          test -n "$(ls all-assets/*.dmg 2>/dev/null || ls all-assets/*macOS* 2>/dev/null)" || { echo "MISSING macOS asset"; exit 1; }
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: TreeFrog Content Manager ${{ github.ref_name }} (Latest)
+          body: |
+            # TreeFrog Content Manager ${{ github.ref_name }}
+
+            Global SD content manager for TreeFrogUI handhelds (R36SX / R36HD / SF3000 / SF3500 / GB350).
+
+            ## Downloads
+
+            | Platform | Asset |
+            |----------|-------|
+            | **Windows x64** | `TreeFrog-Content-Manager-*-Windows-x64.exe` (portable — no install needed) |
+            | **Windows installer** | `TreeFrog-Content-Manager-*-Windows-x64-Setup.exe` |
+            | **Linux x64** | `TreeFrog-Content-Manager-*-Linux-x64.AppImage` |
+            | **macOS x64** | `TreeFrog-Content-Manager-*-macOS-x64.dmg` |
+
+            Each asset has a matching `.sha256` file.
+
+            ## What it does
+
+            - **Games**: copy ROMs to the correct `roms/<SYSTEM>/` folder (75 systems, profile-driven)
+            - **Music**: playlists to `roms/music/` (each folder = playlist, TreeFrogUI semantics)
+            - **Videos**: hardware-compatible deployment to `roms/videos/` with automatic FFmpeg conversion when needed
+            - **BIOS**: guided selection and validation (filename/size/SHA-256) to `cubegm/bios/`
+            - **LGPT**: samples and projects to `lgpt/samples/` and `lgpt/projects/`
+
+            One canonical plan: what you preview is exactly what gets written.
+            Canonical path validation everywhere (no traversal/absolute/UNC/ADS),
+            collision-safe keep_both, effective-action space checks, real video
+            conversion (staged + ffprobe-validated), persistent deployment history
+            (SQLite).
+
+            ## Requirements
+
+            - Windows: WebView2 (pre-installed on Windows 10/11)
+            - Linux: WebKit2GTK 4.1
+            - macOS: 10.15+
+            - Optional: FFmpeg/ffprobe in PATH for video compatibility inspection
+              and conversion
+
+            ## Verify download
+
+            ```bash
+            sha256sum -c TreeFrog-Content-Manager-*.sha256
+            ```
+
+            > FFmpeg/ffprobe not included — install them from https://ffmpeg.org if you need video conversion.
           files: |
-            TreeFrog-Content-Manager-*.exe
-            TreeFrog-Content-Manager-*.exe.sha256
-          generate_release_notes: true
+            all-assets/*
+          generate_release_notes: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

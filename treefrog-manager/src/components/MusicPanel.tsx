@@ -287,7 +287,6 @@ export default function MusicPanel({
 
         <button
           onClick={handleSyncToSd}
-          disabled={!hasScanned || selectedTracks.size === 0 || !globalSdPath}
           className="panel-btn sync"
         >
           Sync to SD →
