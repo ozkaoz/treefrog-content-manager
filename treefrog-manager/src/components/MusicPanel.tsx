@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { dialogService } from '../services/dialog';
 import { t } from '../i18n';
 import EmptyState from "./EmptyState";
+import SdStatusBar from "./SdStatusBar";
 
 interface MusicTrack {
   path: string;
@@ -26,14 +27,22 @@ interface MusicScanResult {
 }
 
 export default function MusicPanel({
+  globalSdPath,
   onPlanChange,
   onSourceChange,
+  onBack,
+  onSyncToSd,
+  sdRefreshSignal = 0,
   visible,
   onNext,
   onSkip,
 }: {
+  globalSdPath?: string;
   onPlanChange?: (plan: any) => void;
   onSourceChange?: (v: string) => void;
+  onBack?: () => void;
+  onSyncToSd?: () => void;
+  sdRefreshSignal?: number;
   visible?: boolean;
   onNext?: () => void;
   onSkip?: () => void;
@@ -123,6 +132,14 @@ export default function MusicPanel({
 
   const handleContinue = () => {
     onNext?.();
+  };
+
+  const handleBack = () => {
+    onBack?.();
+  };
+
+  const handleSyncToSd = () => {
+    onSyncToSd?.();
   };
 
   useEffect(() => {
@@ -226,14 +243,61 @@ export default function MusicPanel({
   return (
     <div className="card">
       <h3>Music — Playlists (TreeFrogUI)</h3>
+      <SdStatusBar sdPath={globalSdPath || ""} refreshSignal={sdRefreshSignal} />
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
         {t.musicHelp || "Standalone files go to roms/music/. Folders act as playlists in TreeFrogUI."}
       </p>
 
+      <div className="panel-actions">
+        <button className="panel-btn back" onClick={handleBack}>
+          ← Back
+        </button>
+        <button
+          onClick={handleScan}
+          disabled={!musicSource || isScanning}
+          className="panel-btn scan"
+        >
+          {isScanning ? 'Scanning...' : 'Scan'}
+        </button>
+
+        <button
+          onClick={handleClear}
+          disabled={isScanning}
+          className="panel-btn clear"
+        >
+          Clear
+        </button>
+
+        <span className="flex-fill" />
+
+        <button
+          onClick={handleSkip}
+          className="panel-btn skip"
+        >
+          Skip → Videos
+        </button>
+
+        <button
+          onClick={handleContinue}
+          disabled={!hasScanned}
+          className="panel-btn continue"
+        >
+          Continue to Videos
+        </button>
+
+        <button
+          onClick={handleSyncToSd}
+          disabled={!hasScanned || selectedTracks.size === 0 || !globalSdPath}
+          className="panel-btn sync"
+        >
+          Sync to SD →
+        </button>
+      </div>
+
       <div style={{ marginBottom: '16px' }}>
-        <label style={{ 
-          display: 'block', 
-          marginBottom: '8px', 
+        <label style={{
+          display: 'block',
+          marginBottom: '8px',
           color: 'var(--text-primary)',
           fontWeight: 'bold',
         }}>
@@ -270,59 +334,27 @@ export default function MusicPanel({
         </div>
       </div>
 
-      <div className="panel-actions">
-        <button
-          onClick={handleScan}
-          disabled={!musicSource || isScanning}
-          className="panel-btn scan"
-        >
-          {isScanning ? 'Scanning...' : 'Scan'}
-        </button>
-
-        <button
-          onClick={handleClear}
-          disabled={isScanning}
-          className="panel-btn clear"
-        >
-          Clear
-        </button>
-
-        <span className="flex-fill" />
-
-        <button
-          onClick={handleSkip}
-          className="panel-btn skip"
-        >
-          Skip → Videos
-        </button>
-
-        <button
-          onClick={handleContinue}
-          disabled={!hasScanned}
-          className="panel-btn continue"
-        >
-          Continue to Videos
-        </button>
-      </div>
-
-      <div style={{ marginBottom: '10px' }}>
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder={t.searchPlaceholder || "Search file..."}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            borderRadius: '4px',
-            border: '1px solid var(--border-color)',
-            backgroundColor: 'var(--input-bg, transparent)',
-            color: 'var(--text-primary)',
-          }}
-        />
-      </div>
-
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
+
+      {/* Search only appears once the music folder is scanned (same pattern as Games/Videos) */}
+      {scanResult && (
+        <div style={{ marginBottom: '10px' }}>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t.searchPlaceholder || "Search file..."}
+            style={{
+              width: '100%',
+              padding: '8px 12px',
+              borderRadius: '4px',
+              border: '1px solid var(--border-color)',
+              backgroundColor: 'var(--input-bg, transparent)',
+              color: 'var(--text-primary)',
+            }}
+          />
+        </div>
+      )}
 
       {scanResult && (
         <>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { dialogService } from '../services/dialog';
 import { t } from '../i18n';
+import SdStatusBar from './SdStatusBar';
 
 interface BiosEntry {
   id: string;
@@ -42,20 +43,24 @@ export default function BiosManager({
   globalSdPath,
   onSourceChange,
   onPlanChange,
+  onBack,
+  onSyncToSd,
+  sdRefreshSignal = 0,
   onNext,
   visible
 }: {
   globalSdPath: string;
   onSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
+  onBack?: () => void;
+  onSyncToSd?: () => void;
+  sdRefreshSignal?: number;
   onNext?: () => void;
   visible?: boolean;
 }) {
-  void globalSdPath;
   void visible;
   const [catalog, setCatalog] = useState<BiosEntry[]>([]);
   const [biosState, setBiosState] = useState<Record<string, BiosState>>({});
-  const [searchQuery, setSearchQuery] = useState('');
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -148,19 +153,32 @@ export default function BiosManager({
     onPlanChange?.({ entries, summary, warnings: [] });
   }, [biosState, catalog, onPlanChange]);
 
-  const visibleCatalog = catalog.filter(b => {
-    const q = searchQuery.toLowerCase();
-    return !q || b.system_name.toLowerCase().includes(q) ||
-      b.filenames.some(f => f.toLowerCase().includes(q)) ||
-      b.description.toLowerCase().includes(q);
-  });
+  // Search removed: the user selects each BIOS file directly from the catalog.
+  const visibleCatalog = catalog;
 
   return (
     <div className="card">
       <h3>{t.biosManagement || "BIOS Management"}</h3>
+      <SdStatusBar sdPath={globalSdPath} refreshSignal={sdRefreshSignal} />
       <p style={{ color: 'var(--text-secondary)', fontSize: '12px', marginBottom: '12px' }}>
         {t.biosHelp || "Select BIOS files required by TreeFrogUI. All files are copied to cubegm/bios/ on the SD card."}
       </p>
+
+      <div className="panel-actions">
+        <button className="panel-btn back" onClick={() => onBack?.()}>
+          ← Back
+        </button>
+        <span className="flex-fill" />
+        <button className="panel-btn skip" onClick={() => onNext?.()}>
+          Skip → LGPT
+        </button>
+        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
+          Continue to LGPT →
+        </button>
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
+          Sync to SD →
+        </button>
+      </div>
 
       <div style={{
         padding: '12px 16px',
@@ -173,19 +191,6 @@ export default function BiosManager({
       }}>
         <strong>ℹ️ Note:</strong> Wolfenstein 3D engine (<code>ecwolf.pk3</code>) and DOS boot image (<code>x86BOOT.img</code>) are already included in TreeFrogUI and do not need to be installed.
       </div>
-
-      <input
-        type="text"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder={t.searchBios || "Search BIOS..."}
-        style={{
-          width: '100%', padding: '10px 14px', marginBottom: '16px',
-          borderRadius: '6px', border: '1px solid var(--border-color)',
-          backgroundColor: 'var(--input-bg, transparent)', color: 'var(--text-primary)',
-          fontSize: '14px',
-        }}
-      />
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
@@ -266,12 +271,12 @@ export default function BiosManager({
           );
         })}
         {visibleCatalog.length === 0 && (
-          <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No BIOS matches search.</div>
+          <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>No BIOS entries.</div>
         )}
       </div>
 
-      <div style={{ 
-        padding: '10px', 
+      <div style={{
+        padding: '10px',
         backgroundColor: Object.values(biosState).filter(s => s.selected && s.valid).length > 0 ? 'var(--success-bg)' : 'var(--bg-secondary, var(--surface))',
         borderRadius: '6px',
         marginTop: '15px',
@@ -292,15 +297,6 @@ export default function BiosManager({
         )}
       </div>
 
-      <div className="panel-actions" style={{ marginTop: '16px' }}>
-        <span className="flex-fill" />
-        <button className="panel-btn skip" onClick={() => onNext?.()}>
-          Skip → LGPT
-        </button>
-        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
-          Continue to LGPT →
-        </button>
-      </div>
       <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>All BIOS files will be copied to <code>cubegm/bios/</code> (VICE JiffyDOS to <code>cubegm/bios/vice/</code>) as per TreeFrogUI docs. Required BIOS show blue left border.</p>
     </div>
   );

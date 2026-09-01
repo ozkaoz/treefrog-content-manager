@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import { t } from "../i18n";
 import EmptyState from "./EmptyState";
+import SdStatusBar from "./SdStatusBar";
 
 type PlanEntry = {
   source: string;
@@ -28,18 +29,24 @@ type SystemOption = {
   core: string;
 };
 
-export default function GamesPanel({ 
-  globalSdPath, 
-  onSourceChange, 
+export default function GamesPanel({
+  globalSdPath,
+  onSourceChange,
   onPlanChange,
   onNext,
+  onBack,
+  onSyncToSd,
+  sdRefreshSignal = 0,
   visible,
   onOverridesChange
-}: { 
+ }: {
   globalSdPath: string; 
-  onSourceChange?: (v: string) => void; 
+  onSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
   onNext?: () => void;
+  onBack?: () => void;
+  onSyncToSd?: () => void;
+  sdRefreshSignal?: number;
   visible?: boolean;
   onOverridesChange?: (overrides: Record<string, string>) => void;
 }) {
@@ -188,22 +195,15 @@ export default function GamesPanel({
   return (
     <div className="card">
       <h3>Games — ROM library (profile-driven)</h3>
+      <SdStatusBar sdPath={globalSdPath} refreshSignal={sdRefreshSignal} />
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
         Manage ROMs by system. Each folder under <code>roms/</code> selects the core (e.g. <code>GBA</code> for GBA, <code>PS</code> for PlayStation). Preserve multi-file logical units (CUE/BIN) and respect <code>archive_policy.json</code> (arcade <code>cps1/neogeo/m2k</code> as <code>payload</code>, not extracted). Duplicates by <code>SHA-256</code>, not by name.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>Games source folder</label>
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: source ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
-            {source || "No folder selected — e.g., D:\\ROMs"}
-          </div>
-          <button onClick={handlePickSource}>Browse</button>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to the correct folder according to extension (TreeFrogUI profile).</div>
-      </div>
-
       <div className="panel-actions">
+        <button className="panel-btn back" onClick={() => onBack?.()}>
+          ← Back
+        </button>
         <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Games"}
         </button>
@@ -215,6 +215,20 @@ export default function GamesPanel({
         <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!source && !plan}>
           Continue to Music →
         </button>
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={!plan || !globalSdPath}>
+          Sync to SD →
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+        <label style={{ fontSize: 13, fontWeight: 600 }}>Games source folder</label>
+        <div className="row" style={{ alignItems: "stretch" }}>
+          <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: source ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
+            {source || "No folder selected — e.g., D:\\ROMs"}
+          </div>
+          <button onClick={handlePickSource}>Browse</button>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to the correct folder according to extension (TreeFrogUI profile).</div>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze <strong>recursively</strong> subfolders (e.g. <code>{source || "D:\\ROMs"}\\GBA\game.gba</code> and subfolders). Skip if you don't have Games.</div>
 

@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { t } from "../i18n";
-
 import EmptyState from "./EmptyState";
 
 type VolumeInfo = {
@@ -70,16 +69,17 @@ function fmtBytes(n?: number | null): string {
   return `${v.toFixed(u === 0 ? 0 : 1)} ${units[u]}`;
 }
 
-export default function SdCardPanel({ 
-  sdPath, 
-  onChange, 
+export default function SdCardPanel({
+  sdPath,
+  onChange,
   volumes: propVolumes,
   globalPlan,
   globalSpace,
   onSync,
   isSyncing,
-  biosPlanEntries
-}: { 
+  biosPlanEntries,
+  autoSyncSignal = 0
+ }: {
   sdPath: string; 
   onChange: (v: string) => void; 
   volumes?: VolumeInfo[];
@@ -88,6 +88,9 @@ export default function SdCardPanel({
   onSync?: (force: boolean) => Promise<any>;
   isSyncing?: boolean;
   biosPlanEntries?: any[];
+  // Incremented by App when the user presses "Sync to SD" in any panel:
+  // navigating here + signal triggers the sync flow automatically.
+  autoSyncSignal?: number;
 }) {
   const [analysis, setAnalysis] = useState<TargetAnalysis | null>(null);
   const [space] = useState<SpaceInfo | null>(null);
@@ -142,6 +145,26 @@ export default function SdCardPanel({
     });
     return () => { unlisten.then(f => f()); };
   }, []);
+
+  // "Sync to SD" pressed in another panel: App navigated here and bumped the
+  // signal. Run the sync immediately (the user already chose to sync).
+  const executedSignal = useRef(0);
+  useEffect(() => {
+    if (!autoSyncSignal || autoSyncSignal === executedSignal.current) return;
+    executedSignal.current = autoSyncSignal;
+    if (!sdPath) {
+      setError("No SD selected — go to Overview.");
+      return;
+    }
+    void (async () => {
+      setError("");
+      setSyncResult(null);
+      const r = await onSync?.(forceCopy);
+      setSyncResult(r);
+      // Refresh the REAL SD state after the sync so every menu shows it
+      await handleAnalyze(sdPath);
+    })();
+  }, [autoSyncSignal]);
 
   useEffect(() => {
     return () => {
@@ -462,6 +485,8 @@ export default function SdCardPanel({
                 try {
                   const r = await onSync?.(forceCopy);
                   setSyncResult(r);
+                  // Refresh the REAL SD state after the sync (all menus read it)
+                  if (sdPath) await handleAnalyze(sdPath);
                 } catch (e) { setError(String(e)); }
               }}>{t.yes}</button>
               <button onClick={() => setConfirming(false)}>{t.cancel}</button>

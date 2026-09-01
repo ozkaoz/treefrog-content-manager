@@ -29,6 +29,10 @@ def _has_action_button(text: str, kind: str) -> bool:
         return 'className="panel-btn skip"' in text
     if kind == "continue":
         return 'className="panel-btn continue"' in text
+    if kind == "back":
+        return 'className="panel-btn back"' in text
+    if kind == "sync":
+        return 'className="panel-btn sync"' in text
     return False
 
 
@@ -40,16 +44,18 @@ def test_all_panels_use_unified_button_classes():
         "button.panel-btn.clear",
         "button.panel-btn.skip",
         "button.panel-btn.continue",
+        "button.panel-btn.back",
+        "button.panel-btn.sync",
         ".panel-actions",
     ):
         assert sel in css, f"styles.css missing unified selector: {sel}"
 
     expectations = {
-        "GamesPanel.tsx": ["scan", "clear", "skip", "continue"],
-        "MusicPanel.tsx": ["scan", "clear", "skip", "continue"],
-        "VideosPanel.tsx": ["scan", "clear", "skip", "continue"],
-        "LgptManager.tsx": ["scan", "clear", "skip", "continue"],
-        "BiosManager.tsx": ["skip", "continue"],  # no scan/clear (browse-based)
+        "GamesPanel.tsx": ["scan", "clear", "skip", "continue", "back", "sync"],
+        "MusicPanel.tsx": ["scan", "clear", "skip", "continue", "back", "sync"],
+        "VideosPanel.tsx": ["scan", "clear", "skip", "continue", "back", "sync"],
+        "LgptManager.tsx": ["scan", "clear", "skip", "continue", "back", "sync"],
+        "BiosManager.tsx": ["skip", "continue", "back", "sync"],  # browse-based: no scan/clear
     }
     for panel, kinds in expectations.items():
         p = SRC / "components" / panel
@@ -59,6 +65,58 @@ def test_all_panels_use_unified_button_classes():
             assert _has_action_button(text, kind), (
                 f"{panel} does not use unified panel-btn {kind}"
             )
+
+
+def test_action_buttons_above_browse():
+    """Point 2: the action row (Scan/Clear/Skip/Continue/Back/Sync) must be
+    rendered ABOVE the Browse/source-picker section in every panel."""
+    for panel in PANELS:
+        p = SRC / "components" / panel
+        if not p.exists():
+            continue
+        text = p.read_text(encoding="utf-8")
+        i_actions = text.find('className="panel-actions"')
+        # Every content panel binds its Browse via onClick= handleBrowse/handlePick*
+        import re as _re
+        m = _re.search(r"onClick=\{(?:\(\) => )?handle(Browse|Pick\w*)", text)
+        i_browse = m.start() if m else -1
+        assert i_actions != -1, f"{panel}: panel-actions row missing"
+        assert i_browse != -1, f"{panel}: Browse button missing"
+        assert i_actions < i_browse, (
+            f"{panel}: action buttons must be ABOVE the Browse section"
+        )
+
+
+def test_music_search_only_after_scan():
+    """Point 1: the Music search input must be gated by the scan result (only
+    active once the music folder is loaded), like Games/Videos gate by plan."""
+    text = (SRC / "components" / "MusicPanel.tsx").read_text(encoding="utf-8")
+    # The search input must live inside a scanResult conditional
+    assert "{scanResult && (" in text
+    i_search = text.find('placeholder={t.searchPlaceholder || "Search file..."}')
+    assert i_search != -1, "Music search input missing"
+    gated = "{scanResult && (" in text[:i_search]
+    assert gated, "Music search must be gated by scanResult (folder loaded)"
+
+
+def test_bios_search_removed():
+    """Point 2: BIOS search must NOT exist (user selects each BIOS directly)."""
+    text = (SRC / "components" / "BiosManager.tsx").read_text(encoding="utf-8")
+    assert "Search BIOS" not in text, "BIOS search must be removed"
+    assert "searchQuery" not in text, "BIOS searchQuery must be removed"
+
+
+def test_sd_status_bar_everywhere():
+    """Point 4: every content panel shows the shared REAL SD status bar which
+    refreshes after sync (refreshSignal)."""
+    for panel in ["GamesPanel.tsx", "MusicPanel.tsx", "VideosPanel.tsx", "BiosManager.tsx", "LgptManager.tsx"]:
+        text = (SRC / "components" / panel).read_text(encoding="utf-8")
+        assert "SdStatusBar" in text, f"{panel} must render SdStatusBar"
+        assert "refreshSignal" in text, f"{panel} must pass refreshSignal to SdStatusBar"
+    # App bumps the signal after every completed sync
+    app = (SRC / "App.tsx").read_text(encoding="utf-8")
+    assert "setSdRefreshSignal" in app, "App must bump sdRefreshSignal after sync"
+    assert "autoSyncSignal" in app, "App must wire Sync-to-SD navigation signal"
 
 
 def test_no_adhoc_inline_action_buttons_remain():

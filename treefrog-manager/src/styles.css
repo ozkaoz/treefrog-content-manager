@@ -248,3 +248,12 @@ button.panel-btn.skip {
 button.panel-btn.skip:not(:disabled):hover { background: var(--surface, #f8fafc); filter: none; }
 /* Continue = success green */
 button.panel-btn.continue { background: var(--success, #16a34a); }
+/* Back = subtle outline (navigation to previous panel) */
+button.panel-btn.back {
+  background: transparent;
+  color: var(--text-secondary, #757575);
+  border: 1px solid var(--border, #e2e8f0);
+}
+button.panel-btn.back:not(:disabled):hover { background: var(--surface, #f8fafc); filter: none; }
+/* Sync to SD = danger-ish accent (writes to the SD) */
+button.panel-btn.sync { background: var(--danger, #d32f2f); }

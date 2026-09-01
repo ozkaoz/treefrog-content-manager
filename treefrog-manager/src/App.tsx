@@ -81,6 +81,16 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>("overview");
   const [systemOverrides, setSystemOverrides] = useState<Record<string, string>>({});
   const [biosPlanEntries, setBiosPlanEntries] = useState<BiosPlanEntry[]>([]);
+  // "Sync to SD" from any panel: navigate to SD Card and trigger the sync there
+  const [autoSyncSignal, setAutoSyncSignal] = useState(0);
+  // Bumped after every completed sync: every panel's SdStatusBar refreshes
+  const [sdRefreshSignal, setSdRefreshSignal] = useState(0);
+
+  const goToSdAndSync = () => {
+    setActiveTab("sdcard");
+    // Bump the signal: SdCardPanel picks it up and starts the sync flow
+    setAutoSyncSignal((n) => n + 1);
+  };
 
   interface BiosPlanEntry {
     source: string;
@@ -443,6 +453,8 @@ export default function App() {
       agg.breakdown.push(...(res.breakdown || []));
 
       await handleAnalyze();
+      // Every completed sync refreshes the shared SD status in ALL menus
+      setSdRefreshSignal((n) => n + 1);
       return agg;
     } catch (e) {
       const msg = String(e);
@@ -500,13 +512,16 @@ export default function App() {
     };
   })();
 
+  // DYNAMIC status (point 3): derived live from the current panel plans and
+  // the REAL SD analysis (sdCounts) — updates on every scan/sync because both
+  // inputs are state. Replaces the old fixed estado block.
   const estado = (() => {
     if (!sdAnalysis) {
       return { sync: 0, nuevos: 0, conflicts: 0, conversion: 0, biosFaltantes: 0, noSd: true as const };
     }
     if (globalPlan) {
       return {
-        sync: globalPlan.summary.unchanged,
+        sync: sdCounts?.rom_count ?? 0,
         nuevos: globalPlan.summary.new,
         conflicts: globalPlan.summary.conflicts,
         conversion: globalPlan.entries.filter((e) => e.action === "convert_then_copy").length,
@@ -514,7 +529,7 @@ export default function App() {
         noSd: false as const,
       };
     }
-    // Before analyze, show real SD existing vs no plan
+    // No plan yet: real SD counts (dynamic — refreshed after every sync)
     if (sdAnalysis.is_treefrog) {
       return { sync: sdAnalysis.existing_count, nuevos: 0, conflicts: 0, conversion: 0, biosFaltantes: 0, noSd: false as const };
     }
@@ -692,33 +707,43 @@ export default function App() {
         </div>
       </div>
       <div style={{ display: activeTab === "games" ? "block" : "none" }}>
-        <GamesPanel visible={activeTab === "games"} 
-          globalSdPath={sdPath} 
-          onSourceChange={setGamesSource} 
+        <GamesPanel visible={activeTab === "games"}
+          globalSdPath={sdPath}
+          onSourceChange={setGamesSource}
           onPlanChange={setGamesPlan as any}
           onOverridesChange={setSystemOverrides}
-          onNext={() => setActiveTab("music")} 
+          onNext={() => setActiveTab("music")}
+          onBack={() => setActiveTab("overview")}
+          onSyncToSd={goToSdAndSync}
+          sdRefreshSignal={sdRefreshSignal}
         />
       </div>
       <div style={{ display: activeTab === "music" ? "block" : "none" }}>
         <MusicPanel
           visible={activeTab === "music"}
+          globalSdPath={sdPath}
           onSourceChange={setMusicSource}
           onPlanChange={setMusicPlan as any}
           onNext={() => setActiveTab("videos")}
           onSkip={() => setActiveTab("videos")}
+          onBack={() => setActiveTab("games")}
+          onSyncToSd={goToSdAndSync}
+          sdRefreshSignal={sdRefreshSignal}
         />
       </div>
       <div style={{ display: activeTab === "videos" ? "block" : "none" }}>
-        <VideosPanel visible={activeTab === "videos"} 
-          globalSdPath={sdPath} 
-          onSourceChange={setVideosSource} 
+        <VideosPanel visible={activeTab === "videos"}
+          globalSdPath={sdPath}
+          onSourceChange={setVideosSource}
           onPlanChange={setVideosPlan as any}
-          onNext={() => setActiveTab("bios")} 
+          onNext={() => setActiveTab("bios")}
+          onBack={() => setActiveTab("music")}
+          onSyncToSd={goToSdAndSync}
+          sdRefreshSignal={sdRefreshSignal}
         />
       </div>
       <div style={{ display: activeTab === "bios" ? "block" : "none" }}>
-        <BiosManager visible={activeTab === "bios"} 
+        <BiosManager visible={activeTab === "bios"}
           globalSdPath={sdPath}
           onSourceChange={setBiosSource}
           onPlanChange={(plan: any) => {
@@ -737,27 +762,34 @@ export default function App() {
             }
             setBiosPlan(plan);
           }}
-          onNext={() => setActiveTab("lgpt")} 
+          onNext={() => setActiveTab("lgpt")}
+          onBack={() => setActiveTab("videos")}
+          onSyncToSd={goToSdAndSync}
+          sdRefreshSignal={sdRefreshSignal}
         />
       </div>
       <div style={{ display: activeTab === "lgpt" ? "block" : "none" }}>
-        <LgptManager visible={activeTab === "lgpt"} 
+        <LgptManager visible={activeTab === "lgpt"}
           globalSdPath={sdPath}
           onSamplesSourceChange={setLgptSamplesSource}
           onProjectsSourceChange={setLgptProjectsSource}
           onPlanChange={setLgptPlan as any}
-          onNext={() => setActiveTab("sdcard")} 
+          onNext={() => setActiveTab("sdcard")}
+          onBack={() => setActiveTab("bios")}
+          onSyncToSd={goToSdAndSync}
+          sdRefreshSignal={sdRefreshSignal}
         />
       </div>
       <div style={{ display: activeTab === "sdcard" ? "block" : "none" }}>
-        <SdCardPanel 
-          sdPath={sdPath} 
-          onChange={setSdPath} 
+        <SdCardPanel
+          sdPath={sdPath}
+          onChange={setSdPath}
           volumes={volumes}
           globalPlan={combinedPlan}
           globalSpace={globalSpace}
           isSyncing={loading}
           biosPlanEntries={biosPlanEntries}
+          autoSyncSignal={autoSyncSignal}
           onSync={async (force) => {
             const result = await handleSync(force);
             setSyncResult(result);

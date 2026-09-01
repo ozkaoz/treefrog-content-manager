@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import { t } from "../i18n";
 import EmptyState from "./EmptyState";
+import SdStatusBar from "./SdStatusBar";
 
 type PlanEntry = {
   source: string;
@@ -21,16 +22,22 @@ type Plan = {
   entries: PlanEntry[];
 };
 
-export default function VideosPanel({ 
-  globalSdPath, 
-  onSourceChange, 
+export default function VideosPanel({
+  globalSdPath,
+  onSourceChange,
   onPlanChange,
+  onBack,
+  onSyncToSd,
+  sdRefreshSignal = 0,
   onNext,
   visible
-}: { 
-  globalSdPath: string; 
-  onSourceChange?: (v: string) => void; 
+}: {
+  globalSdPath: string;
+  onSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
+  onBack?: () => void;
+  onSyncToSd?: () => void;
+  sdRefreshSignal?: number;
   onNext?: () => void;
   visible?: boolean;
 }) {
@@ -129,22 +136,15 @@ export default function VideosPanel({
   return (
     <div className="card">
       <h3>Videos — Hardware decoder (TreeFrogUI)</h3>
+      <SdStatusBar sdPath={globalSdPath} refreshSignal={sdRefreshSignal} />
       <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
         Inspection via <code>ffprobe</code>: contenedor, codec, perfil/nivel, pix_fmt, dimensiones, framerate, audio. <code>compatible → copiar</code>, <code>incompatible → FFmpeg → re-probe → desplegar</code>. Original nunca se modifica, salida en staging. Preset <code>PROVISIONAL_UNVALIDATED</code>.
       </p>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
-        <label style={{ fontSize: 13, fontWeight: 600 }}>Videos source folder</label>
-        <div className="row" style={{ alignItems: "stretch" }}>
-          <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: source ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
-            {source || "No folder selected — e.g., D:\\Videos"}
-          </div>
-          <button onClick={handlePickSource}>Browse</button>
-        </div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to <code>roms/videos/</code> according to extension.</div>
-      </div>
-
       <div className="panel-actions">
+        <button className="panel-btn back" onClick={() => onBack?.()}>
+          ← Back
+        </button>
         <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Videos"}
         </button>
@@ -156,6 +156,20 @@ export default function VideosPanel({
         <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!source && !plan}>
           Continue to BIOS →
         </button>
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={!plan || !globalSdPath}>
+          Sync to SD →
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12 }}>
+        <label style={{ fontSize: 13, fontWeight: 600 }}>Videos source folder</label>
+        <div className="row" style={{ alignItems: "stretch" }}>
+          <div style={{ flex: 1, padding: "8px 10px", border: "1px solid var(--border)", borderRadius: 6, background: "var(--input)", color: source ? "var(--text)" : "var(--text-muted)", fontSize: 13, minHeight: 36, display: "flex", alignItems: "center" }}>
+            {source || "No folder selected — e.g., D:\\Videos"}
+          </div>
+          <button onClick={handlePickSource}>Browse</button>
+        </div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to <code>roms/videos/</code> according to extension.</div>
       </div>
       <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>Analyze recursively; the app will automatically copy to <code>roms/videos/</code> according to extension, with conversion if necessary.</div>
 

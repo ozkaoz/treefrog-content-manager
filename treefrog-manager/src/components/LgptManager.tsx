@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { pickFolder } from "../services/dialog";
 import EmptyState from "./EmptyState";
+import SdStatusBar from "./SdStatusBar";
 
 type LgptScanResult = {
   samples: { path: string; hash: string; size: number }[];
@@ -27,18 +28,24 @@ type Plan = {
   warnings: string[];
 };
 
-export default function LgptManager({ 
+export default function LgptManager({
   globalSdPath,
   onSamplesSourceChange,
   onProjectsSourceChange,
   onPlanChange,
+  onBack,
+  onSyncToSd,
+  sdRefreshSignal = 0,
   onNext,
   visible
-}: { 
+}: {
   globalSdPath: string;
   onSamplesSourceChange?: (v: string) => void;
   onProjectsSourceChange?: (v: string) => void;
   onPlanChange?: (plan: Plan | null) => void;
+  onBack?: () => void;
+  onSyncToSd?: () => void;
+  sdRefreshSignal?: number;
   onNext?: () => void;
   visible?: boolean;
 }) {
@@ -186,6 +193,34 @@ export default function LgptManager({
   return (
     <div className="card">
       <h3>LGPT — Samples & Projects (Little Piggy Tracker)</h3>
+      <SdStatusBar sdPath={globalSdPath} refreshSignal={sdRefreshSignal} />
+
+      <div className="panel-actions">
+        <button className="panel-btn back" onClick={() => onBack?.()}>
+          ← Back
+        </button>
+        <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${samplesSource}|${projectsSource}|${globalSdPath}`; handleScanBoth(); }} disabled={loading || (!samplesSource && !projectsSource)}>
+          {loading ? "Scanning…" : "Scan LGPT"}
+        </button>
+        <button
+          className="panel-btn clear"
+          onClick={() => { setSamplesResult(null); setProjectsResult(null); onPlanChange?.(null); }}
+          disabled={!samplesResult && !projectsResult}
+        >
+          Clear
+        </button>
+        <span className="flex-fill" />
+        <button className="panel-btn skip" onClick={() => onNext?.()}>
+          Skip → SD Card
+        </button>
+        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
+          Continue to SD Card →
+        </button>
+        <button className="panel-btn sync" onClick={() => onSyncToSd?.()} disabled={(!samplesResult && !projectsResult) || !globalSdPath}>
+          Sync to SD →
+        </button>
+      </div>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
         <label style={{ fontSize: 13, fontWeight: 600 }}>LGPT Samples source folder</label>
         <div className="row" style={{ alignItems: "stretch" }}>
@@ -243,26 +278,6 @@ export default function LgptManager({
       <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "0 0 8px 0" }}>
         SD destination: {globalSdPath || "—"} — the app will automatically copy to lgpt/samples/ y lgpt/projects/ according to content type.
       </p>
-
-      <div className="panel-actions">
-        <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${samplesSource}|${projectsSource}|${globalSdPath}`; handleScanBoth(); }} disabled={loading || (!samplesSource && !projectsSource)}>
-          {loading ? "Scanning…" : "Scan LGPT"}
-        </button>
-        <button
-          className="panel-btn clear"
-          onClick={() => { setSamplesResult(null); setProjectsResult(null); onPlanChange?.(null); }}
-          disabled={!samplesResult && !projectsResult}
-        >
-          Clear
-        </button>
-        <span className="flex-fill" />
-        <button className="panel-btn skip" onClick={() => onNext?.()}>
-          Skip → SD Card
-        </button>
-        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
-          Continue to SD Card →
-        </button>
-      </div>
 
       {error && <div className="status-error" style={{ fontSize: 12, marginTop: 8 }}>{error}</div>}
 
