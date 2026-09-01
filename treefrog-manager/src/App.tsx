@@ -500,13 +500,13 @@ export default function App() {
 
   const estado = (() => {
     if (!sdAnalysis) {
-      return { sync: 0, nuevos: 0, conflictos: 0, conversion: 0, biosFaltantes: 0, noSd: true as const };
+      return { sync: 0, nuevos: 0, conflicts: 0, conversion: 0, biosFaltantes: 0, noSd: true as const };
     }
     if (globalPlan) {
       return {
         sync: globalPlan.summary.unchanged,
         nuevos: globalPlan.summary.new,
-        conflictos: globalPlan.summary.conflicts,
+        conflicts: globalPlan.summary.conflicts,
         conversion: globalPlan.entries.filter((e) => e.action === "convert_then_copy").length,
         biosFaltantes: globalPlan.entries.filter((e) => e.content_type === "bios" && e.action === "manual_review").length,
         noSd: false as const,
@@ -514,9 +514,9 @@ export default function App() {
     }
     // Before analyze, show real SD existing vs no plan
     if (sdAnalysis.is_treefrog) {
-      return { sync: sdAnalysis.existing_count, nuevos: 0, conflictos: 0, conversion: 0, biosFaltantes: 0, noSd: false as const };
+      return { sync: sdAnalysis.existing_count, nuevos: 0, conflicts: 0, conversion: 0, biosFaltantes: 0, noSd: false as const };
     }
-    return { sync: 0, nuevos: 0, conflictos: 0, conversion: 0, biosFaltantes: 0, noSd: false as const };
+    return { sync: 0, nuevos: 0, conflicts: 0, conversion: 0, biosFaltantes: 0, noSd: false as const };
   })();
 
   return (
@@ -573,16 +573,16 @@ export default function App() {
                           <span style={{ color: "var(--text-muted)" }}>
                             {v.filesystem || ""}
                             {v.total_bytes ? ` • ${fmtBytes(v.total_bytes)}` : ""}
-                            {v.free_bytes ? ` • ${fmtBytes(v.free_bytes)} libre` : ""}
+                            {v.free_bytes ? ` • ${fmtBytes(v.free_bytes)} free` : ""}
                           </span>
                           {v.removable ? (
                             <span style={{ marginLeft: 6, fontSize: 10, background: "var(--success)", color: "white", padding: "1px 4px", borderRadius: 3 }}>
-                              Removible
+                              Removable
                             </span>
                           ) : null}
                           {!v.accessible && (
                             <span style={{ marginLeft: 6, fontSize: 10, background: "var(--danger)", color: "white", padding: "1px 4px", borderRadius: 3 }}>
-                              No accesible
+                              Not accessible
                             </span>
                           )}
                         </span>
@@ -592,7 +592,7 @@ export default function App() {
                 )}
                 {sdAnalysis && sdAnalysis.volume?.removable !== true && (
                   <div className="status-error" style={{ marginTop: 6, fontSize: 12 }}>
-                    ⚠ {sdPath} NO es una unidad removible. No parece una SD real — selecciona la SD correcta arriba.
+                    ⚠ {sdPath} is not a removable drive. It does not look like a real SD — select the correct SD above.
                   </div>
                 )}
                 
@@ -604,11 +604,11 @@ export default function App() {
                     </div>
                     <div style={{ fontSize: 13, color: "var(--success)" }}>✓ {fmtBytes(sdAnalysis.free_bytes)} available</div>
                     <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-                      {sdAnalysis.filesystem || "—"} • {fmtBytes(sdAnalysis.capacity_bytes)} total • Removible
+                      {sdAnalysis.filesystem || "—"} • {fmtBytes(sdAnalysis.capacity_bytes)} total • Removable
                     </div>
                   </>
                 ) : (
-                  <EmptyState kind="empty" title="No SD detectada" description="Conecta una tarjeta SD o memoria USB. Solo se muestran dispositivos removibles." />
+                  <EmptyState kind="empty" title="No SD detected" description="Connect an SD card or USB drive. Only removable devices are shown." />
                 )}
               </div>
               <div>
@@ -635,7 +635,7 @@ export default function App() {
               <div style={{ fontSize: 13, display: "grid", gap: 4 }}>
                 <div>✓ {estado.sync} files already synchronized</div>
                 <div>+ {estado.nuevos} new files</div>
-                {estado.conflictos > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.conflictos} conflictos</div>}
+                {estado.conflicts > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.conflicts} conflicts</div>}
                 {estado.conversion > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.conversion} videos need conversion</div>}
                 {estado.biosFaltantes > 0 && <div style={{ color: "var(--warning)" }}>⚠ {estado.biosFaltantes} missing BIOS</div>}
                 {globalPlan && <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>Plan: {globalPlan.summary.new} new, {globalPlan.summary.unchanged} unchanged, {globalPlan.summary.duplicate_content} duplicates</div>}
