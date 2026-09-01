@@ -292,11 +292,12 @@ export default function BiosManager({
         )}
       </div>
 
-      <div className="row" style={{ marginTop: '16px' }}>
-        <button onClick={() => onNext?.()} style={{ marginLeft: 'auto' }}>
+      <div className="panel-actions" style={{ marginTop: '16px' }}>
+        <span className="flex-fill" />
+        <button className="panel-btn skip" onClick={() => onNext?.()}>
           Skip → LGPT
         </button>
-        <button className="primary" onClick={() => onNext?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
+        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={Object.values(biosState).filter(s => s.selected && s.valid).length === 0}>
           Continue to LGPT →
         </button>
       </div>

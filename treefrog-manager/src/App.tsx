@@ -60,13 +60,14 @@ export default function App() {
   const [volumes, setVolumes] = useState<VolumeInfo[]>([]);
   const [sdAnalysis, setSdAnalysis] = useState<TargetAnalysis | null>(null);
 
-  // Global sources per content type (only source folder, no SD per tab)
-  const [gamesSource, setGamesSource] = useState("");
-  const [musicSource, setMusicSource] = useState("");
-  const [videosSource, setVideosSource] = useState("");
+  // Global sources per content type (session state; panels own their scan and
+  // report here for overview display — deploy uses the panel PLANS, not these)
+  const [_gamesSource, setGamesSource] = useState("");
+  const [_musicSource, setMusicSource] = useState("");
+  const [_videosSource, setVideosSource] = useState("");
   const [_biosSource, setBiosSource] = useState("");
-  const [lgptSamplesSource, setLgptSamplesSource] = useState("");
-  const [lgptProjectsSource, setLgptProjectsSource] = useState("");
+  const [_lgptSamplesSource, setLgptSamplesSource] = useState("");
+  const [_lgptProjectsSource, setLgptProjectsSource] = useState("");
 
   // Individual plans per content type
   const [gamesPlan, setGamesPlan] = useState<Plan | null>(null);
@@ -409,41 +410,37 @@ export default function App() {
     setError("");
     const agg = { deployed: 0, skipped: 0, failed: 0, errors: [] as string[], warnings: [] as string[], breakdown: [] as any[] };
     try {
-      const jobs = [
-        { src: gamesSource, plan: gamesPlan },
-        { src: musicSource, plan: musicPlan },
-        { src: videosSource, plan: videosPlan },
-        { src: lgptSamplesSource, plan: lgptPlan },
-        { src: lgptProjectsSource, plan: lgptPlan },
-      ].filter((j, i, arr) => j.src && j.plan && arr.findIndex((x) => x.src === j.src) === i);
+      // ONE combined deploy: the exact plan entries the user previewed in each
+      // panel (Games / Music / Videos / LGPT) are sent as `planEntries`, so the
+      // backend deploys EXACTLY what was previewed — no re-scan, no drift
+      // between preview and deployment, no double LGPT deploy.
+      const panelEntries = (globalPlan?.entries || []).filter(
+        (e) => (e.resolved_action || e.action) !== "skip_unchanged"
+      );
+      const hasPanelEntries = panelEntries.length > 0;
+      if (!hasPanelEntries && !hasBios) {
+        return { error: "No source folders scanned. Go to Games/Music/Videos/BIOS/LGPT and press Scan." };
+      }
 
-      const hasRomJobs = jobs.length > 0;
-      if (!hasRomJobs && !hasBios) return { error: "No source folders scanned. Go to Games/Music/Videos/BIOS/LGPT and press Scan." };
-
-      // BIOS entries are sent separately and copied directly to cubegm/bios/ without planner
       const biosEntriesForDeploy = hasBios ? biosPlanEntries : null;
 
-      if (hasRomJobs) {
-        for (let idx = 0; idx < jobs.length; idx++) {
-          const job = jobs[idx];
-          const isFirst = idx === 0;
-          const res = (await invoke("deploy_to_sd", { sourcePath: job.src, sdPath, force, selectedFiles: null, userDecisions: systemOverrides, biosEntries: isFirst ? biosEntriesForDeploy : null })) as any;
-          agg.deployed += res.deployed || 0;
-          agg.skipped += res.skipped || 0;
-          agg.failed += res.failed || 0;
-          agg.errors.push(...(res.errors || []));
-          agg.warnings.push(...(res.warnings || []));
-          agg.breakdown.push(...(res.breakdown || []));
-        }
-      } else if (hasBios) {
-        const res = (await invoke("deploy_to_sd", { sourcePath: null, sdPath, force, selectedFiles: null, userDecisions: systemOverrides, biosEntries: biosEntriesForDeploy })) as any;
-        agg.deployed += res.deployed || 0;
-        agg.skipped += res.skipped || 0;
-        agg.failed += res.failed || 0;
-        agg.errors.push(...(res.errors || []));
-        agg.warnings.push(...(res.warnings || []));
-        agg.breakdown.push(...(res.breakdown || []));
-      }
+      // Single deploy job: panel plan entries + BIOS entries together.
+      // sourcePath stays null — the plan is authoritative (canonical plan model).
+      const res = (await invoke("deploy_to_sd", {
+        sourcePath: null,
+        sdPath,
+        force,
+        selectedFiles: null,
+        userDecisions: systemOverrides,
+        biosEntries: biosEntriesForDeploy,
+        planEntries: hasPanelEntries ? panelEntries : null,
+      })) as any;
+      agg.deployed += res.deployed || 0;
+      agg.skipped += res.skipped || 0;
+      agg.failed += res.failed || 0;
+      agg.errors.push(...(res.errors || []));
+      agg.warnings.push(...(res.warnings || []));
+      agg.breakdown.push(...(res.breakdown || []));
 
       await handleAnalyze();
       return agg;
@@ -704,8 +701,9 @@ export default function App() {
         />
       </div>
       <div style={{ display: activeTab === "music" ? "block" : "none" }}>
-        <MusicPanel 
+        <MusicPanel
           visible={activeTab === "music"}
+          onSourceChange={setMusicSource}
           onPlanChange={setMusicPlan as any}
           onNext={() => setActiveTab("videos")}
           onSkip={() => setActiveTab("videos")}

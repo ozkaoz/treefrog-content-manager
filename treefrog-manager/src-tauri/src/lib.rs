@@ -692,6 +692,7 @@ async fn deploy_to_sd(
     user_decisions: Option<std::collections::HashMap<String, String>>,
     bios_entries: Option<Vec<BiosPlanEntry>>,
     source_path: Option<String>,
+    plan_entries: Option<Vec<PlanEntry>>,
 ) -> Result<serde_json::Value, String> {
     let profile = profile::load_profile().map_err(|e| e.to_string())?;
     let target_val = analyze_target_cached(&sd_path)?;
@@ -719,9 +720,15 @@ async fn deploy_to_sd(
     };
     let has_bios = !bios_plan_entries.is_empty();
 
+    // Panel-provided plan entries (exact user selection from Music/Videos/LGPT
+    // previews). Deploying THIS plan — not a re-scan — is what makes the
+    // preview the single source of truth: what the user saw is what gets
+    // written. All entries still pass the SAME canonical validation.
+    let panel_entries = plan_entries.unwrap_or_default();
+
     if source_path.is_none() {
-        // BIOS-only sync (still the full canonical pipeline below).
-        if !has_bios {
+        // Panel-plan and/or BIOS-only sync (full canonical pipeline below).
+        if panel_entries.is_empty() && !has_bios {
             return Err("No files to sync".to_string());
         }
         if target.volume.removable != Some(true) && !force {
@@ -732,10 +739,15 @@ async fn deploy_to_sd(
         }
         let mut plan = crate::Plan {
             summary: crate::PlanSummary::default(),
-            entries: bios_plan_entries.clone(),
+            entries: panel_entries.clone(),
             warnings: Vec::new(),
         };
-        // User decisions apply to BIOS plan entries too (conflict resolution)
+        if has_bios {
+            let mut merged = plan.entries.clone();
+            merged.extend(bios_plan_entries.clone());
+            plan.entries = merged;
+        }
+        // User decisions apply to plan entries too (conflict resolution)
         // — resolved by the BACKEND planner (single source of truth), with
         // collision-safe keep_both against the real SD root.
         if let Some(overrides) = &user_decisions {
@@ -756,7 +768,7 @@ async fn deploy_to_sd(
         }
         let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app))
             .map_err(|e| e.to_string())?;
-        // Persistent deployment record (BIOS-only job).
+        // Persistent deployment record.
         let mut result = result;
         if let Err(e) = record_deploy_job(
             &plan,
@@ -788,13 +800,29 @@ async fn deploy_to_sd(
 
     let source_path_str = source_path.unwrap();
 
-    let scanned = scanner::scan(&source_path_str, &profile).map_err(|e| e.to_string())?;
-    let mut plan = if let Some(ref files) = selected_files {
-        planner::plan_with_selection(scanned, &sd_path, &profile, Some(files.clone()))
-            .map_err(|e| e.to_string())?
+    // If the frontend provided panel plan entries, deploy THEM (the exact
+    // selection the user previewed). Otherwise scan the source folder and
+    // build the plan in the backend (legacy Games flow).
+    let mut plan = if !panel_entries.is_empty() {
+        crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: panel_entries.clone(),
+            warnings: Vec::new(),
+        }
     } else {
-        planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?
+        let scanned = scanner::scan(&source_path_str, &profile).map_err(|e| e.to_string())?;
+        if let Some(ref files) = selected_files {
+            planner::plan_with_selection(scanned, &sd_path, &profile, Some(files.clone()))
+                .map_err(|e| e.to_string())?
+        } else {
+            planner::plan(scanned, &sd_path, &profile).map_err(|e| e.to_string())?
+        }
     };
+    if has_bios {
+        let mut merged = plan.entries.clone();
+        merged.extend(bios_plan_entries.clone());
+        plan.entries = merged;
+    }
     if let Some(overrides) = &user_decisions {
         for entry in plan.entries.iter_mut() {
             let src_base = entry
@@ -1953,5 +1981,207 @@ mod bios_workflow_integration_tests {
             std::fs::read(sd_root.join("cubegm/bios/custom.bin")).unwrap(),
             b"existing"
         );
+    }
+}
+
+#[cfg(test)]
+mod per_tab_deploy_tests {
+    use super::*;
+
+    fn mk_treefrog_sd(tmp: &tempfile::TempDir) -> std::path::PathBuf {
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        std::fs::create_dir_all(sd_root.join("lgpt/samples")).unwrap();
+        std::fs::create_dir_all(sd_root.join("lgpt/projects")).unwrap();
+        sd_root
+    }
+
+    fn simple_entry(source: &std::path::Path, destination: &str, content_type: &str) -> PlanEntry {
+        let action = "copy".to_string();
+        PlanEntry {
+            source: source.to_string_lossy().to_string(),
+            destination: destination.to_string(),
+            action: action.clone(),
+            reason: "panel selection".to_string(),
+            hash: crate::hash::sha256_file(source).ok(),
+            source_hash: None,
+            destination_hash: None,
+            content_type: Some(content_type.to_string()),
+            kind: Some(content_type.to_string()),
+            possible_destinations: None,
+            size: Some(source.metadata().map(|m| m.len()).unwrap_or(0)),
+            group: None,
+            members: None,
+            default_action: Some(action.clone()),
+            resolution: Some(action.clone()),
+            resolved_action: Some(action),
+            original_destination: None,
+            preset: None,
+            probe: None,
+            converted_name: None,
+        }
+    }
+
+    fn deploy(plan: &crate::Plan, sd_root: &std::path::Path) -> crate::deploy::DeployResult {
+        let profile = crate::profile::load_profile().unwrap();
+        crate::deploy::deploy_plan(
+            plan,
+            sd_root.to_string_lossy().as_ref(),
+            &profile,
+            false,
+            None,
+        )
+        .unwrap()
+    }
+
+    /// Regression (user report): EVERY content tab must deploy its files to the
+    /// correct TreeFrogUI path. Music must deploy (it was silently skipped
+    /// before because the panel never reported its source); music playlists
+    /// (subfolders under roms/music) must preserve hierarchy per TreeFrogUI.
+    #[test]
+    fn every_tab_deploys_to_correct_treefrogui_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = mk_treefrog_sd(&tmp);
+
+        // Source tree with one file per content type
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(src.join("GBA")).unwrap();
+        std::fs::create_dir_all(src.join("MyPlaylist")).unwrap();
+        std::fs::create_dir_all(src.join("samples")).unwrap();
+        std::fs::create_dir_all(src.join("projects")).unwrap();
+        let rom = src.join("GBA/game.gba");
+        std::fs::write(&rom, b"GBA").unwrap();
+        let music_standalone = src.join("song.mp3");
+        std::fs::write(&music_standalone, b"mp3").unwrap();
+        let music_playlist = src.join("MyPlaylist/track1.mp3");
+        std::fs::write(&music_playlist, b"mp3p").unwrap();
+        let sample = src.join("samples/kick.wav");
+        std::fs::write(&sample, b"WAV").unwrap();
+        let project = src.join("projects/track.lgpt");
+        std::fs::write(&project, b"LGPT").unwrap();
+        let bios_file = src.join("gba_bios.bin");
+        std::fs::write(&bios_file, b"BIOS").unwrap();
+
+        // The combined panel plan (exactly what App.tsx now sends):
+        // games -> roms/<SYSTEM>/, music -> roms/music[/playlist]/,
+        // videos -> roms/videos/, lgpt -> lgpt/samples|projects/, BIOS separate.
+        let entries = vec![
+            simple_entry(&rom, "roms/GBA/game.gba", "rom/gba"),
+            simple_entry(&music_standalone, "roms/music/song.mp3", "music"),
+            simple_entry(&music_playlist, "roms/music/MyPlaylist/track1.mp3", "music"),
+            simple_entry(&sample, "lgpt/samples/kick.wav", "lgpt/sample"),
+            simple_entry(&project, "lgpt/projects/track.lgpt", "lgpt/project"),
+        ];
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries,
+            warnings: vec![],
+        };
+        let result = deploy(&plan, &sd_root);
+        assert_eq!(
+            result.deployed, 5,
+            "ALL content tabs must deploy: {:?}",
+            result.errors
+        );
+
+        // Exact TreeFrogUI paths on the SD
+        assert!(
+            sd_root.join("roms/GBA/game.gba").exists(),
+            "Games -> roms/GBA/"
+        );
+        assert!(
+            sd_root.join("roms/music/song.mp3").exists(),
+            "Music standalone -> roms/music/"
+        );
+        assert!(
+            sd_root.join("roms/music/MyPlaylist/track1.mp3").exists(),
+            "Music playlist -> roms/music/<playlist>/ (TreeFrogUI playlist semantics)"
+        );
+        assert!(
+            sd_root.join("lgpt/samples/kick.wav").exists(),
+            "LGPT samples -> lgpt/samples/"
+        );
+        assert!(
+            sd_root.join("lgpt/projects/track.lgpt").exists(),
+            "LGPT projects -> lgpt/projects/"
+        );
+
+        // BIOS deploys through the SAME canonical pipeline
+        let bios_entries = bios_entries_to_plan_entries(
+            &[BiosPlanEntry {
+                source: bios_file.to_string_lossy().to_string(),
+                destination: "cubegm/bios/gba_bios.bin".into(),
+                action: "copy".into(),
+                ..Default::default()
+            }],
+            sd_root.to_string_lossy().as_ref(),
+            false,
+        )
+        .unwrap();
+        let bios_plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: bios_entries,
+            warnings: vec![],
+        };
+        let bios_result = deploy(&bios_plan, &sd_root);
+        assert_eq!(
+            bios_result.deployed, 1,
+            "BIOS must deploy: {:?}",
+            bios_result.errors
+        );
+        assert!(
+            sd_root.join("cubegm/bios/gba_bios.bin").exists(),
+            "BIOS -> cubegm/bios/"
+        );
+    }
+
+    /// Videos deploy to roms/videos/ with the REAL conversion pipeline when
+    /// the preset demands it (compatible videos copy as-is).
+    #[test]
+    fn videos_tab_deploys_to_roms_videos() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = mk_treefrog_sd(&tmp);
+        let vid = tmp.path().join("clip.mp4");
+        std::fs::write(&vid, b"not a real video").unwrap();
+
+        // A video entry deploying to roms/videos/ (destination produced by the
+        // planner/classifier for video content).
+        let entry = PlanEntry {
+            action: "copy".to_string(),
+            resolved_action: Some("copy".to_string()),
+            content_type: Some("video".to_string()),
+            ..simple_entry(&vid, "roms/videos/clip.mp4", "video")
+        };
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry],
+            warnings: vec![],
+        };
+        let result = deploy(&plan, &sd_root);
+        assert_eq!(result.deployed, 1, "video must deploy: {:?}", result.errors);
+        assert!(
+            sd_root.join("roms/videos/clip.mp4").exists(),
+            "Videos -> roms/videos/"
+        );
+    }
+
+    /// Unknown destinations are NEVER written (state machine invariant) — a
+    /// panel cannot smuggle files into roms/UNKNOWN.
+    #[test]
+    fn unknown_destination_never_written() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = mk_treefrog_sd(&tmp);
+        let f = tmp.path().join("mystery.xyz");
+        std::fs::write(&f, b"???").unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![simple_entry(&f, "roms/UNKNOWN/mystery.xyz", "unknown")],
+            warnings: vec![],
+        };
+        let result = deploy(&plan, &sd_root);
+        assert_eq!(result.deployed, 0, "UNKNOWN must not deploy");
+        assert_eq!(result.skipped, 1);
+        assert!(!sd_root.join("roms/UNKNOWN/mystery.xyz").exists());
     }
 }

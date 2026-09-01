@@ -113,6 +113,25 @@ pub struct TargetAnalysis {
     pub stable_id: Option<String>,
     pub physical_device: Option<PhysicalDevice>,
     pub folder_breakdown: std::collections::HashMap<String, usize>,
+    // Semantic counts from the SAME scanner/classification pipeline (single
+    // source of truth — the UI must display these directly, never derive
+    // counts from unrelated values like media_dirs.length).
+    #[serde(default)]
+    pub rom_count: usize,
+    #[serde(default)]
+    pub music_track_count: usize,
+    #[serde(default)]
+    pub video_count: usize,
+    #[serde(default)]
+    pub image_count: usize,
+    #[serde(default)]
+    pub ebook_count: usize,
+    #[serde(default)]
+    pub bios_count: usize,
+    #[serde(default)]
+    pub lgpt_sample_count: usize,
+    #[serde(default)]
+    pub lgpt_project_count: usize,
 }
 
 #[cfg(target_os = "windows")]
@@ -679,6 +698,14 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
             stable_id: None,
             physical_device: None,
             folder_breakdown: std::collections::HashMap::new(),
+            rom_count: 0,
+            music_track_count: 0,
+            video_count: 0,
+            image_count: 0,
+            ebook_count: 0,
+            bios_count: 0,
+            lgpt_sample_count: 0,
+            lgpt_project_count: 0,
         });
     }
 
@@ -729,6 +756,15 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     let mut total_size = 0u64;
     let mut folder_breakdown: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
+    // Semantic counts (same classification pipeline as the planner)
+    let mut rom_count = 0usize;
+    let mut music_track_count = 0usize;
+    let mut video_count = 0usize;
+    let mut image_count = 0usize;
+    let mut ebook_count = 0usize;
+    let mut bios_count = 0usize;
+    let mut lgpt_sample_count = 0usize;
+    let mut lgpt_project_count = 0usize;
 
     // Derive UI badge dirs from scanned files' destinations (whitelist already applied by scanner+classify)
     let mut seen_rom_dirs = std::collections::HashSet::new();
@@ -740,6 +776,7 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         total_size += sf.size;
         match sf.classification.kind {
             crate::classify::Kind::Rom => {
+                rom_count += 1;
                 if let Some(dir) = sf.classification.destination.strip_prefix("roms/") {
                     let top = dir.split('/').next().unwrap_or(dir);
                     if seen_rom_dirs.insert(top.to_string()) {
@@ -752,31 +789,40 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
                 }
             }
             crate::classify::Kind::Music => {
+                music_track_count += 1;
                 if seen_media_dirs.insert("music".to_string()) {
                     media_dirs.push("music".to_string());
                 }
             }
             crate::classify::Kind::Video => {
+                video_count += 1;
                 if seen_media_dirs.insert("videos".to_string()) {
                     media_dirs.push("videos".to_string());
                 }
             }
             crate::classify::Kind::Image => {
+                image_count += 1;
                 if seen_media_dirs.insert("images".to_string()) {
                     media_dirs.push("images".to_string());
                 }
             }
+            crate::classify::Kind::Ebook => {
+                ebook_count += 1;
+            }
             crate::classify::Kind::Bios => {
+                bios_count += 1;
                 if seen_bios_dirs.insert("cubegm/bios".to_string()) {
                     bios_dirs.push("cubegm/bios".to_string());
                 }
             }
             crate::classify::Kind::LgptSample => {
+                lgpt_sample_count += 1;
                 if seen_lgpt_dirs.insert("lgpt/samples".to_string()) {
                     lgpt_dirs.push("lgpt/samples".to_string());
                 }
             }
             crate::classify::Kind::LgptProject => {
+                lgpt_project_count += 1;
                 if seen_lgpt_dirs.insert("lgpt/projects".to_string()) {
                     lgpt_dirs.push("lgpt/projects".to_string());
                 }
@@ -900,6 +946,14 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         stable_id,
         physical_device,
         folder_breakdown,
+        rom_count,
+        music_track_count,
+        video_count,
+        image_count,
+        ebook_count,
+        bios_count,
+        lgpt_sample_count,
+        lgpt_project_count,
     })
 }
 

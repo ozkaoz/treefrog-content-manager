@@ -244,20 +244,22 @@ export default function LgptManager({
         SD destination: {globalSdPath || "—"} — the app will automatically copy to lgpt/samples/ y lgpt/projects/ according to content type.
       </p>
 
-      <div className="row">
-        <button className="primary" onClick={() => { lastScanKey.current = `${samplesSource}|${projectsSource}|${globalSdPath}`; handleScanBoth(); }} disabled={loading || (!samplesSource && !projectsSource)}>
+      <div className="panel-actions">
+        <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${samplesSource}|${projectsSource}|${globalSdPath}`; handleScanBoth(); }} disabled={loading || (!samplesSource && !projectsSource)}>
           {loading ? "Scanning…" : "Scan LGPT"}
         </button>
         <button
+          className="panel-btn clear"
           onClick={() => { setSamplesResult(null); setProjectsResult(null); onPlanChange?.(null); }}
           disabled={!samplesResult && !projectsResult}
         >
           Clear
         </button>
-        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+        <span className="flex-fill" />
+        <button className="panel-btn skip" onClick={() => onNext?.()}>
           Skip → SD Card
         </button>
-        <button className="primary" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
+        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!samplesSource && !projectsSource && !samplesResult && !projectsResult}>
           Continue to SD Card →
         </button>
       </div>

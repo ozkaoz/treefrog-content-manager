@@ -217,3 +217,34 @@ td { background: var(--surface-elevated); }
 .brand-header h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
 .placeholder { border: 1px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; color: var(--text-muted); background: var(--surface); }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ── Unified panel action buttons (Scan / Clear / Skip / Continue) ─────────
+   ONE look + ONE behavior across ALL panels (Games, Music, Videos, BIOS, LGPT).
+   Panels must use these classes instead of ad-hoc inline styles. */
+.panel-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.panel-actions .spacer, .panel-actions .flex-fill { flex: 1; }
+button.panel-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+  color: var(--button-text, #ffffff);
+}
+button.panel-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+button.panel-btn:not(:disabled):hover { filter: brightness(1.1); }
+/* Scan = accent blue */
+button.panel-btn.scan { background: var(--accent, #2563eb); }
+/* Clear = neutral gray */
+button.panel-btn.clear { background: var(--text-secondary, #757575); }
+/* Skip = subtle outline */
+button.panel-btn.skip {
+  background: transparent;
+  color: var(--text, #1e293b);
+  border: 1px solid var(--border-color, #bdbdbd);
+}
+button.panel-btn.skip:not(:disabled):hover { background: var(--surface, #f8fafc); filter: none; }
+/* Continue = success green */
+button.panel-btn.continue { background: var(--success, #16a34a); }

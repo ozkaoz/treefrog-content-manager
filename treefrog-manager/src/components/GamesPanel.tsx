@@ -203,15 +203,16 @@ export default function GamesPanel({
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to the correct folder according to extension (TreeFrogUI profile).</div>
       </div>
 
-      <div className="row">
-        <button className="primary" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
+      <div className="panel-actions">
+        <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Games"}
         </button>
-        <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
-        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+        <button className="panel-btn clear" onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
+        <span className="flex-fill" />
+        <button className="panel-btn skip" onClick={() => onNext?.()}>
           Skip → Music
         </button>
-        <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
+        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!source && !plan}>
           Continue to Music →
         </button>
       </div>

@@ -144,15 +144,16 @@ export default function VideosPanel({
         <div style={{ fontSize: 11, color: "var(--text-muted)" }}>SD destination: <strong>{globalSdPath || "none (select in SD Card)"}</strong> — the app will automatically copy to <code>roms/videos/</code> according to extension.</div>
       </div>
 
-      <div className="row">
-        <button className="primary" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
+      <div className="panel-actions">
+        <button className="panel-btn scan" onClick={() => { lastScanKey.current = `${source}|${globalSdPath}`; handlePreview(); }} disabled={loading || !source || !globalSdPath}>
           {loading ? "Scanning…" : "Scan Videos"}
         </button>
-        <button onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
-        <button onClick={() => onNext?.()} style={{ marginLeft: "auto" }}>
+        <button className="panel-btn clear" onClick={() => { setPlan(null); onPlanChange?.(null); }} disabled={!plan}>Clear</button>
+        <span className="flex-fill" />
+        <button className="panel-btn skip" onClick={() => onNext?.()}>
           Skip → BIOS
         </button>
-        <button className="primary" onClick={() => onNext?.()} disabled={!source && !plan}>
+        <button className="panel-btn continue" onClick={() => onNext?.()} disabled={!source && !plan}>
           Continue to BIOS →
         </button>
       </div>

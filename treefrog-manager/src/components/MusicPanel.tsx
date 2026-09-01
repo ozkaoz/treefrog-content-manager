@@ -27,11 +27,13 @@ interface MusicScanResult {
 
 export default function MusicPanel({
   onPlanChange,
+  onSourceChange,
   visible,
   onNext,
   onSkip,
 }: {
   onPlanChange?: (plan: any) => void;
+  onSourceChange?: (v: string) => void;
   visible?: boolean;
   onNext?: () => void;
   onSkip?: () => void;
@@ -53,6 +55,8 @@ export default function MusicPanel({
       if (selected) {
         const selectedPath = selected;
         setMusicSource(selectedPath);
+        // Report the source to App so the sync job includes music.
+        onSourceChange?.(selectedPath);
         // Auto-scan immediately with the selected path (avoid React state race)
         setIsScanning(true);
         try {
@@ -83,6 +87,8 @@ export default function MusicPanel({
     }
     setIsScanning(true);
     try {
+      // Keep App source state in sync even if the user typed the path manually.
+      onSourceChange?.(musicSource);
       const result = await invoke('scan_music_structured', { path: musicSource }) as MusicScanResult;
       setScanResult(result);
       setHasScanned(true);
@@ -106,6 +112,8 @@ export default function MusicPanel({
     setExpandedPlaylists(new Set());
     setHasScanned(false);
     setSearchQuery('');
+    // Clear the App source too — the music job must not deploy stale scans.
+    onSourceChange?.('');
     onPlanChange?.(null);
   };
 
@@ -129,14 +137,25 @@ export default function MusicPanel({
       onPlanChange?.(null);
       return;
     }
-    const entries = allSelected.map(track => ({
-      source: track.path,
-      destination: track.folder ? `roms/music/${track.folder}/${track.filename}` : `roms/music/${track.filename}`,
-      action: 'copy',
-      reason: track.folder ? `Music playlist: ${track.folder.split(/[\\/]/)[0]}` : 'Standalone music track',
-      content_type: 'music',
-      size: track.size,
-    }));
+    const entries = allSelected.map(track => {
+      // TreeFrogUI: every folder under roms/music/ is a playlist; preserve
+      // the full subfolder hierarchy (normalize separators, strip edge slashes).
+      const folder = track.folder
+        .replace(/\\/g, '/')
+        .replace(/\/+/g, '/')
+        .replace(/^\/+|\/+$/g, '');
+      const destination = folder
+        ? `roms/music/${folder}/${track.filename}`
+        : `roms/music/${track.filename}`;
+      return {
+        source: track.path,
+        destination,
+        action: 'copy',
+        reason: folder ? `Music playlist: ${folder.split('/')[0]}` : 'Standalone music track',
+        content_type: 'music',
+        size: track.size,
+      };
+    });
     const summary = {
       new: entries.length,
       changed: 0,
@@ -251,25 +270,11 @@ export default function MusicPanel({
         </div>
       </div>
 
-      <div style={{ 
-        display: 'flex', 
-        gap: '10px', 
-        marginBottom: '16px',
-        flexWrap: 'wrap',
-        alignItems: 'center',
-      }}>
+      <div className="panel-actions">
         <button
           onClick={handleScan}
           disabled={!musicSource || isScanning}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: musicSource ? 'var(--accent)' : 'var(--button-disabled-bg)',
-            color: 'var(--button-text)',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: musicSource && !isScanning ? 'pointer' : 'not-allowed',
-            fontWeight: 'bold',
-          }}
+          className="panel-btn scan"
         >
           {isScanning ? 'Scanning...' : 'Scan'}
         </button>
@@ -277,30 +282,16 @@ export default function MusicPanel({
         <button
           onClick={handleClear}
           disabled={isScanning}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: 'var(--button-secondary-bg, #757575)',
-            color: 'var(--button-text)',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: isScanning ? 'not-allowed' : 'pointer',
-          }}
+          className="panel-btn clear"
         >
           Clear
         </button>
 
-        <div style={{ flex: 1 }} />
+        <span className="flex-fill" />
 
         <button
           onClick={handleSkip}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: 'transparent',
-            color: 'var(--text-secondary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
+          className="panel-btn skip"
         >
           Skip → Videos
         </button>
@@ -308,14 +299,7 @@ export default function MusicPanel({
         <button
           onClick={handleContinue}
           disabled={!hasScanned}
-          style={{
-            padding: '10px 20px',
-            backgroundColor: hasScanned ? 'var(--success, #4CAF50)' : 'var(--button-disabled-bg)',
-            color: 'var(--button-text)',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: hasScanned ? 'pointer' : 'not-allowed',
-          }}
+          className="panel-btn continue"
         >
           Continue to Videos
         </button>
