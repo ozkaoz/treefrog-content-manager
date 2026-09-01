@@ -177,32 +177,30 @@ def test_embedded_profile_for_portable():
     assert "current_exe" in rs
 
 def test_portable_artifact_exists_after_build():
-    # After a successful build, portable exe should exist at target/release and Desktop
+    # LOCAL BUILD ARTIFACT test: meaningful only after `npx tauri build` has run
+    # on the developer machine (the release exe is gitignored, so a fresh CI
+    # checkout cannot contain it). Skipped when the artifact is absent.
     exe = MGR / "src-tauri" / "target" / "release" / "treefrog-manager.exe"
+    if not exe.exists():
+        import pytest
+        pytest.skip("release exe not built yet — run npx tauri build (skipped on fresh CI checkout)")
     assert exe.exists(), f"release exe missing {exe} — run npx tauri build"
     # Check that the exe is portable (embedded profile) by checking it contains profile version string
     data = exe.read_bytes()
     # Embedded profile.json contains '"profile_version": "1.1.0"' or similar
     assert b"profile_version" in data or b"treefrogui" in data.lower(), "portable exe should embed profile"
-    # Also check Desktop portable exists if build_windows.ps1 was run
-    import json
-    version = json.loads((MGR / "package.json").read_text(encoding="utf-8"))["version"]
-    desktop = pathlib.Path.home() / "Desktop"
-    # Try both GetFolderPath and home/Desktop
-    candidates = [
-        desktop / f"TreeFrog-Content-Manager-{version}-Windows-x64.exe",
-        pathlib.Path(r"C:\Users\DaFunkNoise\Desktop") / f"TreeFrog-Content-Manager-{version}-Windows-x64.exe",
-    ]
-    found = any(p.exists() for p in candidates)
-    # If not on CI, at least the build artifact exists; Desktop copy is verified manually
-    assert exe.exists()
 
 def test_installer_artifact_exists():
+    # LOCAL BUILD ARTIFACT test: same skip rationale (gitignored bundle).
     import json
     version = json.loads((MGR / "package.json").read_text(encoding="utf-8"))["version"]
-    nsis = MGR / "src-tauri" / "target" / "release" / "bundle" / "nsis" / f"TreeFrog Content Manager_{version}_x64-setup.exe"
+    bundle_dir = MGR / "src-tauri" / "target" / "release" / "bundle" / "nsis"
+    if not bundle_dir.exists() or not any(bundle_dir.glob("*.exe")):
+        import pytest
+        pytest.skip("NSIS installer not built yet — run npx tauri build (skipped on fresh CI checkout)")
+    nsis = bundle_dir / f"TreeFrog Content Manager_{version}_x64-setup.exe"
     # The bundle uses space, but Desktop copy uses hyphens
-    assert nsis.exists() or any((MGR / "src-tauri" / "target" / "release" / "bundle" / "nsis").glob("*.exe")), "NSIS installer missing — run npx tauri build"
+    assert nsis.exists() or any(bundle_dir.glob("*.exe")), "NSIS installer missing — run npx tauri build"
 
 def test_release_workflow_exists():
     wf = REPO / ".github" / "workflows" / "release.yml"
