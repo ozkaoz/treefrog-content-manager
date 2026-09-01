@@ -5,6 +5,12 @@ on:
     tags:
       - "v*"
 
+# The publish job creates a GitHub Release: the default GITHUB_TOKEN needs
+# explicit write permission for releases (reusable-workflow-inherited tokens
+# are read-only otherwise -> 403 Resource not accessible by integration).
+permissions:
+  contents: write
+
 jobs:
   validate:
     name: Validation gates (must pass before release)

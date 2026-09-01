@@ -7,6 +7,11 @@ on:
     branches: [main]
   workflow_call: {}
 
+# Explicit permissions so the caller (release.yml) inherits write access for
+# the publish job when this workflow is reused.
+permissions:
+  contents: write
+
 jobs:
   frontend:
     name: Frontend (npm ci + typecheck + build)
