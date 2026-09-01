@@ -455,6 +455,41 @@
 
 ---
 
+## DEC-2026-09-01-02 - Validation effort policy: minimal local checks per change class, CI as full automated gate
+
+**ID:** DEC-2026-09-01-02
+**Date:** 2026-09-01
+**Status:** ACTIVE
+
+**Context:** The full local validation matrix (cargo fmt/check/test + pytest 219 + tsc + npm build + tauri build + self-check + GUI smoke) takes significant time and is NOT proportional to every change class. The CI workflow (`validate.yml`) is now green end-to-end and runs automatically on every push to main, executing the full matrix (frontend tsc+build, Rust fmt/check/test, pytest+ffmpeg incl. real conversion, version gate, Tauri build).
+
+**Decision:** Local pre-push validation is MINIMAL and proportional to what changed (use `scripts/quick_validate.ps1`); the CI is the full automated gate:
+
+| Changed | Local check before push |
+|---------|------------------------|
+| Docs/context only (`.md`, profiles JSON no semantic change) | none (static review) |
+| Python (`python/treefrog/**`, `tests/**`) | only affected pytest files |
+| Frontend TS/TSX | `tsc --noEmit` (+ `npm run build` if UI-structural) |
+| Rust src (`src-tauri/src/**`) | `cargo check` (+ `cargo test <module>` targeted, not full) |
+| Rust + CI/deploy involved | `cargo check` + targeted tests + desktop build when release artifacts are touched |
+| Version files (Cargo/package/tauri.conf) | version-consistency check |
+
+Rules:
+1. The FULL suite never runs manually by default — it runs in CI on every push.
+2. If CI goes red: the log is downloaded, the root cause is fixed, and a new commit is made (as done in 66c4c58/8ab091d/9617209/30a42d6) — the response to a red CI is never lowering the gate.
+3. `tauri build` + `--self-check` + desktop copy ONLY when the user explicitly requests the executable or a release is touched.
+4. Physical R36SX deploy validation remains the CLASS C/D/E gate — unchanged (AGENTS.md §4).
+
+**Reason:** The audit/fix sessions demonstrated that ~90% of iterations are localized changes; running 219 pytest + full cargo + tauri build for a one-file fix wastes effort and delays. The green CI on 30a42d6 proves the full gate works — it does not need to be re-proven locally on every commit.
+
+**Consequences:** `scripts/quick_validate.ps1` detects the diff vs `origin/main` and executes only the relevant checks (fail-fast, prints exactly what it runs). Agents must not skip validation entirely — they run the minimal set and push; CI enforces the rest.
+
+**Evidence:** CI green 30a42d6 (all 5 jobs incl. Build Tauri); this commit (docs+script, Class A/B) pushed WITHOUT running the full suite, validating the policy itself.
+
+**Related:** `.github/workflows/validate.yml`, `scripts/quick_validate.ps1`, `AGENTS.md` §4/§15, `DEC-2026-08-31-01`.
+
+---
+
 ### Removed / migrated (not durable — history stays in Git)
 
 - Operational pushes `999A2B27`, `3423e35`, `bdbda77`, `f3273f6`, `588270c`, `c74bd86`, `21bee8d`, `8cc0a47`, `10C9B608`, `38F8CF02`, `E9B23E36`, `DBAD57A7` etc. (DEC-2026-08-21-13..27, DEC-2026-08-21-29) — Git log is authority.
