@@ -77,8 +77,8 @@ jobs:
           $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
           ffmpeg -version | Select-Object -First 1
           ffprobe -version | Select-Object -First 1
-      - name: Install pytest
-        run: python -m pip install --upgrade pip pytest
+      - name: Install pytest + Pillow (test deps)
+        run: python -m pip install --upgrade pip pytest pillow
       - name: pytest
         working-directory: treefrog-manager
         run: python -m pytest tests -v
