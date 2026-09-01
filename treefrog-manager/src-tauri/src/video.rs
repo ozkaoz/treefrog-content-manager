@@ -32,7 +32,15 @@ pub struct CompatibilityStatus {
 
 pub fn probe(path: &str) -> anyhow::Result<ProbeResult> {
     let mut cmd = std::process::Command::new("ffprobe");
-    cmd.args(["-v","quiet","-print_format","json","-show_format","-show_streams", path]);
+    cmd.args([
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        path,
+    ]);
     #[cfg(target_os = "windows")]
     {
         cmd.creation_flags(0x08000000);
@@ -43,44 +51,102 @@ pub fn probe(path: &str) -> anyhow::Result<ProbeResult> {
             let v: serde_json::Value = serde_json::from_slice(&o.stdout)?;
             let streams = v["streams"].as_array().cloned().unwrap_or_default();
             let format_info = &v["format"];
-            let format_name = format_info.get("format_name").and_then(|x| x.as_str()).unwrap_or("unknown").to_string();
-            let container = format_name.split(',').next().unwrap_or("unknown").to_string();
-            let video_stream = streams.iter().find(|s| s.get("codec_type").and_then(|x| x.as_str()) == Some("video"));
-            let audio_stream = streams.iter().find(|s| s.get("codec_type").and_then(|x| x.as_str()) == Some("audio"));
-            let width = video_stream.and_then(|s| s.get("width").and_then(|x| x.as_u64())).map(|x| x as u32);
-            let height = video_stream.and_then(|s| s.get("height").and_then(|x| x.as_u64())).map(|x| x as u32);
-            let fps = video_stream.and_then(|s| s.get("avg_frame_rate").and_then(|x| x.as_str()).and_then(|s| parse_fps(s)).or_else(|| s.get("r_frame_rate").and_then(|x| x.as_str()).and_then(|s| parse_fps(s))));
+            let format_name = format_info
+                .get("format_name")
+                .and_then(|x| x.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let container = format_name
+                .split(',')
+                .next()
+                .unwrap_or("unknown")
+                .to_string();
+            let video_stream = streams
+                .iter()
+                .find(|s| s.get("codec_type").and_then(|x| x.as_str()) == Some("video"));
+            let audio_stream = streams
+                .iter()
+                .find(|s| s.get("codec_type").and_then(|x| x.as_str()) == Some("audio"));
+            let width = video_stream
+                .and_then(|s| s.get("width").and_then(|x| x.as_u64()))
+                .map(|x| x as u32);
+            let height = video_stream
+                .and_then(|s| s.get("height").and_then(|x| x.as_u64()))
+                .map(|x| x as u32);
+            let fps = video_stream.and_then(|s| {
+                s.get("avg_frame_rate")
+                    .and_then(|x| x.as_str())
+                    .and_then(|s| parse_fps(s))
+                    .or_else(|| {
+                        s.get("r_frame_rate")
+                            .and_then(|x| x.as_str())
+                            .and_then(|s| parse_fps(s))
+                    })
+            });
             let file_size = Path::new(path).metadata().ok().map(|m| m.len());
             Ok(ProbeResult {
                 container,
                 format_name_raw: format_name,
-                video_codec: video_stream.and_then(|s| s.get("codec_name").and_then(|x| x.as_str()).map(|x| x.to_string())),
-                video_profile: video_stream.and_then(|s| s.get("profile").and_then(|x| x.as_str()).map(|x| x.to_string())),
-                video_level: video_stream.and_then(|s| s.get("level").and_then(|x| x.as_str()).map(|x| x.to_string())),
-                pix_fmt: video_stream.and_then(|s| s.get("pix_fmt").and_then(|x| x.as_str()).map(|x| x.to_string())),
+                video_codec: video_stream.and_then(|s| {
+                    s.get("codec_name")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string())
+                }),
+                video_profile: video_stream.and_then(|s| {
+                    s.get("profile")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string())
+                }),
+                video_level: video_stream.and_then(|s| {
+                    s.get("level")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string())
+                }),
+                pix_fmt: video_stream.and_then(|s| {
+                    s.get("pix_fmt")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string())
+                }),
                 width,
                 height,
                 fps,
-                audio_codec: audio_stream.and_then(|s| s.get("codec_name").and_then(|x| x.as_str()).map(|x| x.to_string())),
-                audio_sample_rate: audio_stream.and_then(|s| s.get("sample_rate").and_then(|x| x.as_str()).and_then(|x| x.parse::<u32>().ok())),
+                audio_codec: audio_stream.and_then(|s| {
+                    s.get("codec_name")
+                        .and_then(|x| x.as_str())
+                        .map(|x| x.to_string())
+                }),
+                audio_sample_rate: audio_stream.and_then(|s| {
+                    s.get("sample_rate")
+                        .and_then(|x| x.as_str())
+                        .and_then(|x| x.parse::<u32>().ok())
+                }),
                 streams: streams.len(),
                 has_video: video_stream.is_some(),
                 file_size,
             })
-        },
+        }
         Ok(o) => {
-            anyhow::bail!("ffprobe failed: {}", String::from_utf8_lossy(&o.stderr).chars().take(1000).collect::<String>())
-        },
+            anyhow::bail!(
+                "ffprobe failed: {}",
+                String::from_utf8_lossy(&o.stderr)
+                    .chars()
+                    .take(1000)
+                    .collect::<String>()
+            )
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             anyhow::bail!("ffprobe not found")
-        },
+        }
         Err(e) => {
             anyhow::bail!("ffprobe inspection error: {}", e)
         }
     }
 }
 
-pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -> CompatibilityStatus {
+pub fn evaluate_compatibility(
+    probe: &ProbeResult,
+    preset: &serde_json::Value,
+) -> CompatibilityStatus {
     // preset is either full preset (with compatibility key) or direct compat dict
     let compat = if preset.get("compatibility").is_some() && !preset.get("container").is_some() {
         preset.get("compatibility").unwrap()
@@ -88,10 +154,21 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
         preset
     };
     if !probe.has_video {
-        return CompatibilityStatus { status: "unsupported".to_string(), reason: "no video stream found".to_string() };
+        return CompatibilityStatus {
+            status: "unsupported".to_string(),
+            reason: "no video stream found".to_string(),
+        };
     }
     // container
-    let allowed_containers: Vec<String> = compat.get("container").and_then(|v| v.as_array()).map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect()).unwrap_or_default();
+    let allowed_containers: Vec<String> = compat
+        .get("container")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default();
     let format_raw = probe.format_name_raw.to_lowercase();
     let container = probe.container.to_lowercase();
     let mut container_allowed = allowed_containers.contains(&container);
@@ -103,7 +180,8 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
                         for alias in arr {
                             if let Some(a) = alias.as_str() {
                                 let al = a.to_lowercase();
-                                if al == format_raw || format_raw.split(',').any(|x| x.trim() == al) {
+                                if al == format_raw || format_raw.split(',').any(|x| x.trim() == al)
+                                {
                                     container_allowed = true;
                                     break;
                                 }
@@ -123,23 +201,52 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
         }
     }
     if !container_allowed {
-        let known = ["mp4","mov","matroska","avi","mpeg","mpegts","webm","flv","3gp"];
-        if known.iter().any(|k| container == *k || format_raw.contains(k)) {
-            return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("unsupported container {} (allowed: {:?})", container, allowed_containers) };
+        let known = [
+            "mp4", "mov", "matroska", "avi", "mpeg", "mpegts", "webm", "flv", "3gp",
+        ];
+        if known
+            .iter()
+            .any(|k| container == *k || format_raw.contains(k))
+        {
+            return CompatibilityStatus {
+                status: "conversion_required".to_string(),
+                reason: format!(
+                    "unsupported container {} (allowed: {:?})",
+                    container, allowed_containers
+                ),
+            };
         } else {
-            return CompatibilityStatus { status: "unsupported".to_string(), reason: format!("unsupported container {}", container) };
+            return CompatibilityStatus {
+                status: "unsupported".to_string(),
+                reason: format!("unsupported container {}", container),
+            };
         }
     }
     // video codec
     let vcodec = probe.video_codec.clone().unwrap_or_default().to_lowercase();
-    let allowed_vcodecs: Vec<String> = compat.get("video_codec").and_then(|v| v.as_array()).map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect()).unwrap_or_default();
+    let allowed_vcodecs: Vec<String> = compat
+        .get("video_codec")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_lowercase()))
+                .collect()
+        })
+        .unwrap_or_default();
     let mut vcodec_allowed = allowed_vcodecs.contains(&vcodec);
     if !vcodec_allowed {
-        if let Some(alias_map) = compat.get("video_codec_aliases").and_then(|v| v.as_object()) {
+        if let Some(alias_map) = compat
+            .get("video_codec_aliases")
+            .and_then(|v| v.as_object())
+        {
             for (allowed, aliases) in alias_map {
                 if allowed_vcodecs.contains(&allowed.to_lowercase()) {
                     if let Some(arr) = aliases.as_array() {
-                        if arr.iter().any(|a| a.as_str().map(|s| s.to_lowercase() == vcodec).unwrap_or(false)) {
+                        if arr.iter().any(|a| {
+                            a.as_str()
+                                .map(|s| s.to_lowercase() == vcodec)
+                                .unwrap_or(false)
+                        }) {
                             vcodec_allowed = true;
                             break;
                         }
@@ -149,32 +256,63 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
         }
     }
     if !vcodec_allowed && !vcodec.is_empty() {
-        return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("unsupported video codec {} (allowed: {:?})", vcodec, allowed_vcodecs) };
+        return CompatibilityStatus {
+            status: "conversion_required".to_string(),
+            reason: format!(
+                "unsupported video codec {} (allowed: {:?})",
+                vcodec, allowed_vcodecs
+            ),
+        };
     }
     // pixel format
     if let Some(pix_fmt) = &probe.pix_fmt {
         if let Some(allowed_pix) = compat.get("pixel_format").and_then(|v| v.as_array()) {
-            let allowed: Vec<String> = allowed_pix.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect();
+            let allowed: Vec<String> = allowed_pix
+                .iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_lowercase()))
+                .collect();
             if !allowed.is_empty() && !allowed.contains(&pix_fmt.to_lowercase()) {
-                return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("unsupported pixel format {} (allowed: {:?})", pix_fmt, allowed) };
+                return CompatibilityStatus {
+                    status: "conversion_required".to_string(),
+                    reason: format!(
+                        "unsupported pixel format {} (allowed: {:?})",
+                        pix_fmt, allowed
+                    ),
+                };
             }
         }
     }
     // resolution
     if let Some(res) = compat.get("resolution").and_then(|v| v.as_object()) {
-        if let (Some(w), Some(max_w)) = (probe.width, res.get("max_width").and_then(|x| x.as_u64())) {
+        if let (Some(w), Some(max_w)) = (probe.width, res.get("max_width").and_then(|x| x.as_u64()))
+        {
             if (w as u64) > max_w {
-                return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("width {} > max {}", w, max_w) };
+                return CompatibilityStatus {
+                    status: "conversion_required".to_string(),
+                    reason: format!("width {} > max {}", w, max_w),
+                };
             }
         }
-        if let (Some(h), Some(max_h)) = (probe.height, res.get("max_height").and_then(|x| x.as_u64())) {
+        if let (Some(h), Some(max_h)) =
+            (probe.height, res.get("max_height").and_then(|x| x.as_u64()))
+        {
             if (h as u64) > max_h {
-                return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("height {} > max {}", h, max_h) };
+                return CompatibilityStatus {
+                    status: "conversion_required".to_string(),
+                    reason: format!("height {} > max {}", h, max_h),
+                };
             }
         }
-        if let (Some(w), Some(h), Some(max_pixels)) = (probe.width, probe.height, res.get("max_pixels").and_then(|x| x.as_u64())) {
+        if let (Some(w), Some(h), Some(max_pixels)) = (
+            probe.width,
+            probe.height,
+            res.get("max_pixels").and_then(|x| x.as_u64()),
+        ) {
             if (w as u64) * (h as u64) > max_pixels {
-                return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("resolution {}x{} exceeds max pixels {}", w, h, max_pixels) };
+                return CompatibilityStatus {
+                    status: "conversion_required".to_string(),
+                    reason: format!("resolution {}x{} exceeds max pixels {}", w, h, max_pixels),
+                };
             }
         }
     }
@@ -183,12 +321,18 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
         if let Some(fps) = probe.fps {
             if let Some(max) = fr.get("max").and_then(|x| x.as_f64()) {
                 if (fps as f64) > max {
-                    return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("fps {:.2} > max {}", fps, max) };
+                    return CompatibilityStatus {
+                        status: "conversion_required".to_string(),
+                        reason: format!("fps {:.2} > max {}", fps, max),
+                    };
                 }
             }
             if let Some(min) = fr.get("min").and_then(|x| x.as_f64()) {
                 if (fps as f64) < min {
-                    return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("fps {:.2} < min {}", fps, min) };
+                    return CompatibilityStatus {
+                        status: "conversion_required".to_string(),
+                        reason: format!("fps {:.2} < min {}", fps, min),
+                    };
                 }
             }
         }
@@ -196,9 +340,18 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
     // audio codec
     if let Some(acodec) = &probe.audio_codec {
         if let Some(allowed) = compat.get("audio_codec").and_then(|v| v.as_array()) {
-            let allowed_str: Vec<String> = allowed.iter().filter_map(|x| x.as_str().map(|s| s.to_lowercase())).collect();
+            let allowed_str: Vec<String> = allowed
+                .iter()
+                .filter_map(|x| x.as_str().map(|s| s.to_lowercase()))
+                .collect();
             if !allowed_str.is_empty() && !allowed_str.contains(&acodec.to_lowercase()) {
-                return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("unsupported audio codec {} (allowed: {:?})", acodec, allowed_str) };
+                return CompatibilityStatus {
+                    status: "conversion_required".to_string(),
+                    reason: format!(
+                        "unsupported audio codec {} (allowed: {:?})",
+                        acodec, allowed_str
+                    ),
+                };
             }
         }
     }
@@ -210,10 +363,22 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
                 if !allowed_rates.contains(&(rate as u64)) {
                     if let Some(max) = asr.get("max").and_then(|x| x.as_u64()) {
                         if (rate as u64) > max {
-                            return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("audio sample rate {} > max {} and not in allowed {:?}", rate, max, allowed_rates) };
+                            return CompatibilityStatus {
+                                status: "conversion_required".to_string(),
+                                reason: format!(
+                                    "audio sample rate {} > max {} and not in allowed {:?}",
+                                    rate, max, allowed_rates
+                                ),
+                            };
                         }
                     }
-                    return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("audio sample rate {} not in allowed {:?}", rate, allowed_rates) };
+                    return CompatibilityStatus {
+                        status: "conversion_required".to_string(),
+                        reason: format!(
+                            "audio sample rate {} not in allowed {:?}",
+                            rate, allowed_rates
+                        ),
+                    };
                 }
             }
         }
@@ -222,7 +387,10 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
     if let Some(max_size) = compat.get("max_file_size").and_then(|x| x.as_u64()) {
         if let Some(fsize) = probe.file_size {
             if fsize > max_size {
-                return CompatibilityStatus { status: "unsupported".to_string(), reason: format!("file size {} > max {}", fsize, max_size) };
+                return CompatibilityStatus {
+                    status: "unsupported".to_string(),
+                    reason: format!("file size {} > max {}", fsize, max_size),
+                };
             }
         }
     }
@@ -230,27 +398,45 @@ pub fn evaluate_compatibility(probe: &ProbeResult, preset: &serde_json::Value) -
     if let Some(sc) = compat.get("stream_constraints").and_then(|v| v.as_object()) {
         if let Some(max) = sc.get("max_streams").and_then(|x| x.as_u64()) {
             if (probe.streams as u64) > max {
-                return CompatibilityStatus { status: "conversion_required".to_string(), reason: format!("stream count {} > max {}", probe.streams, max) };
+                return CompatibilityStatus {
+                    status: "conversion_required".to_string(),
+                    reason: format!("stream count {} > max {}", probe.streams, max),
+                };
             }
         }
     }
-    CompatibilityStatus { status: "compatible".to_string(), reason: "compatible with preset".to_string() }
+    CompatibilityStatus {
+        status: "compatible".to_string(),
+        reason: "compatible with preset".to_string(),
+    }
 }
 
 pub fn conversion_command(input: &Path, output: &Path, _preset: &serde_json::Value) -> Vec<String> {
     vec![
-        "ffmpeg".to_string(), "-y".to_string(),
-        "-i".to_string(), input.to_string_lossy().to_string(),
-        "-c:v".to_string(), "libx264".to_string(),
-        "-profile:v".to_string(), "baseline".to_string(),
-        "-level".to_string(), "3.0".to_string(),
-        "-pix_fmt".to_string(), "yuv420p".to_string(),
-        "-vf".to_string(), "scale=min(640,iw):-2:flags=lanczos".to_string(),
-        "-r".to_string(), "30".to_string(),
-        "-c:a".to_string(), "aac".to_string(),
-        "-ar".to_string(), "48000".to_string(),
-        "-ac".to_string(), "2".to_string(),
-        "-movflags".to_string(), "+faststart".to_string(),
+        "ffmpeg".to_string(),
+        "-y".to_string(),
+        "-i".to_string(),
+        input.to_string_lossy().to_string(),
+        "-c:v".to_string(),
+        "libx264".to_string(),
+        "-profile:v".to_string(),
+        "baseline".to_string(),
+        "-level".to_string(),
+        "3.0".to_string(),
+        "-pix_fmt".to_string(),
+        "yuv420p".to_string(),
+        "-vf".to_string(),
+        "scale=min(640,iw):-2:flags=lanczos".to_string(),
+        "-r".to_string(),
+        "30".to_string(),
+        "-c:a".to_string(),
+        "aac".to_string(),
+        "-ar".to_string(),
+        "48000".to_string(),
+        "-ac".to_string(),
+        "2".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
         output.to_string_lossy().to_string(),
     ]
 }
@@ -267,17 +453,48 @@ pub struct ConversionResult {
 
 pub fn convert(input: &Path, temp_dir: &Path, preset: &serde_json::Value) -> ConversionResult {
     let ffmpeg_cfg = preset.get("ffmpeg").and_then(|v| v.as_object());
-    let output_ext = ffmpeg_cfg.and_then(|m| m.get("output_extension")).and_then(|x| x.as_str()).unwrap_or(".mp4");
-    let base = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
-    let safe_base: String = base.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
-    let safe_base = if safe_base.is_empty() { "output".to_string() } else { safe_base };
-    let mut output_path = temp_dir.join(format!("{}{}", safe_base, format!(".converted{}", output_ext)));
+    let output_ext = ffmpeg_cfg
+        .and_then(|m| m.get("output_extension"))
+        .and_then(|x| x.as_str())
+        .unwrap_or(".mp4");
+    let base = input
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let safe_base: String = base
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let safe_base = if safe_base.is_empty() {
+        "output".to_string()
+    } else {
+        safe_base
+    };
+    let mut output_path = temp_dir.join(format!(
+        "{}{}",
+        safe_base,
+        format!(".converted{}", output_ext)
+    ));
     let mut counter = 1;
     while output_path.exists() {
         output_path = temp_dir.join(format!("{}.converted_{}{}", safe_base, counter, output_ext));
         counter += 1;
         if counter > 100 {
-            return ConversionResult { success: false, output_path: None, stdout: String::new(), stderr: String::new(), error: Some("overwrite protection: too many existing converted files".to_string()), command: vec![], probe: None };
+            return ConversionResult {
+                success: false,
+                output_path: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some("overwrite protection: too many existing converted files".to_string()),
+                command: vec![],
+                probe: None,
+            };
         }
     }
     if !temp_dir.exists() {
@@ -296,11 +513,33 @@ pub fn convert(input: &Path, temp_dir: &Path, preset: &serde_json::Value) -> Con
             let stdout = String::from_utf8_lossy(&o.stdout).to_string();
             let stderr = String::from_utf8_lossy(&o.stderr).to_string();
             if !o.status.success() {
-                if output_path.exists() { let _ = std::fs::remove_file(&output_path); }
-                return ConversionResult { success: false, output_path: None, stdout, stderr: stderr.clone(), error: Some(format!("FFmpeg failed with code {:?}: {}", o.status.code(), stderr.chars().take(2000).collect::<String>())), command: cmd, probe: None };
+                if output_path.exists() {
+                    let _ = std::fs::remove_file(&output_path);
+                }
+                return ConversionResult {
+                    success: false,
+                    output_path: None,
+                    stdout,
+                    stderr: stderr.clone(),
+                    error: Some(format!(
+                        "FFmpeg failed with code {:?}: {}",
+                        o.status.code(),
+                        stderr.chars().take(2000).collect::<String>()
+                    )),
+                    command: cmd,
+                    probe: None,
+                };
             }
             if !output_path.exists() {
-                return ConversionResult { success: false, output_path: None, stdout, stderr, error: Some("FFmpeg succeeded but output file not found".to_string()), command: cmd, probe: None };
+                return ConversionResult {
+                    success: false,
+                    output_path: None,
+                    stdout,
+                    stderr,
+                    error: Some("FFmpeg succeeded but output file not found".to_string()),
+                    command: cmd,
+                    probe: None,
+                };
             }
             // Validate with ffprobe
             match probe(&output_path.to_string_lossy()) {
@@ -309,22 +548,65 @@ pub fn convert(input: &Path, temp_dir: &Path, preset: &serde_json::Value) -> Con
                     let status = evaluate_compatibility(&probe_out, compat);
                     if status.status != "compatible" {
                         let _ = std::fs::remove_file(&output_path);
-                        return ConversionResult { success: false, output_path: None, stdout, stderr, error: Some(format!("Converted file failed validation: {} (probe: {:?})", status.reason, probe_out)), command: cmd, probe: Some(probe_out) };
+                        return ConversionResult {
+                            success: false,
+                            output_path: None,
+                            stdout,
+                            stderr,
+                            error: Some(format!(
+                                "Converted file failed validation: {} (probe: {:?})",
+                                status.reason, probe_out
+                            )),
+                            command: cmd,
+                            probe: Some(probe_out),
+                        };
                     }
-                    ConversionResult { success: true, output_path: Some(output_path), stdout, stderr, error: None, command: cmd, probe: Some(probe_out) }
-                },
+                    ConversionResult {
+                        success: true,
+                        output_path: Some(output_path),
+                        stdout,
+                        stderr,
+                        error: None,
+                        command: cmd,
+                        probe: Some(probe_out),
+                    }
+                }
                 Err(e) => {
                     let _ = std::fs::remove_file(&output_path);
-                    return ConversionResult { success: false, output_path: None, stdout, stderr, error: Some(format!("ffprobe validation failed: {}", e)), command: cmd, probe: None };
+                    return ConversionResult {
+                        success: false,
+                        output_path: None,
+                        stdout,
+                        stderr,
+                        error: Some(format!("ffprobe validation failed: {}", e)),
+                        command: cmd,
+                        probe: None,
+                    };
                 }
             }
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            ConversionResult { success: false, output_path: None, stdout: String::new(), stderr: String::new(), error: Some("FFmpeg not found".to_string()), command: cmd, probe: None }
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => ConversionResult {
+            success: false,
+            output_path: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error: Some("FFmpeg not found".to_string()),
+            command: cmd,
+            probe: None,
         },
         Err(e) => {
-            if output_path.exists() { let _ = std::fs::remove_file(&output_path); }
-            ConversionResult { success: false, output_path: None, stdout: String::new(), stderr: String::new(), error: Some(format!("conversion error: {}", e)), command: cmd, probe: None }
+            if output_path.exists() {
+                let _ = std::fs::remove_file(&output_path);
+            }
+            ConversionResult {
+                success: false,
+                output_path: None,
+                stdout: String::new(),
+                stderr: String::new(),
+                error: Some(format!("conversion error: {}", e)),
+                command: cmd,
+                probe: None,
+            }
         }
     }
 }
@@ -332,10 +614,12 @@ pub fn convert(input: &Path, temp_dir: &Path, preset: &serde_json::Value) -> Con
 fn parse_fps(s: &str) -> Option<f32> {
     if s.contains('/') {
         let parts: Vec<&str> = s.split('/').collect();
-        if parts.len()==2 {
+        if parts.len() == 2 {
             let a: f32 = parts[0].parse().ok()?;
             let b: f32 = parts[1].parse().ok()?;
-            if b!=0.0 { return Some(a/b); }
+            if b != 0.0 {
+                return Some(a / b);
+            }
         }
         None
     } else {

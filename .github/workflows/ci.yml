@@ -1,0 +1,98 @@
+name: CI — TreeFrog Content Manager
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  frontend:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: treefrog-manager/package-lock.json
+      - run: npm ci
+        working-directory: treefrog-manager
+      - run: npm run build
+        working-directory: treefrog-manager
+      - run: npx tsc --noEmit
+        working-directory: treefrog-manager
+
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+      - run: cargo fmt --all -- --check
+        working-directory: treefrog-manager/src-tauri
+      - run: cargo check --verbose
+        working-directory: treefrog-manager/src-tauri
+      - run: cargo test --verbose
+        working-directory: treefrog-manager/src-tauri
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt || pip install pytest
+      - run: pytest tests -v
+
+  security:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run security fixtures (path traversal, archive, BIOS)
+        working-directory: treefrog-manager/src-tauri
+        run: cargo test --test security --verbose || cargo test --verbose -- --test-threads=1
+      - name: Check for TODO stubs on supposedly implemented features
+        shell: pwsh
+        run: |
+          $patterns = @("TODO","FIXME","stub","placeholder","provisional","not implemented","hardcoded version","hardcoded destination")
+          $found = Select-String -Path "treefrog-manager/src-tauri/src/*.rs" -Pattern ($patterns -join "|") -AllMatches
+          if ($found) { $found | ForEach-Object { Write-Host "$($_.Path):$($_.LineNumber): $($_.Line)" }; Write-Host "::warning::Found $($found.Count) TODO/stub patterns — review manually"; }
+          else { Write-Host "No TODO/stub patterns found" }
+
+  build:
+    runs-on: windows-latest
+    needs: [frontend, rust, python, security]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: treefrog-manager/package-lock.json
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - run: npm ci
+        working-directory: treefrog-manager
+      - run: npm run build
+        working-directory: treefrog-manager
+      - name: Build Tauri (Windows x64)
+        working-directory: treefrog-manager
+        run: npx tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-exe
+          path: |
+            treefrog-manager/src-tauri/target/release/treefrog-manager.exe
+            treefrog-manager/src-tauri/target/release/bundle/**/*.exe

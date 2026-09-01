@@ -37,6 +37,15 @@ type TargetAnalysis = {
   label?: string | null;
   errors: string[];
   folder_breakdown?: Record<string, number>;
+  // Semantic counts (backend single source of truth, not derived from dirs.length)
+  rom_count: number;
+  music_track_count: number;
+  video_count: number;
+  image_count: number;
+  ebook_count: number;
+  bios_count: number;
+  lgpt_sample_count: number;
+  lgpt_project_count: number;
 };
 
 type SpaceInfo = {
@@ -360,7 +369,7 @@ export default function SdCardPanel({
           <div style={{ border: "1px solid var(--border)", borderRadius: 6, padding: 10, background: "var(--surface)", gridColumn: "span 2" }}>
             <h4 style={{ margin: "0 0 6px 0" }}>Existing content (read-only index)</h4>
             <div style={{ fontSize: 12 }}>
-              <div><strong>Files indexed:</strong> {analysis.existing_count}</div>
+              <div><strong>Files indexed:</strong> {analysis.existing_count} <span style={{ color: "var(--text-muted)" }}>(semantic: {analysis.rom_count} ROMs, {analysis.music_track_count} music, {analysis.video_count} videos, {analysis.image_count} images, {analysis.ebook_count} ebooks, {analysis.bios_count} BIOS, {analysis.lgpt_sample_count} LGPT samples, {analysis.lgpt_project_count} LGPT projects)</span></div>
               <div><strong>Total size:</strong> {fmtBytes(analysis.total_size)}</div>
               {space && (
                 <>

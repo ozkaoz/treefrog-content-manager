@@ -1,5 +1,6 @@
 import type { Plan, PlanEntry } from "../App";
 import { useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 
 const RESOLUTIONS = ["skip", "replace", "keep_both", "keep_destination", "keep_source"] as const;
 
@@ -16,37 +17,51 @@ function badgeClass(action: string) {
   return "badge-skip";
 }
 
-function applyResolutions(entries: PlanEntry[], decisions: Record<number, string>): PlanEntry[] {
+async function applyResolutionsBackend(plan: Plan, decisions: Record<number, string>): Promise<PlanEntry[]> {
+  try {
+    const resolved: Plan = await invoke("resolve_plan", { plan, decisions });
+    return resolved.entries;
+  } catch {
+    // Fallback to local simplified logic if backend unavailable (e.g., vite dev without Tauri)
+    return plan.entries.map((e, idx) => {
+      const res = decisions[idx];
+      if (!res) return e;
+      const orig = e.action;
+      const dest = e.destination;
+      const copy = { ...e, resolution: res } as PlanEntry;
+      if (res === "skip" || res === "keep_destination") {
+        copy.resolved_action = "skip";
+        copy.reason = e.reason + ` [resolved: ${res}]`;
+      } else if (res === "replace" || res === "keep_source") {
+        copy.resolved_action = orig === "skip_duplicate" ? "copy" : "replace";
+        copy.reason = e.reason + ` [resolved: ${res}]`;
+      } else if (res === "keep_both") {
+        const p = dest;
+        const dot = p.lastIndexOf(".");
+        const slash = p.lastIndexOf("/");
+        let newDest: string;
+        if (dot > slash) {
+          newDest = p.slice(0, dot) + "_1" + p.slice(dot);
+        } else {
+          newDest = p + "_1";
+        }
+        copy.destination = newDest;
+        copy.resolved_action = orig === "extract" ? "extract" : "copy";
+        copy.reason = e.reason + " [resolved: keep_both -> renamed]";
+        (copy as unknown as Record<string, unknown>)["original_destination"] = dest;
+      }
+      copy.resolution = res;
+      return copy;
+    });
+  }
+}
+
+function applyResolutionsSync(entries: PlanEntry[], decisions: Record<number, string>): PlanEntry[] {
+  // Synchronous fallback for initial render — frontend must not be authority, backend will re-resolve on deploy
   return entries.map((e, idx) => {
     const res = decisions[idx];
     if (!res) return e;
-    const orig = e.action;
-    const dest = e.destination;
-    const copy = { ...e, resolution: res } as PlanEntry;
-    // Mirror Python _apply_single_resolution logic (simplified)
-    if (res === "skip" || res === "keep_destination") {
-      copy.resolved_action = "skip";
-      copy.reason = e.reason + ` [resolved: ${res}]`;
-    } else if (res === "replace" || res === "keep_source") {
-      copy.resolved_action = orig === "skip_duplicate" ? "copy" : "replace";
-      copy.reason = e.reason + ` [resolved: ${res}]`;
-    } else if (res === "keep_both") {
-      const p = dest;
-      const dot = p.lastIndexOf(".");
-      const slash = p.lastIndexOf("/");
-      let newDest: string;
-      if (dot > slash) {
-        newDest = p.slice(0, dot) + "_1" + p.slice(dot);
-      } else {
-        newDest = p + "_1";
-      }
-      copy.destination = newDest;
-      copy.resolved_action = orig === "extract" ? "extract" : "copy";
-      copy.reason = e.reason + " [resolved: keep_both -> renamed]";
-      (copy as unknown as Record<string, unknown>)["original_destination"] = dest;
-    }
-    copy.resolution = res;
-    return copy;
+    return { ...e, resolution: res, resolved_action: e.resolved_action || e.action } as PlanEntry;
   });
 }
 
@@ -63,14 +78,14 @@ export default function DryRunPreview({ plan, onResolve }: { plan: Plan; onResol
     onResolve(updatedPlan);
   };
 
-  const entries = applyResolutions(plan.entries, decisions);
+  const entries = applyResolutionsSync(plan.entries, decisions);
 
-  const handleChange = (idx: number, value: string) => {
+  const handleChange = async (idx: number, value: string) => {
     const nd = { ...decisions, [idx]: value };
     if (value === "") delete nd[idx];
     setDecisions(nd);
-    // Also produce a resolved plan for future SD writer (single source of truth)
-    const resolvedEntries = applyResolutions(plan.entries, nd);
+    // Backend is authority for resolution semantics (planner::apply_resolutions)
+    const resolvedEntries = await applyResolutionsBackend(plan, nd);
     const resolvedPlan = { ...plan, entries: resolvedEntries };
     onResolve(resolvedPlan);
   };

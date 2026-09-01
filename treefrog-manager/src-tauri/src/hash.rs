@@ -1,5 +1,9 @@
-use sha2::{Sha256, Digest};
-use std::{fs::File, io::{Read, BufReader}, path::Path};
+use sha2::{Digest, Sha256};
+use std::{
+    fs::File,
+    io::{BufReader, Read},
+    path::Path,
+};
 
 pub fn sha256_file(path: &Path) -> anyhow::Result<String> {
     let file = File::open(path)?;
@@ -8,7 +12,9 @@ pub fn sha256_file(path: &Path) -> anyhow::Result<String> {
     let mut buf = vec![0u8; 64 * 1024];
     loop {
         let n = reader.read(&mut buf)?;
-        if n == 0 { break; }
+        if n == 0 {
+            break;
+        }
         hasher.update(&buf[..n]);
     }
     let result = hasher.finalize();
@@ -23,7 +29,12 @@ pub enum DuplicateClass {
     New,              // new path + new hash -> copy
 }
 
-pub fn classify(_cheap_same: Option<bool>, same_path: bool, same_hash: bool, exists: bool) -> DuplicateClass {
+pub fn classify(
+    _cheap_same: Option<bool>,
+    same_path: bool,
+    same_hash: bool,
+    exists: bool,
+) -> DuplicateClass {
     if !exists {
         return DuplicateClass::New;
     }

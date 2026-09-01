@@ -1,11 +1,11 @@
-use crate::Plan;
 use crate::profile::LoadedProfile;
 use crate::sd_target;
-use std::path::Path;
+use crate::Plan;
 use log::{info, warn};
-use std::io::Read;
-use tauri::{Emitter, AppHandle};
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use std::path::Path;
+use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DeployProgress {
@@ -49,52 +49,56 @@ fn validate_rom_file(src: &Path) -> anyhow::Result<()> {
     }
 }
 
-fn safe_copy_file(src: &Path, dest: &Path) -> anyhow::Result<()> {
-    // Validate the full destination relative to SD root (strip drive letter if present)
-    let dest_str = dest.to_string_lossy().to_string().replace('\\', "/");
-    // For validation, extract the part after the SD root (e.g., G:/roms/GBA/game.gba -> roms/GBA/game.gba)
-    // Find the first occurrence of "roms/" or "cubegm/" or "lgpt/" or "frogui/" to get the relative part
-    let relative = if dest_str.contains("roms/") {
-        dest_str.split("roms/").last().map(|s| format!("roms/{}", s)).unwrap_or(dest_str.clone())
-    } else if dest_str.contains("cubegm/") {
-        dest_str.split("cubegm/").last().map(|s| format!("cubegm/{}", s)).unwrap_or(dest_str.clone())
-    } else if dest_str.contains("lgpt/") {
-        dest_str.split("lgpt/").last().map(|s| format!("lgpt/{}", s)).unwrap_or(dest_str.clone())
-    } else if dest_str.contains("frogui/") {
-        dest_str.split("frogui/").last().map(|s| format!("frogui/{}", s)).unwrap_or(dest_str.clone())
-    } else {
-        // Fallback: use file name with roms/ prefix for validation
-        if let Some(file_name) = dest.file_name().and_then(|n| n.to_str()) {
-            format!("roms/{}", file_name)
-        } else {
-            dest_str.clone()
-        }
-    };
-    sd_target::validate_destination_path(&relative).map_err(|e| anyhow::anyhow!("invalid destination {}: {}", dest.display(), e))?;
-    ensure_parent_exists(dest)?;
+pub fn safe_copy_file(src: &Path, dest: &Path, sd_root: &Path) -> anyhow::Result<()> {
+    // Canonical validation: derive relative path and ensure it stays inside sd_root
+    let relative = dest
+        .strip_prefix(sd_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|_| dest.to_string_lossy().replace('\\', "/"));
+    // Use the single canonical resolver — writer itself remains secure if called directly
+    let validated_dest = sd_target::resolve_validated_destination(sd_root, &relative)
+        .map_err(|e| anyhow::anyhow!("invalid destination {}: {}", dest.display(), e))?;
+    // Use validated path (handles normalization)
+    let dest = validated_dest;
+    ensure_parent_exists(&dest)?;
     let parent = dest.parent().unwrap_or_else(|| Path::new("."));
     // Use a unique temp file per operation to avoid collisions
-    let tmp_name = format!(".treefrog_staging_{}_{}_{}.tmp", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), dest.file_name().unwrap_or_default().to_string_lossy());
+    let tmp_name = format!(
+        ".treefrog_staging_{}_{}_{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos(),
+        dest.file_name().unwrap_or_default().to_string_lossy()
+    );
     let tmp_path = parent.join(tmp_name);
     std::fs::copy(src, &tmp_path)?;
     // Integrity check: temp file size must match source exactly
     if std::fs::metadata(&tmp_path)?.len() != std::fs::metadata(src)?.len() {
         let _ = std::fs::remove_file(&tmp_path);
-        anyhow::bail!("copy verification failed: size mismatch for {} -> {}", src.display(), dest.display());
+        anyhow::bail!(
+            "copy verification failed: size mismatch for {} -> {}",
+            src.display(),
+            dest.display()
+        );
     }
-    // On Windows FAT32/exFAT, rename is atomic if same directory, but not across volumes
-    // Since tmp is in same parent as dest, rename should be atomic
-    match std::fs::rename(&tmp_path, dest) {
+    match std::fs::rename(&tmp_path, &dest) {
         Ok(()) => Ok(()),
         Err(e) => {
-            // Fallback: copy and remove tmp if rename fails (e.g., cross-device)
             let _ = std::fs::remove_file(&tmp_path);
             Err(anyhow::anyhow!("atomic rename failed: {}", e))
         }
     }
 }
 
-pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: bool, app: Option<&AppHandle>) -> anyhow::Result<DeployResult> {
+pub fn deploy_plan(
+    plan: &Plan,
+    sd_root: &str,
+    _profile: &LoadedProfile,
+    force: bool,
+    app: Option<&AppHandle>,
+) -> anyhow::Result<DeployResult> {
     let sd_path = Path::new(sd_root);
     if !sd_path.exists() {
         anyhow::bail!("SD root not found: {}", sd_root);
@@ -105,17 +109,28 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
     }
     if !analysis.is_treefrog {
         if analysis.status == "unknown" {
-            anyhow::bail!("SD target not recognized as TreeFrogUI (missing cubegm/ + roms/): {}", sd_root);
+            anyhow::bail!(
+                "SD target not recognized as TreeFrogUI (missing cubegm/ + roms/): {}",
+                sd_root
+            );
         }
     }
     let space = sd_target::calculate_space(plan, analysis.free_bytes);
     if space.status == "insufficient_space" {
-        anyhow::bail!("Insufficient space: required {} available {}", space.required_bytes, space.available_bytes.unwrap_or(0));
+        anyhow::bail!(
+            "Insufficient space: required {} available {}",
+            space.required_bytes,
+            space.available_bytes.unwrap_or(0)
+        );
     }
     let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
     let collisions = sd_target::check_case_collision(&dests);
     if !collisions.is_empty() {
-        anyhow::bail!("Case collision detected: {} collides with {}", collisions[0].0, collisions[0].1);
+        anyhow::bail!(
+            "Case collision detected: {} collides with {}",
+            collisions[0].0,
+            collisions[0].1
+        );
     }
 
     let mut deployed = 0usize;
@@ -124,38 +139,55 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
     let mut breakdown_rows: Vec<serde_json::Value> = Vec::new();
-    let mut written_dests: std::collections::HashMap<String, Option<String>> = std::collections::HashMap::new();
+    let mut written_dests: std::collections::HashMap<String, Option<String>> =
+        std::collections::HashMap::new();
 
-    let total = plan.entries.iter().filter(|e| matches!(e.resolved_action.as_ref().unwrap_or(&e.action).as_str(), "copy" | "extract" | "convert_then_copy")).count();
+    let total = plan
+        .entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.resolved_action.as_ref().unwrap_or(&e.action).as_str(),
+                "copy" | "extract" | "convert_then_copy"
+            )
+        })
+        .count();
     let mut completed = 0usize;
-    
+
     for entry in &plan.entries {
         let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
         info!(
             "Processing: {} -> {} (action: {}, reason: {})",
-            entry.source,
-            entry.destination,
-            action,
-            entry.reason
+            entry.source, entry.destination, action, entry.reason
         );
         let dest_rel = &entry.destination;
         // Skip UNKNOWN destinations (no file should ever be written to roms/UNKNOWN)
         if dest_rel.contains("roms/UNKNOWN") {
             tracing::warn!("Skipping file with UNKNOWN destination: {}", entry.source);
-            warnings.push(format!("Archivo omitido por destino desconocido: {}", entry.source));
+            warnings.push(format!(
+                "Archivo omitido por destino desconocido: {}",
+                entry.source
+            ));
             skipped += 1;
             continue;
         }
         // Validate (for relative dest)
-        let dest_for_validation = if dest_rel.contains(':') || dest_rel.starts_with('/') || dest_rel.starts_with('\\') {
-            // If it's an absolute Windows path, extract the file name for validation
-            Path::new(dest_rel).file_name().and_then(|n| n.to_str()).unwrap_or(dest_rel).to_string()
-        } else {
-            dest_rel.clone()
-        };
+        let dest_for_validation =
+            if dest_rel.contains(':') || dest_rel.starts_with('/') || dest_rel.starts_with('\\') {
+                // If it's an absolute Windows path, extract the file name for validation
+                Path::new(dest_rel)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(dest_rel)
+                    .to_string()
+            } else {
+                dest_rel.clone()
+            };
         if let Err(e) = sd_target::validate_destination_path(&dest_for_validation) {
             // Try validating as roms/... + file name
-            if let Err(e2) = sd_target::validate_destination_path(&format!("roms/{}", dest_for_validation)) {
+            if let Err(e2) =
+                sd_target::validate_destination_path(&format!("roms/{}", dest_for_validation))
+            {
                 errors.push(format!("{}: {} (also {})", dest_rel, e, e2));
                 failed += 1;
                 continue;
@@ -168,7 +200,10 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
         let downgraded: String = match action.as_str() {
             // "unchanged" REQUIRES the file to actually exist on the SD right now.
             "skip_unchanged" if !dest_exists_now => {
-                info!("Downgrade skip_unchanged -> copy (destination missing on SD): {}", dest_abs.display());
+                info!(
+                    "Downgrade skip_unchanged -> copy (destination missing on SD): {}",
+                    dest_abs.display()
+                );
                 "copy".to_string()
             }
             other => other.to_string(),
@@ -188,7 +223,10 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
         };
 
         // Runtime double-write guard: never write the same destination twice in one job.
-        let is_write = matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy" | "replace");
+        let is_write = matches!(
+            action_final.as_str(),
+            "copy" | "extract" | "convert_then_copy" | "replace"
+        );
         if is_write {
             let norm_dest = dest_abs.to_string_lossy().to_lowercase();
             if let Some(prev_hash) = written_dests.get(&norm_dest).cloned() {
@@ -233,19 +271,35 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     let base = raw_src.split("::").next().unwrap_or(&raw_src);
                     let base = base.split(" (group ").next().unwrap_or(base).trim();
                     let cue_path = std::path::PathBuf::from(base);
-                    let src_dir = cue_path.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-                    let dest_dir = dest_abs.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| dest_abs.clone());
+                    let src_dir = cue_path
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_default();
+                    let dest_dir = dest_abs
+                        .parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| dest_abs.clone());
 
-                    let mut members = entry.members.clone().or_else(|| entry.group.clone()).unwrap_or_default();
+                    let mut members = entry
+                        .members
+                        .clone()
+                        .or_else(|| entry.group.clone())
+                        .unwrap_or_default();
                     if let Some(cn) = cue_path.file_name().and_then(|n| n.to_str()) {
-                        if !members.iter().any(|m| m == cn) { members.insert(0, cn.to_string()); }
+                        if !members.iter().any(|m| m == cn) {
+                            members.insert(0, cn.to_string());
+                        }
                     }
 
                     let mut ok = true;
                     for m in &members {
                         let s = src_dir.join(m);
                         let d = dest_dir.join(m);
-                        if !s.exists() { errors.push(format!("group member not found: {}", s.display())); ok = false; continue; }
+                        if !s.exists() {
+                            errors.push(format!("group member not found: {}", s.display()));
+                            ok = false;
+                            continue;
+                        }
                         if let Err(e) = validate_rom_file(&s) {
                             errors.push(format!("validation failed {}: {}", s.display(), e));
                             warn!("validation failed {}: {}", s.display(), e);
@@ -253,17 +307,37 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                             continue;
                         }
                         if let Ok(meta) = std::fs::metadata(&s) {
-                            info!("Copying ROM (grupo): {} -> {} ({} bytes)", s.display(), d.display(), meta.len());
+                            info!(
+                                "Copying ROM (grupo): {} -> {} ({} bytes)",
+                                s.display(),
+                                d.display(),
+                                meta.len()
+                            );
                         }
-                        match safe_copy_file(&s, &d) {
-                            Ok(()) => { written_dests.insert(d.to_string_lossy().to_lowercase(), None); }
-                            Err(e) => { errors.push(format!("copy {} -> {}: {}", s.display(), d.display(), e)); ok = false; }
+                        match safe_copy_file(&s, &d, sd_path) {
+                            Ok(()) => {
+                                written_dests.insert(d.to_string_lossy().to_lowercase(), None);
+                            }
+                            Err(e) => {
+                                errors.push(format!(
+                                    "copy {} -> {}: {}",
+                                    s.display(),
+                                    d.display(),
+                                    e
+                                ));
+                                ok = false;
+                            }
                         }
                     }
                     if ok {
                         deployed += 1;
-                        written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone());
-                    } else { failed += 1; }
+                        written_dests.insert(
+                            dest_abs.to_string_lossy().to_lowercase(),
+                            entry.hash.clone(),
+                        );
+                    } else {
+                        failed += 1;
+                    }
                     // breakdown row con action final y miembros
                     continue;
                 }
@@ -281,14 +355,25 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     continue;
                 }
                 if let Ok(meta) = std::fs::metadata(src) {
-                    info!("Copying ROM: {} -> {} ({} bytes)", src.display(), dest_abs.display(), meta.len());
+                    info!(
+                        "Copying ROM: {} -> {} ({} bytes)",
+                        src.display(),
+                        dest_abs.display(),
+                        meta.len()
+                    );
                 }
-                match safe_copy_file(src, &dest_abs) {
+                match safe_copy_file(src, &dest_abs, sd_path) {
                     Ok(()) => {
                         deployed += 1;
-                        written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
+                        written_dests.insert(
+                            dest_abs.to_string_lossy().to_lowercase(),
+                            entry.hash.clone().or_else(|| entry.source_hash.clone()),
+                        );
                         // Emitir progreso después de cada archivo copiado
-                        if matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy") {
+                        if matches!(
+                            action_final.as_str(),
+                            "copy" | "extract" | "convert_then_copy"
+                        ) {
                             completed += 1;
                             if let Some(app_handle) = app {
                                 let _ = app_handle.emit("deploy-progress", serde_json::json!({
@@ -300,15 +385,21 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                 }));
                             }
                         }
-                    },
+                    }
                     Err(e) => {
-                        errors.push(format!("copy {} -> {}: {}", src.display(), dest_abs.display(), e));
+                        errors.push(format!(
+                            "copy {} -> {}: {}",
+                            src.display(),
+                            dest_abs.display(),
+                            e
+                        ));
                         failed += 1;
                     }
                 }
-            },
+            }
             "extract" => {
-                let archive_src = Path::new(entry.source.split("::").next().unwrap_or(&entry.source));
+                let archive_src =
+                    Path::new(entry.source.split("::").next().unwrap_or(&entry.source));
                 if !archive_src.exists() {
                     errors.push(format!("archive not found: {}", archive_src.display()));
                     failed += 1;
@@ -317,8 +408,13 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                 // For grouped logical units (CUE/BIN), the destination is a folder like roms/PS/Game
                 // For single files, it's a file like roms/SFC/game.sfc
                 // We need to preserve hierarchy: use a unique TempDir per archive
-                let tmp_dir = tempfile::TempDir::new().map_err(|e| anyhow::anyhow!("tempdir failed: {}", e))?;
-                match crate::archive::safe_extract_to_temp(archive_src, tmp_dir.path(), &crate::archive::Limits::default()) {
+                let tmp_dir = tempfile::TempDir::new()
+                    .map_err(|e| anyhow::anyhow!("tempdir failed: {}", e))?;
+                match crate::archive::safe_extract_to_temp(
+                    archive_src,
+                    tmp_dir.path(),
+                    &crate::archive::Limits::default(),
+                ) {
                     Ok(extracted) => {
                         let mut ok = true;
                         // For grouped, dest_abs is a directory; for single, it's a file's parent
@@ -334,8 +430,15 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                             let rel = p.strip_prefix(tmp_dir.path()).unwrap_or(&p);
                             let dest_file = dest_base.join(rel);
                             // Validate before copy
-                            if let Err(e) = sd_target::validate_destination_path(&rel.to_string_lossy().to_string().replace('\\', "/")) {
-                                errors.push(format!("extracted path invalid {} -> {}: {}", p.display(), dest_file.display(), e));
+                            if let Err(e) = sd_target::validate_destination_path(
+                                &rel.to_string_lossy().to_string().replace('\\', "/"),
+                            ) {
+                                errors.push(format!(
+                                    "extracted path invalid {} -> {}: {}",
+                                    p.display(),
+                                    dest_file.display(),
+                                    e
+                                ));
                                 ok = false;
                                 continue;
                             }
@@ -346,19 +449,36 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                 continue;
                             }
                             if let Ok(meta) = std::fs::metadata(&p) {
-                                info!("Copying ROM (extract): {} -> {} ({} bytes)", p.display(), dest_file.display(), meta.len());
+                                info!(
+                                    "Copying ROM (extract): {} -> {} ({} bytes)",
+                                    p.display(),
+                                    dest_file.display(),
+                                    meta.len()
+                                );
                             }
-                            if let Err(e) = safe_copy_file(&p, &dest_file) {
-                                errors.push(format!("extract copy {} -> {}: {}", p.display(), dest_file.display(), e));
+                            if let Err(e) = safe_copy_file(&p, &dest_file, sd_path) {
+                                errors.push(format!(
+                                    "extract copy {} -> {}: {}",
+                                    p.display(),
+                                    dest_file.display(),
+                                    e
+                                ));
                                 ok = false;
                             } else {
-                                written_dests.insert(dest_file.to_string_lossy().to_lowercase(), None);
+                                written_dests
+                                    .insert(dest_file.to_string_lossy().to_lowercase(), None);
                             }
                         }
                         if ok {
                             deployed += 1;
-                            written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
-                            if matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy") {
+                            written_dests.insert(
+                                dest_abs.to_string_lossy().to_lowercase(),
+                                entry.hash.clone().or_else(|| entry.source_hash.clone()),
+                            );
+                            if matches!(
+                                action_final.as_str(),
+                                "copy" | "extract" | "convert_then_copy"
+                            ) {
                                 completed += 1;
                                 if let Some(app_handle) = app {
                                     let _ = app_handle.emit("deploy-progress", serde_json::json!({
@@ -370,15 +490,24 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                                     }));
                                 }
                             }
-                        } else { failed += 1; }
-                    },
+                        } else {
+                            failed += 1;
+                        }
+                    }
                     Err(e) => {
                         // Fallback: copy archive as is if it's a payload (e.g., cps1 zip)
-                        if entry.destination.ends_with(".zip") || entry.content_type.as_deref() == Some("archive-payload") {
-                            match safe_copy_file(archive_src, &dest_abs) {
+                        if entry.destination.ends_with(".zip")
+                            || entry.content_type.as_deref() == Some("archive-payload")
+                        {
+                            match safe_copy_file(archive_src, &dest_abs, sd_path) {
                                 Ok(()) => deployed += 1,
                                 Err(e2) => {
-                                    errors.push(format!("extract {}: {} (fallback copy also failed: {})", archive_src.display(), e, e2));
+                                    errors.push(format!(
+                                        "extract {}: {} (fallback copy also failed: {})",
+                                        archive_src.display(),
+                                        e,
+                                        e2
+                                    ));
                                     failed += 1;
                                 }
                             }
@@ -388,7 +517,7 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                         }
                     }
                 }
-            },
+            }
             "convert_then_copy" => {
                 let src = Path::new(&entry.source);
                 if !src.exists() {
@@ -396,44 +525,98 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
                     failed += 1;
                     continue;
                 }
-                // For video conversion, the planner has already determined that the source needs conversion
-                // via ffprobe -> FFmpeg -> re-probe. In a full implementation, we would call video::convert here
-                // to generate the converted file in a temp staging area, then copy the converted file.
-                // For this milestone (read-only dry-run), we just copy the source and warn that conversion is provisional.
-                warnings.push(format!("video conversion for {} is PROVISIONAL_UNVALIDATED (would convert via FFmpeg to {} before deploy)", src.display(), entry.converted_name.as_deref().unwrap_or("converted.mp4")));
-                match safe_copy_file(src, &dest_abs) {
+                // Real pipeline: create temp staging, run ffmpeg, probe converted output, validate, deploy
+                // Original source remains untouched; staged output is removed on failure/cancellation
+                if let Some(app_handle) = app {
+                    let _ = app_handle.emit(
+                        "deploy-progress",
+                        serde_json::json!({
+                            "current": completed,
+                            "total": total,
+                            "percentage": (completed as f64 / total as f64 * 100.0) as u32,
+                            "current_file": entry.source,
+                            "message": format!("Converting video {}/{}...", completed + 1, total)
+                        }),
+                    );
+                }
+                let temp_dir = match tempfile::TempDir::new() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        errors.push(format!("temp staging failed for {}: {}", src.display(), e));
+                        failed += 1;
+                        continue;
+                    }
+                };
+                let preset = &_profile.video_preset;
+                let result = crate::video::convert(src, temp_dir.path(), preset);
+                if !result.success {
+                    let err = result
+                        .error
+                        .unwrap_or_else(|| "conversion failed".to_string());
+                    // Staged output already removed by video::convert on failure
+                    errors.push(format!("video conversion {}: {}", src.display(), err));
+                    failed += 1;
+                    // TempDir will be cleaned (staged output already removed)
+                    continue;
+                }
+                let converted_path = match result.output_path {
+                    Some(p) => p,
+                    None => {
+                        errors.push(format!("video conversion {}: no output", src.display()));
+                        failed += 1;
+                        continue;
+                    }
+                };
+                // Deploy converted output (final SD destination is never written before validation)
+                match safe_copy_file(&converted_path, &dest_abs, sd_path) {
                     Ok(()) => {
                         deployed += 1;
-                        written_dests.insert(dest_abs.to_string_lossy().to_lowercase(), entry.hash.clone().or_else(|| entry.source_hash.clone()));
-                        // Emitir progreso después de cada archivo copiado
-                        if matches!(action_final.as_str(), "copy" | "extract" | "convert_then_copy") {
-                            completed += 1;
-                            if let Some(app_handle) = app {
-                                let _ = app_handle.emit("deploy-progress", serde_json::json!({
-                                    "current": completed,
-                                    "total": total,
-                                    "percentage": (completed as f64 / total as f64 * 100.0) as u32,
-                                    "current_file": entry.source,
-                                    "message": format!("Transferring {}/{} files...", completed, total)
-                                }));
-                            }
+                        written_dests.insert(
+                            dest_abs.to_string_lossy().to_lowercase(),
+                            entry.hash.clone().or_else(|| entry.source_hash.clone()),
+                        );
+                        completed += 1;
+                        if let Some(app_handle) = app {
+                            let _ = app_handle.emit("deploy-progress", serde_json::json!({
+                                "current": completed,
+                                "total": total,
+                                "percentage": (completed as f64 / total as f64 * 100.0) as u32,
+                                "current_file": entry.source,
+                                "message": format!("Deployed converted video {}/{}...", completed, total)
+                            }));
                         }
-                    },
+                    }
                     Err(e) => {
-                        errors.push(format!("video copy {} -> {}: {}", src.display(), dest_abs.display(), e));
+                        errors.push(format!(
+                            "video copy {} -> {}: {}",
+                            converted_path.display(),
+                            dest_abs.display(),
+                            e
+                        ));
                         failed += 1;
                     }
                 }
-            },
+                // temp_dir dropped here — staged output removed
+            }
             "skip" | "skip_unchanged" | "skip_duplicate" => {
                 skipped += 1;
-            },
-            "conflict" | "manual_review" | "unsupported_archive" | "unsupported" | "conversion_error" => {
-                warnings.push(format!("{} requires manual decision: {} -> {} ({})", entry.source, entry.destination, entry.action, entry.reason));
+            }
+            "conflict"
+            | "manual_review"
+            | "unsupported_archive"
+            | "unsupported"
+            | "conversion_error" => {
+                warnings.push(format!(
+                    "{} requires manual decision: {} -> {} ({})",
+                    entry.source, entry.destination, entry.action, entry.reason
+                ));
                 skipped += 1;
-            },
+            }
             _ => {
-                warnings.push(format!("unknown action {} for {} -> {}", action, entry.source, entry.destination));
+                warnings.push(format!(
+                    "unknown action {} for {} -> {}",
+                    action, entry.source, entry.destination
+                ));
                 skipped += 1;
             }
         }
@@ -446,13 +629,18 @@ pub fn deploy_plan(plan: &Plan, sd_root: &str, _profile: &LoadedProfile, force: 
 
     // Log detailed breakdown
     if skipped > 0 {
-        let skipped_entries: Vec<_> = plan.entries.iter()
+        let skipped_entries: Vec<_> = plan
+            .entries
+            .iter()
             .filter(|e| {
                 let action = e.resolved_action.as_ref().unwrap_or(&e.action);
-                matches!(action.as_str(), "skip" | "skip_unchanged" | "skip_duplicate" | "conflict" | "manual_review")
+                matches!(
+                    action.as_str(),
+                    "skip" | "skip_unchanged" | "skip_duplicate" | "conflict" | "manual_review"
+                )
             })
             .collect();
-        
+
         for entry in skipped_entries {
             let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
             warn!(

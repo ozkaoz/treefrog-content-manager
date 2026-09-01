@@ -27,15 +27,37 @@ pub struct Classification {
 }
 
 pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
-    let ext = path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
-    let lower_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e.to_lowercase()))
+        .unwrap_or_default();
+    let lower_name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("")
+        .to_lowercase();
     let lower_path = path.to_string_lossy().to_lowercase().replace('\\', "/");
     // Prioridad absoluta de BIOS: todo dentro de cubegm/bios es BIOS, sin importar extensión
     if lower_path.contains("/cubegm/bios/") {
-        return Classification { kind: Kind::Bios, system_id: None, destination: "cubegm/bios".into(), archive_valid: false, multi_file: false, possible_destinations: None };
+        return Classification {
+            kind: Kind::Bios,
+            system_id: None,
+            destination: "cubegm/bios".into(),
+            archive_valid: false,
+            multi_file: false,
+            possible_destinations: None,
+        };
     }
     if lower_path.contains("/frogui/") || lower_path.contains("/cubegm/cores/") {
-        return Classification { kind: Kind::Unknown, system_id: None, destination: "".into(), archive_valid: false, multi_file: false, possible_destinations: None };
+        return Classification {
+            kind: Kind::Unknown,
+            system_id: None,
+            destination: "".into(),
+            archive_valid: false,
+            multi_file: false,
+            possible_destinations: None,
+        };
     }
 
     // .nes SIEMPRE a FC (fceumm) — antes que cualquier otra lógica de ROM
@@ -52,10 +74,17 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
 
     // .cue/.bin con contexto de carpeta padre — no UNKNOWN, default PS
     if ext == ".cue" || ext == ".bin" {
-        if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+        if let Some(parent_name) = path
+            .parent()
+            .and_then(|p| p.file_name())
+            .map(|n| n.to_string_lossy().to_lowercase())
+        {
             if let Some(sys_id) = profile.alias_to_system.get(&parent_name) {
                 let sys = profile.systems.iter().find(|s| &s.id == sys_id);
-                let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+                let folder = sys
+                    .and_then(|s| s.folder_aliases.first())
+                    .map(|f| format!("roms/{}", f))
+                    .unwrap_or_else(|| "roms/PS".into());
                 return Classification {
                     kind: Kind::Rom,
                     system_id: Some(sys_id.clone()),
@@ -67,7 +96,10 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             }
         }
         let sys = profile.systems.iter().find(|s| s.id == "ps_psx");
-        let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
+        let folder = sys
+            .and_then(|s| s.folder_aliases.first())
+            .map(|f| format!("roms/{}", f))
+            .unwrap_or_else(|| "roms/PS".into());
         return Classification {
             kind: Kind::Rom,
             system_id: Some("ps_psx".into()),
@@ -94,7 +126,13 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     // LGPT - profile-driven destinations, WAV baseline (check before generic music)
     let lgpt_samples = "lgpt/samples";
     let lgpt_projects = "lgpt/projects";
-    if lower_name.ends_with(".wav") || lower_name.ends_with(".flac") || lower_name.ends_with(".aiff") || lower_name.ends_with(".aif") || lower_name.ends_with(".mp3") || lower_name.ends_with(".ogg") {
+    if lower_name.ends_with(".wav")
+        || lower_name.ends_with(".flac")
+        || lower_name.ends_with(".aiff")
+        || lower_name.ends_with(".aif")
+        || lower_name.ends_with(".mp3")
+        || lower_name.ends_with(".ogg")
+    {
         if path.to_string_lossy().to_lowercase().contains("lgpt") {
             return Classification {
                 kind: Kind::LgptSample,
@@ -102,7 +140,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: lgpt_samples.into(),
                 archive_valid: false,
                 multi_file: false,
-            possible_destinations: None,
+                possible_destinations: None,
             };
         }
         if path.to_string_lossy().to_lowercase().contains("samples") && ext == ".wav" {
@@ -112,7 +150,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: lgpt_samples.into(),
                 archive_valid: false,
                 multi_file: false,
-            possible_destinations: None,
+                possible_destinations: None,
             };
         }
     }
@@ -126,7 +164,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                     destination: lgpt_projects.into(),
                     archive_valid: false,
                     multi_file: true,
-            possible_destinations: None,
+                    possible_destinations: None,
                 };
             }
             if path.join("lgptsav.dat").exists() || path.join("project.lgpt").exists() {
@@ -136,7 +174,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                     destination: lgpt_projects.into(),
                     archive_valid: false,
                     multi_file: true,
-            possible_destinations: None,
+                    possible_destinations: None,
                 };
             }
         }
@@ -174,7 +212,9 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             possible_destinations: None,
         };
     }
-    let video_exts = [".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts", ".webm"];
+    let video_exts = [
+        ".mp4", ".mkv", ".avi", ".mov", ".m4v", ".wmv", ".mpg", ".mpeg", ".ts", ".webm",
+    ];
     if video_exts.contains(&ext.as_str()) {
         let lower_path_v = path.to_string_lossy().to_lowercase().replace('\\', "/");
         // Only classify as Video if inside roms/videos/ (TreeFrogUI stock has 1 video there, not elsewhere)
@@ -185,22 +225,26 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: "roms/videos".into(),
                 archive_valid: false,
                 multi_file: false,
-            possible_destinations: None,
+                possible_destinations: None,
             };
         }
         // Fall through to Unknown for videos outside roms/videos/ (will go to roms/UNKNOWN)
     }
-    let image_exts = [".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif", ".tga", ".ico"];
+    let image_exts = [
+        ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif", ".tga", ".ico",
+    ];
     if image_exts.contains(&ext.as_str()) {
         // Note: .res artwork folders are handled separately; still image kind but destination may be ignored if inside .res
-        if path.components().any(|c| c.as_os_str() == ".res" || c.as_os_str() == "Imgs" || c.as_os_str() == "images") {
+        if path.components().any(|c| {
+            c.as_os_str() == ".res" || c.as_os_str() == "Imgs" || c.as_os_str() == "images"
+        }) {
             return Classification {
                 kind: Kind::Image,
                 system_id: None,
                 destination: ".res".into(),
                 archive_valid: false,
                 multi_file: false,
-            possible_destinations: None,
+                possible_destinations: None,
             };
         }
         return Classification {
@@ -226,7 +270,16 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
 
     // BIOS by name patterns (from bios.json)
     let bios_patterns = [
-        "scph", "gba_bios.bin", "o2rom.bin", "disksys.rom", "neogeo.zip", "bios_cd", "kick13.rom", "kick20.rom", "pcfx.rom", "x86boot.img",
+        "scph",
+        "gba_bios.bin",
+        "o2rom.bin",
+        "disksys.rom",
+        "neogeo.zip",
+        "bios_cd",
+        "kick13.rom",
+        "kick20.rom",
+        "pcfx.rom",
+        "x86boot.img",
     ];
     for pat in bios_patterns {
         if lower_name.contains(pat) {
@@ -236,7 +289,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 destination: "cubegm/bios".into(),
                 archive_valid: false,
                 multi_file: false,
-            possible_destinations: None,
+                possible_destinations: None,
             };
         }
     }
@@ -245,18 +298,45 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     if ext == ".cue" || ext == ".bin" {
         let lower_path = path.to_string_lossy().to_lowercase();
         // Heuristic: if path contains PS indicators, force PS
-        let is_ps_hint = lower_path.contains("ps") || lower_path.contains("playstation") || lower_path.contains("psx") || lower_path.contains("ps1");
-        let is_segacd_hint = lower_path.contains("segacd") || lower_path.contains("mega cd") || lower_path.contains("sega cd");
+        let is_ps_hint = lower_path.contains("ps")
+            || lower_path.contains("playstation")
+            || lower_path.contains("psx")
+            || lower_path.contains("ps1");
+        let is_segacd_hint = lower_path.contains("segacd")
+            || lower_path.contains("mega cd")
+            || lower_path.contains("sega cd");
         if is_ps_hint {
             if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
-                let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
+                let folder = sys
+                    .folder_aliases
+                    .first()
+                    .map(|f| format!("roms/{}", f))
+                    .unwrap_or_else(|| "roms/PS".into());
+                return Classification {
+                    kind: Kind::Rom,
+                    system_id: Some("ps_psx".into()),
+                    destination: folder,
+                    archive_valid: false,
+                    multi_file: true,
+                    possible_destinations: None,
+                };
             }
         }
         if is_segacd_hint {
             if let Some(sys) = profile.systems.iter().find(|s| s.id == "segacd") {
-                let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/segacd".into());
-                return Classification { kind: Kind::Rom, system_id: Some("segacd".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
+                let folder = sys
+                    .folder_aliases
+                    .first()
+                    .map(|f| format!("roms/{}", f))
+                    .unwrap_or_else(|| "roms/segacd".into());
+                return Classification {
+                    kind: Kind::Rom,
+                    system_id: Some("segacd".into()),
+                    destination: folder,
+                    archive_valid: false,
+                    multi_file: true,
+                    possible_destinations: None,
+                };
             }
         }
         // For .cue, check content for PS-specific strings
@@ -265,8 +345,19 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 let upper = content.to_uppercase();
                 if upper.contains("PLAYSTATION") || upper.contains("PSX") {
                     if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
-                        let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
+                        let folder = sys
+                            .folder_aliases
+                            .first()
+                            .map(|f| format!("roms/{}", f))
+                            .unwrap_or_else(|| "roms/PS".into());
+                        return Classification {
+                            kind: Kind::Rom,
+                            system_id: Some("ps_psx".into()),
+                            destination: folder,
+                            archive_valid: false,
+                            multi_file: true,
+                            possible_destinations: None,
+                        };
                     }
                 }
             }
@@ -277,8 +368,19 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
                 if meta.len() > 50 * 1024 * 1024 {
                     // Large BIN -> PS or SegaCD, default to PS (most common for TreeFrogUI)
                     if let Some(sys) = profile.systems.iter().find(|s| s.id == "ps_psx") {
-                        let folder = sys.folder_aliases.first().map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/PS".into());
-                        return Classification { kind: Kind::Rom, system_id: Some("ps_psx".into()), destination: folder, archive_valid: false, multi_file: true, possible_destinations: None };
+                        let folder = sys
+                            .folder_aliases
+                            .first()
+                            .map(|f| format!("roms/{}", f))
+                            .unwrap_or_else(|| "roms/PS".into());
+                        return Classification {
+                            kind: Kind::Rom,
+                            system_id: Some("ps_psx".into()),
+                            destination: folder,
+                            archive_valid: false,
+                            multi_file: true,
+                            possible_destinations: None,
+                        };
                     }
                 }
             }
@@ -303,17 +405,41 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
 
     // Forzar .nes a FC (alta compatibilidad) — TreeFrogUI usa FC para fceumm, NES para quicknes (mappers)
     if ext == ".nes" {
-        return Classification { kind: Kind::Rom, system_id: Some("nes_fceumm".into()), destination: "roms/FC".into(), archive_valid: false, multi_file: false, possible_destinations: None };
+        return Classification {
+            kind: Kind::Rom,
+            system_id: Some("nes_fceumm".into()),
+            destination: "roms/FC".into(),
+            archive_valid: false,
+            multi_file: false,
+            possible_destinations: None,
+        };
     }
 
     // Clasificación Contextual (Context-Aware): si la carpeta padre coincide con un alias, usar ese sistema
-    if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
+    if let Some(parent_name) = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_lowercase())
+    {
         if let Some(sys_id) = profile.alias_to_system.get(&parent_name) {
             let sys = profile.systems.iter().find(|s| &s.id == sys_id);
-            let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/UNKNOWN".into());
+            let folder = sys
+                .and_then(|s| s.folder_aliases.first())
+                .map(|f| format!("roms/{}", f))
+                .unwrap_or_else(|| "roms/UNKNOWN".into());
             let multi = sys.and_then(|s| s.multi_file).unwrap_or(false);
-            let archive_valid = sys.and_then(|s| s.archive_payload_valid.as_ref()).map(|v| v.iter().any(|e| e.to_lowercase()==ext)).unwrap_or(false);
-            return Classification { kind: Kind::Rom, system_id: Some(sys_id.clone()), destination: folder, archive_valid, multi_file: multi, possible_destinations: None };
+            let archive_valid = sys
+                .and_then(|s| s.archive_payload_valid.as_ref())
+                .map(|v| v.iter().any(|e| e.to_lowercase() == ext))
+                .unwrap_or(false);
+            return Classification {
+                kind: Kind::Rom,
+                system_id: Some(sys_id.clone()),
+                destination: folder,
+                archive_valid,
+                multi_file: multi,
+                possible_destinations: None,
+            };
         }
     }
 
@@ -322,9 +448,15 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         // pick first system for destination; keep system_id
         let sys_id = ids[0].clone();
         let sys = profile.systems.iter().find(|s| s.id == sys_id);
-        let folder = sys.and_then(|s| s.folder_aliases.first()).map(|f| format!("roms/{}", f)).unwrap_or_else(|| "roms/UNKNOWN".into());
+        let folder = sys
+            .and_then(|s| s.folder_aliases.first())
+            .map(|f| format!("roms/{}", f))
+            .unwrap_or_else(|| "roms/UNKNOWN".into());
         let multi = sys.and_then(|s| s.multi_file).unwrap_or(false);
-        let archive_valid = sys.and_then(|s| s.archive_payload_valid.as_ref()).map(|v| v.iter().any(|e| e.to_lowercase()==ext)).unwrap_or(false);
+        let archive_valid = sys
+            .and_then(|s| s.archive_payload_valid.as_ref())
+            .map(|v| v.iter().any(|e| e.to_lowercase() == ext))
+            .unwrap_or(false);
         return Classification {
             kind: Kind::Rom,
             system_id: Some(sys_id),
@@ -332,7 +464,7 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
             archive_valid,
             multi_file: multi,
             possible_destinations: None,
-        }
+        };
     }
 
     // Fallback: unknown -> no destination (planner will skip, evita crear roms/UNKNOWN)

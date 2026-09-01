@@ -21,12 +21,26 @@ pub fn detect(path: &str) -> anyhow::Result<SdInfo> {
     let mut found = Vec::new();
     let mut missing = Vec::new();
     for m in markers {
-        if p.join(m).exists() { found.push(m.to_string()); } else { missing.push(m.to_string()); }
+        if p.join(m).exists() {
+            found.push(m.to_string());
+        } else {
+            missing.push(m.to_string());
+        }
     }
     let is_sd = found.contains(&"cubegm".to_string()) && found.contains(&"roms".to_string());
-    // Health: writable probe only when explicitly requested — here we just check metadata without writing
-    let writable = if is_sd { Some(true) } else { None }; // placeholder until write probe
-    Ok(SdInfo { path: path.to_string(), is_treefrog_sd: is_sd, markers_found: found, markers_missing: missing, writable, healthy: writable })
+    // Do NOT infer writable/healthy from is_treefrog_sd. Without an explicit non-destructive write probe,
+    // we must return unknown (None) rather than true. A read-only SD must not appear writable.
+    // See docs/ai/VALIDATION.md and P1 sd::detect requirements.
+    let writable: Option<bool> = None;
+    let healthy: Option<bool> = None;
+    Ok(SdInfo {
+        path: path.to_string(),
+        is_treefrog_sd: is_sd,
+        markers_found: found,
+        markers_missing: missing,
+        writable,
+        healthy,
+    })
 }
 
 /// Write probe — creates unique temp file then removes it. Only call when user explicitly requests.
@@ -37,7 +51,7 @@ pub fn write_probe(path: &str) -> anyhow::Result<bool> {
         Ok(()) => {
             let _ = std::fs::remove_file(&probe);
             Ok(true)
-        },
+        }
         Err(_) => Ok(false),
     }
 }

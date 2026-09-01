@@ -2,8 +2,8 @@
 
 **Version:** 2.1
 **Date:** 2026-08-23
-**Repo:** https://github.com/ozkaoz/lgpt-r36sx-port
-**Scope:** Multi-agent operating contract for the LGPT R36SX port
+**Repo:** https://github.com/ozkaoz/treefrog-content-manager
+**Scope:** Multi-agent operating contract for the TreeFrog Content Manager (global TreeFrogUI SD manager)
 
 > Permanent constitution. Not history, not current state. Provider-neutral.
 > Mutable values (branch, HEAD, SHA, SD hash) belong in CURRENT.md or Git — never here.

@@ -18,8 +18,11 @@ export function UpdateChecker() {
   const [updateAvailable, setUpdateAvailable] = useState<GitHubRelease | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [currentVersion, setCurrentVersion] = useState<string>("");
 
-  const currentVersion = "0.1.0";
+  useEffect(() => {
+    invoke("build_info").then((info: any) => setCurrentVersion(info.version || "")).catch(() => setCurrentVersion("0.1.0"));
+  }, []);
 
   const checkForUpdates = async () => {
     setIsChecking(true);

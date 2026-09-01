@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "TreeFrog Content Manager — global TreeFrogUI SD manager (Tauri 2 + Rust)"
 authors = ["TreeFrog Content Manager"]
 edition = "2021"
-repository = "https://github.com/ozkaoz/lgpt-r36sx-port"
+repository = "https://github.com/ozkaoz/treefrog-content-manager"
 license = "GPL-3.0-or-later"
 
 [build-dependencies]

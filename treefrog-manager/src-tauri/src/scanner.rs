@@ -1,8 +1,8 @@
-use crate::profile::LoadedProfile;
 use crate::classify;
+use crate::profile::LoadedProfile;
+use serde::Serialize;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
-use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ScannedFile {
@@ -18,7 +18,11 @@ pub fn scan(source_root: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<Sc
     scan_directory(source_root, profile, false)
 }
 
-pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> anyhow::Result<Vec<ScannedFile>> {
+pub fn scan_directory(
+    path: &str,
+    profile: &LoadedProfile,
+    is_target: bool,
+) -> anyhow::Result<Vec<ScannedFile>> {
     let root = Path::new(path);
     if !root.exists() {
         anyhow::bail!("source path not found: {}", path);
@@ -26,31 +30,43 @@ pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> a
     let mut out = Vec::new();
     let mut seen_sources: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut consumed: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    for entry in WalkDir::new(root).follow_links(false).into_iter().filter_entry({
-        let root = root.to_path_buf();
-        move |e| {
-            let name = e.file_name().to_string_lossy().to_lowercase();
-            if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") {
-                return false;
-            }
-            if !is_target {
-                return true;
-            }
-            let path = e.path();
-            if path == root { return true; }
-            if e.depth() == 1 {
-                return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
-            }
-            if let Some(parent_name) = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().to_lowercase()) {
-                if parent_name == "cubegm" {
-                    return name == "bios";
+    for entry in WalkDir::new(root)
+        .follow_links(false)
+        .into_iter()
+        .filter_entry({
+            let root = root.to_path_buf();
+            move |e| {
+                let name = e.file_name().to_string_lossy().to_lowercase();
+                if name.starts_with('.') || name.ends_with(".tmp") || name.ends_with(".temp") {
+                    return false;
                 }
+                if !is_target {
+                    return true;
+                }
+                let path = e.path();
+                if path == root {
+                    return true;
+                }
+                if e.depth() == 1 {
+                    return ["roms", "cubegm", "lgpt"].contains(&name.as_str());
+                }
+                if let Some(parent_name) = path
+                    .parent()
+                    .and_then(|p| p.file_name())
+                    .map(|n| n.to_string_lossy().to_lowercase())
+                {
+                    if parent_name == "cubegm" {
+                        return name == "bios";
+                    }
+                }
+                true
             }
-            true
-        }
-    }).filter_map(|e| e.ok()) {
+        })
+        .filter_map(|e| e.ok())
+    {
         let p = entry.path();
-        let canon = std::fs::canonicalize(entry.path()).unwrap_or_else(|_| entry.path().to_path_buf());
+        let canon =
+            std::fs::canonicalize(entry.path()).unwrap_or_else(|_| entry.path().to_path_buf());
         if !seen_sources.insert(canon.clone()) {
             continue; // same physical file visited twice (symlink/junction) -> ignore
         }
@@ -78,7 +94,10 @@ pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> a
         {
             continue;
         }
-        let meta = match std::fs::metadata(p) { Ok(m) => m, Err(_) => continue };
+        let meta = match std::fs::metadata(p) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
         let size = meta.len();
         // classify by profile + extension/content hints (not filename alone, but extension is primary hint)
         let class = classify::classify(p, profile);
@@ -95,7 +114,11 @@ pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> a
         }
         out.push(ScannedFile {
             source_path: p.to_path_buf(),
-            relative_hint: p.strip_prefix(root).unwrap_or(p).to_string_lossy().to_string(),
+            relative_hint: p
+                .strip_prefix(root)
+                .unwrap_or(p)
+                .to_string_lossy()
+                .to_string(),
             size,
             classification: class,
             group_members: group,
@@ -106,7 +129,11 @@ pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> a
     let mut seen_groups: std::collections::HashSet<String> = std::collections::HashSet::new();
     for sf in out {
         if let Some(members) = &sf.group_members {
-            let key = members.iter().map(|m| m.to_string_lossy().to_string()).collect::<Vec<_>>().join("|");
+            let key = members
+                .iter()
+                .map(|m| m.to_string_lossy().to_string())
+                .collect::<Vec<_>>()
+                .join("|");
             if seen_groups.contains(&key) {
                 continue;
             }
@@ -119,43 +146,74 @@ pub fn scan_directory(path: &str, profile: &LoadedProfile, is_target: bool) -> a
 
 pub fn scan_games(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
     let all_files = scan_directory(path, profile, false)?;
-    Ok(all_files.into_iter().filter(|sf| matches!(sf.classification.kind, classify::Kind::Rom)).collect())
+    Ok(all_files
+        .into_iter()
+        .filter(|sf| matches!(sf.classification.kind, classify::Kind::Rom))
+        .collect())
 }
 
 pub fn scan_music(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
     let all_files = scan_directory(path, profile, false)?;
     let audio_exts = [".mp3", ".flac", ".ogg", ".wav", ".m4a", ".aac", ".opus"];
-    Ok(all_files.into_iter().filter(|sf| {
-        let ext = sf.source_path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
-        audio_exts.contains(&ext.as_str())
-    }).collect())
+    Ok(all_files
+        .into_iter()
+        .filter(|sf| {
+            let ext = sf
+                .source_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| format!(".{}", e.to_lowercase()))
+                .unwrap_or_default();
+            audio_exts.contains(&ext.as_str())
+        })
+        .collect())
 }
 
 pub fn scan_videos(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
     let all_files = scan_directory(path, profile, false)?;
     let video_exts = [".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm"];
-    Ok(all_files.into_iter().filter(|sf| {
-        let ext = sf.source_path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
-        video_exts.contains(&ext.as_str())
-    }).collect())
+    Ok(all_files
+        .into_iter()
+        .filter(|sf| {
+            let ext = sf
+                .source_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| format!(".{}", e.to_lowercase()))
+                .unwrap_or_default();
+            video_exts.contains(&ext.as_str())
+        })
+        .collect())
 }
 
 pub fn scan_bios(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
     let all_files = scan_directory(path, profile, false)?;
-    Ok(all_files.into_iter().filter(|sf| {
-        let path_str = sf.source_path.to_string_lossy().to_lowercase();
-        path_str.contains("cubegm/bios/") || path_str.contains("cubegm\\bios\\") || matches!(sf.classification.kind, classify::Kind::Bios)
-    }).collect())
+    Ok(all_files
+        .into_iter()
+        .filter(|sf| {
+            let path_str = sf.source_path.to_string_lossy().to_lowercase();
+            path_str.contains("cubegm/bios/")
+                || path_str.contains("cubegm\\bios\\")
+                || matches!(sf.classification.kind, classify::Kind::Bios)
+        })
+        .collect())
 }
 
 pub fn scan_lgpt_samples(path: &str, profile: &LoadedProfile) -> anyhow::Result<Vec<ScannedFile>> {
     let all_files = scan_directory(path, profile, false)?;
-    Ok(all_files.into_iter().filter(|sf| matches!(sf.classification.kind, classify::Kind::LgptSample)).collect())
+    Ok(all_files
+        .into_iter()
+        .filter(|sf| matches!(sf.classification.kind, classify::Kind::LgptSample))
+        .collect())
 }
 
 fn detect_group(path: &Path, class: &classify::Classification) -> Option<Vec<PathBuf>> {
     // For multi-file sets (CUE/BIN, CHD, m3u, etc) preserve as group
-    let ext = path.extension().and_then(|e| e.to_str()).map(|e| format!(".{}", e.to_lowercase())).unwrap_or_default();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{}", e.to_lowercase()))
+        .unwrap_or_default();
     if ext == ".cue" {
         // look for sibling .bin files referenced by .cue (best-effort parse)
         if let Ok(content) = std::fs::read_to_string(path) {
@@ -164,8 +222,8 @@ fn detect_group(path: &Path, class: &classify::Classification) -> Option<Vec<Pat
                 if line.to_uppercase().contains("FILE") && line.to_lowercase().contains(".bin") {
                     // crude extract quoted filename
                     if let Some(start) = line.find('"') {
-                        if let Some(end) = line[start+1..].find('"') {
-                            let bin_name = &line[start+1..start+1+end];
+                        if let Some(end) = line[start + 1..].find('"') {
+                            let bin_name = &line[start + 1..start + 1 + end];
                             let sibling = path.parent().unwrap_or(Path::new(".")).join(bin_name);
                             if sibling.exists() {
                                 bins.push(sibling);
@@ -182,7 +240,10 @@ fn detect_group(path: &Path, class: &classify::Classification) -> Option<Vec<Pat
         }
         // fallback: same basename .bin
         if let Some(stem) = path.file_stem() {
-            let sibling = path.parent().unwrap_or(Path::new(".")).join(format!("{}.bin", stem.to_string_lossy()));
+            let sibling = path
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join(format!("{}.bin", stem.to_string_lossy()));
             if sibling.exists() {
                 return Some(vec![path.to_path_buf(), sibling]);
             }

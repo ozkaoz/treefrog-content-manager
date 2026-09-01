@@ -1,4 +1,4 @@
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use std::path::Path;
 
 /// SQLite schema for persistent library index
@@ -54,12 +54,31 @@ pub fn init_db(db_path: &Path) -> anyhow::Result<Connection> {
             finished_at TEXT,
             status TEXT
         );
+        CREATE TABLE IF NOT EXISTS job_entries (
+            id INTEGER PRIMARY KEY,
+            job_id INTEGER NOT NULL,
+            source TEXT NOT NULL,
+            destination TEXT NOT NULL,
+            action TEXT NOT NULL,
+            resolved_action TEXT,
+            status TEXT NOT NULL,
+            hash TEXT,
+            size INTEGER,
+            content_type TEXT,
+            FOREIGN KEY(job_id) REFERENCES job_history(id)
+        );
         ",
     )?;
     Ok(conn)
 }
 
-pub fn record_job(conn: &Connection, kind: &str, source: &str, sd: &str, summary: &str) -> anyhow::Result<()> {
+pub fn record_job(
+    conn: &Connection,
+    kind: &str,
+    source: &str,
+    sd: &str,
+    summary: &str,
+) -> anyhow::Result<()> {
     conn.execute(
         "INSERT INTO job_history (kind, source_path, sd_path, summary_json, started_at, status) VALUES (?1, ?2, ?3, ?4, datetime('now'), 'planned')",
         params![kind, source, sd, summary],
