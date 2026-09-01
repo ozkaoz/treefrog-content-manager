@@ -114,6 +114,9 @@ jobs:
           cache: "npm"
           cache-dependency-path: treefrog-manager/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend deps (npx needs @tauri-apps/cli from node_modules)
+        working-directory: treefrog-manager
+        run: npm ci
       - name: Build Windows x64 (Tauri)
         working-directory: treefrog-manager
         run: npx tauri build
