@@ -51,7 +51,25 @@ export default function MusicPanel({
     try {
       const selected = await open({ directory: true });
       if (selected) {
-        setMusicSource(selected as string);
+        const selectedPath = selected as string;
+        setMusicSource(selectedPath);
+        // Auto-scan immediately with the selected path (avoid React state race)
+        setIsScanning(true);
+        try {
+          const result = await invoke('scan_music_structured', { path: selectedPath }) as MusicScanResult;
+          setScanResult(result);
+          setHasScanned(true);
+          const allTracks = new Set<string>();
+          result.standalone_tracks.forEach(t => allTracks.add(t.path));
+          result.playlists.forEach(p => p.tracks.forEach(t => allTracks.add(t.path)));
+          setSelectedTracks(allTracks);
+          setExpandedPlaylists(new Set(result.playlists.map(p => p.name)));
+        } catch (e) {
+          console.error('Music scan failed:', e);
+          setError(String(e));
+        } finally {
+          setIsScanning(false);
+        }
       }
     } catch (e) {
       console.error('Browse failed:', e);
