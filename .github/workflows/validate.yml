@@ -25,10 +25,19 @@ jobs:
       - name: Explicit type check (tsc --noEmit)
         run: npx tsc --noEmit
       - run: npm run build
+      # The Rust job needs ../dist to exist (tauri-build validates frontendDist,
+      # which is gitignored). Upload the built frontend for the Rust job.
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: treefrog-manager/dist
+          retention-days: 1
 
   rust:
     name: Rust (fmt + check + tests)
     runs-on: windows-latest
+    needs: [frontend]
     defaults:
       run:
         working-directory: treefrog-manager/src-tauri
@@ -37,6 +46,14 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
+      # tauri-build (build.rs) requires the frontendDist directory (../dist)
+      # to exist — it is gitignored, so restore the artifact built by the
+      # frontend job instead of failing cargo check on a fresh checkout.
+      - name: Restore frontend dist (required by tauri-build)
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: treefrog-manager/dist
       - name: cargo fmt --check
         run: cargo fmt --check
       - name: cargo check
@@ -53,10 +70,15 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install FFmpeg (video conversion + ffprobe fixtures)
+        shell: pwsh
         run: |
           choco install ffmpeg -y --no-progress
-          ffmpeg -version
-          ffprobe -version
+          # choco adds ffmpeg to PATH for FUTURE steps; refresh PATH now
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          ffmpeg -version | Select-Object -First 1
+          ffprobe -version | Select-Object -First 1
+      - name: Install pytest
+        run: python -m pip install --upgrade pip pytest
       - name: pytest
         working-directory: treefrog-manager
         run: python -m pytest tests -v
