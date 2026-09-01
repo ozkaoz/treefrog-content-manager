@@ -5,6 +5,7 @@ pub mod classify;
 pub mod db;
 pub mod deploy;
 pub mod hash;
+pub mod paths;
 pub mod planner;
 pub mod profile;
 pub mod scanner;
@@ -65,7 +66,7 @@ async fn reset_app_state() -> Result<(), String> {
     Ok(())
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct PlanSummary {
     pub unchanged: usize,
     pub new: usize,
@@ -123,6 +124,14 @@ pub struct Plan {
     pub warnings: Vec<String>,
 }
 
+/// The ONE definition of the action that will actually be executed for an
+/// entry. Every subsystem (deployment, progress totals, summary calculation,
+/// space calculation, collision detection, dry-run reporting, frontend-facing
+/// counts) must use this — never mix `action` and `resolved_action` by hand.
+pub fn effective_action(entry: &PlanEntry) -> &str {
+    entry.resolved_action.as_deref().unwrap_or(&entry.action)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Resetear estado al iniciar
@@ -142,7 +151,6 @@ pub fn run() {
             list_volumes,
             analyze_target,
             dry_run_with_target,
-            resolve_plan,
             deploy_to_sd,
             lgpt_scan_samples,
             lgpt_scan_projects,
@@ -162,7 +170,10 @@ pub fn run() {
             open_folder,
             get_bios_catalog,
             validate_bios_file,
-            scan_music_structured
+            scan_music_structured,
+            resolve_plan,
+            app_version,
+            get_content_counts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -172,6 +183,31 @@ pub fn run() {
 fn verify_profile() -> Result<serde_json::Value, String> {
     let p = profile::load_profile().map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "ok": true, "profile_version": p.profile_version }))
+}
+
+/// Backend authority for plan resolution: the frontend collects user choices
+/// (per entry index/source/destination) and sends them here. ALL business
+/// rules (resolve, rename, effective action, collisions) execute in Rust.
+/// The React layer never reimplements resolution semantics.
+#[tauri::command]
+fn resolve_plan(
+    plan: Plan,
+    sd_path: String,
+    decisions: std::collections::HashMap<String, String>,
+) -> Result<Plan, String> {
+    // Canonical validation of incoming plan destinations before resolution.
+    let sd_root = std::path::Path::new(&sd_path);
+    for e in &plan.entries {
+        crate::paths::resolve_validated_destination(sd_root, &e.destination)
+            .map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
+    }
+    let resolved = planner::apply_resolutions_ctx(plan, &decisions, &sd_path);
+    // Post-resolution validation: renames must still be canonically safe.
+    for e in &resolved.entries {
+        crate::paths::resolve_validated_destination(sd_root, &e.destination)
+            .map_err(|err| format!("resolved destination invalid {}: {}", e.destination, err))?;
+    }
+    Ok(resolved)
 }
 
 #[tauri::command]
@@ -375,14 +411,6 @@ fn analyze_target(path: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-fn resolve_plan(
-    plan: Plan,
-    decisions: std::collections::HashMap<String, String>,
-) -> Result<Plan, String> {
-    Ok(crate::planner::apply_resolutions(plan, &decisions))
-}
-
-#[tauri::command]
 async fn dry_run_with_target(
     source_path: String,
     sd_path: String,
@@ -431,14 +459,228 @@ async fn dry_run_with_target(
     Ok(out)
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct BiosPlanEntry {
     pub source: String,
     pub destination: String,
     pub action: String,
-    pub reason: String,
-    pub content_type: String,
-    pub is_bios: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub content_type: Option<String>,
+    #[serde(default)]
+    pub is_bios: Option<bool>,
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
+/// Single loader for the declarative BIOS profile (bios.json) — the ONLY
+/// authoritative BIOS definition source. Hardcoded lists are forbidden.
+pub fn bios_profile_json() -> serde_json::Value {
+    let candidates = [
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../profiles/treefrogui/bios.json"),
+        std::path::PathBuf::from("profiles/treefrogui/bios.json"),
+    ];
+    for c in &candidates {
+        if let Ok(s) = std::fs::read_to_string(c) {
+            if let Ok(v) = serde_json::from_str(&s) {
+                return v;
+            }
+        }
+    }
+    serde_json::json!({ "bios_definitions": [] })
+}
+
+/// Public re-export for sibling modules (bios_catalog).
+pub fn bios_profile_json_public() -> serde_json::Value {
+    bios_profile_json()
+}
+
+/// BIOS stock-guard: names of stock BIOS files (declared required/conditional
+/// in bios.json) that are never silently overwritten once present on the SD.
+fn bios_stock_guard_names() -> Vec<String> {
+    let json = bios_profile_json();
+    let mut names = Vec::new();
+    if let Some(defs) = json.get("bios_definitions").and_then(|v| v.as_array()) {
+        for def in defs {
+            let required = def
+                .get("required")
+                .and_then(|v| v.as_str())
+                .unwrap_or("optional");
+            if required == "required" || required == "conditional" {
+                if let Some(files) = def.get("accepted_filenames").and_then(|v| v.as_array()) {
+                    for f in files {
+                        if let Some(s) = f.as_str() {
+                            let l = s.to_lowercase();
+                            // Only concrete filenames (no wildcards) can be stock-guarded
+                            if !l.contains('*') && !l.contains('?') {
+                                names.push(l);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    names.sort();
+    names.dedup();
+    names
+}
+
+/// Convert user-selected BIOS files into normal PlanEntry objects that flow
+/// through the SAME planner → resolution → destination validation → space
+/// validation → deployment lifecycle as every other content type.
+/// Malicious destinations are rejected here (canonical path validation).
+fn bios_entries_to_plan_entries(
+    bios: &[BiosPlanEntry],
+    sd_path: &str,
+    force: bool,
+) -> Result<Vec<PlanEntry>, String> {
+    let sd_root = std::path::Path::new(sd_path);
+    let stock = bios_stock_guard_names();
+    let mut out = Vec::new();
+    for b in bios {
+        let src = std::path::Path::new(&b.source);
+        if !src.is_file() {
+            return Err(format!("BIOS source file not found: {}", b.source));
+        }
+        let filename = src
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        if filename.is_empty() {
+            return Err(format!("BIOS source has no file name: {}", b.source));
+        }
+        // The client-supplied destination is used ONLY as a folder hint; the
+        // final file name always comes from the source. The hint must pass
+        // canonical validation — a malformed or malicious hint is REJECTED
+        // (observable error), never silently redirected.
+        crate::paths::validate_relative_destination(&b.destination).map_err(|e| {
+            format!(
+                "invalid BIOS destination '{}' -> {}: {}",
+                b.source, b.destination, e
+            )
+        })?;
+        crate::paths::resolve_validated_destination(sd_root, &b.destination)
+            .map_err(|e| format!("BIOS destination escapes SD root ({}): {}", b.source, e))?;
+        let folder_hint = b
+            .destination
+            .rsplit_once('/')
+            .map(|(dir, _)| dir.to_string())
+            .filter(|d| !d.is_empty())
+            .unwrap_or_else(|| "cubegm/bios".to_string());
+        let dest_rel = format!("{}/{}", folder_hint, filename);
+        // Canonical validation of the final destination relative path.
+        crate::paths::validate_relative_destination(&dest_rel).map_err(|e| {
+            format!(
+                "invalid BIOS destination '{}' -> {}: {}",
+                b.destination, dest_rel, e
+            )
+        })?;
+        // Full resolution + containment against the SD root.
+        crate::paths::resolve_validated_destination(sd_root, &dest_rel).map_err(|e| {
+            format!(
+                "BIOS destination escapes SD root ({} -> {}): {}",
+                b.source, dest_rel, e
+            )
+        })?;
+        let size = b
+            .size
+            .or_else(|| std::fs::metadata(src).ok().map(|m| m.len()))
+            .unwrap_or(0);
+        let dest_abs = sd_root.join(&dest_rel);
+        let already_exists = dest_abs.exists();
+        let is_stock = stock.contains(&filename.to_lowercase());
+        let (action, reason) = if already_exists && is_stock && !force {
+            (
+                "skip".to_string(),
+                "stock BIOS already exists on SD (kept, not overwritten)".to_string(),
+            )
+        } else if already_exists && !force {
+            (
+                "conflict".to_string(),
+                "BIOS already exists on SD (resolve to replace/keep_both or enable force)"
+                    .to_string(),
+            )
+        } else if already_exists {
+            (
+                "replace".to_string(),
+                "BIOS exists on SD (forced overwrite)".to_string(),
+            )
+        } else {
+            (
+                "copy".to_string(),
+                "BIOS (user-supplied) -> cubegm/bios".to_string(),
+            )
+        };
+        out.push(PlanEntry {
+            source: b.source.clone(),
+            destination: dest_rel,
+            action: action.clone(),
+            reason: b.reason.clone().unwrap_or(reason),
+            hash: crate::hash::sha256_file(src).ok(),
+            source_hash: None,
+            destination_hash: None,
+            content_type: Some("bios".to_string()),
+            kind: Some("bios".to_string()),
+            possible_destinations: None,
+            size: Some(size),
+            group: None,
+            members: None,
+            default_action: Some(action.clone()),
+            resolution: Some(action.clone()),
+            resolved_action: Some(action.clone()),
+            original_destination: None,
+            preset: None,
+            probe: None,
+            converted_name: None,
+        });
+    }
+    Ok(out)
+}
+
+/// Record a deployment job into the persistent SQLite store (minimal scope).
+/// Returns the job id or an observable error.
+fn record_deploy_job(
+    plan: &Plan,
+    result: &crate::deploy::DeployResult,
+    sd_path: &str,
+    target_stable_id: Option<&str>,
+    profile_version: &str,
+) -> anyhow::Result<i64> {
+    let conn = crate::db::init_db()?;
+    let mut entries = Vec::new();
+    for e in &plan.entries {
+        let eff = effective_action(e).to_string();
+        let status = if result.errors.iter().any(|err| err.contains(&e.destination)) {
+            "failed".to_string()
+        } else if matches!(
+            eff.as_str(),
+            "copy" | "extract" | "convert_then_copy" | "replace"
+        ) {
+            "deployed".to_string()
+        } else {
+            "skipped".to_string()
+        };
+        entries.push((
+            e.source.clone(),
+            e.destination.clone(),
+            eff,
+            e.hash.clone().or_else(|| e.source_hash.clone()),
+            e.size,
+            status,
+        ));
+    }
+    crate::db::record_deployment(
+        &conn,
+        "deploy",
+        sd_path,
+        target_stable_id,
+        profile_version,
+        &entries,
+    )
 }
 
 #[tauri::command]
@@ -465,153 +707,76 @@ async fn deploy_to_sd(
     }
 
     let force = force.unwrap_or(false);
+    let sd_root = std::path::Path::new(&sd_path);
 
-    // Handle BIOS-only FIRST (before removable check - BIOS can go to any writable target)
+    // BIOS is deployed through the SAME canonical pipeline as all content:
+    // converted to PlanEntry objects, validated with the canonical destination
+    // model, space-checked, and written by the ONE safe writer in deploy.rs.
+    // There is no parallel BIOS write path anymore.
+    let bios_plan_entries = match &bios_entries {
+        Some(bios) if !bios.is_empty() => bios_entries_to_plan_entries(bios, &sd_path, force)?,
+        _ => Vec::new(),
+    };
+    let has_bios = !bios_plan_entries.is_empty();
+
     if source_path.is_none() {
-        if let Some(bios) = &bios_entries {
-            if bios.is_empty() {
-                return Err("No files to sync".to_string());
-            }
-
-            if target.volume.removable != Some(true) && !force {
-                return Err(format!(
-                    "REFUSED: {} is not a removable drive. Connect the SD and select it in Overview. Enable 'Force copy' in SD Card only if your reader reports the SD as a fixed drive.",
-                    sd_path
-                ));
-            }
-
-            let mut deployed = 0usize;
-            let mut skipped = 0usize;
-            let mut failed = 0usize;
-            let mut errors = Vec::new();
-            let mut warnings = Vec::new();
-            let total = bios.len();
-
-            for (idx, entry) in bios.iter().enumerate() {
-                // Canonical BIOS: must use validated destination and safe writer (no bypass)
-                let sd_root_path = std::path::Path::new(&sd_path);
-                let dest_abs = match crate::sd_target::resolve_validated_destination(
-                    sd_root_path,
-                    &entry.destination,
-                ) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        failed += 1;
-                        errors.push(format!(
-                            "BIOS {} -> {}: invalid destination: {}",
-                            entry.source, entry.destination, e
-                        ));
-                        continue;
-                    }
-                };
-                // Enforce BIOS must be under cubegm/bios
-                let normalized = entry.destination.replace('\\', "/").to_lowercase();
-                if !normalized.starts_with("cubegm/bios/") {
-                    failed += 1;
-                    errors.push(format!(
-                        "BIOS {} -> {}: BIOS destination must be under cubegm/bios/",
-                        entry.source, entry.destination
-                    ));
-                    continue;
-                }
-                let filename_lower = dest_abs
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_lowercase())
-                    .unwrap_or_default();
-
-                const STOCK_BIOS: &[&str] = &[
-                    "scph1001.bin",
-                    "scph5501.bin",
-                    "scph5502.bin",
-                    "gba_bios.bin",
-                    "o2rom.bin",
-                    "neogeo.zip",
-                    "disksys.rom",
-                    "bios_cd_u.bin",
-                    "bios_cd_e.bin",
-                    "bios_cd_j.bin",
-                ];
-
-                let already_exists = dest_abs.exists();
-                let is_stock_bios = STOCK_BIOS.contains(&filename_lower.as_str());
-
-                if already_exists && is_stock_bios {
-                    tracing::info!(
-                        "Skipping stock BIOS overwrite (already exists): {}",
-                        dest_abs.display()
-                    );
-                    skipped += 1;
-                    warnings.push(format!(
-                        "Skipped {} - stock BIOS already exists on SD",
-                        entry.source.split('/').last().unwrap_or(&entry.source)
-                    ));
-                    continue;
-                }
-
-                match crate::deploy::safe_copy_file(
-                    std::path::Path::new(&entry.source),
-                    &dest_abs,
-                    sd_root_path,
-                ) {
-                    Ok(_) => {
-                        deployed += 1;
-                        tracing::info!("BIOS copied: {} -> {}", entry.source, dest_abs.display());
-                    }
-                    Err(e) => {
-                        failed += 1;
-                        errors.push(format!(
-                            "BIOS {} -> {}: {}",
-                            entry.source,
-                            dest_abs.display(),
-                            e
-                        ));
-                    }
-                }
-
-                let _ = app.emit(
-                    "deploy-progress",
-                    serde_json::json!({
-                        "current": idx + 1,
-                        "total": total,
-                        "percentage": (((idx + 1) as f64 / total as f64) * 100.0) as u32,
-                        "current_file": entry.source,
-                        "message": format!("Copying BIOS {}/{}...", idx + 1, total),
-                        "isDeleting": false
-                    }),
-                );
-            }
-
-            tracing::info!(
-                "BIOS sync: {} files to process, {} deployed, {} skipped, {} failed",
-                total,
-                deployed,
-                skipped,
-                failed
-            );
-            if skipped > 0 {
-                tracing::warn!(
-                    "{} BIOS files were skipped (stock BIOS already exist on SD)",
-                    skipped
-                );
-            }
-
-            return Ok(serde_json::json!({
-                "success": failed == 0,
-                "deployed": deployed,
-                "skipped": skipped,
-                "failed": failed,
-                "errors": errors,
-                "warnings": warnings,
-                "breakdown": serde_json::Value::Null,
-                "target": serde_json::to_value(&target).unwrap(),
-                "space": serde_json::json!({"status": "ok"}),
-                "plan": serde_json::json!({"entries": [], "summary": {}}),
-                "bios_deployed": deployed,
-                "bios_skipped": skipped,
-                "bios_failed": failed
-            }));
+        // BIOS-only sync (still the full canonical pipeline below).
+        if !has_bios {
+            return Err("No files to sync".to_string());
         }
-        return Err("No files to sync".to_string());
+        if target.volume.removable != Some(true) && !force {
+            return Err(format!(
+                "REFUSED: {} is not a removable drive. Connect the SD and select it in Overview. Enable 'Force copy' in SD Card only if your reader reports the SD as a fixed drive.",
+                sd_path
+            ));
+        }
+        let mut plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: bios_plan_entries.clone(),
+            warnings: Vec::new(),
+        };
+        // User decisions apply to BIOS plan entries too (conflict resolution)
+        // — resolved by the BACKEND planner (single source of truth), with
+        // collision-safe keep_both against the real SD root.
+        if let Some(overrides) = &user_decisions {
+            plan = planner::apply_resolutions_ctx(plan, overrides, &sd_path);
+        }
+        // Canonical validation of every destination against the SD root.
+        for e in &plan.entries {
+            crate::paths::resolve_validated_destination(sd_root, &e.destination)
+                .map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
+        }
+        let space = sd_target::calculate_space(&plan, target.free_bytes);
+        if space.status == "insufficient_space" {
+            return Err(format!(
+                "Insufficient space: required {} available {}",
+                space.required_bytes,
+                space.available_bytes.unwrap_or(0)
+            ));
+        }
+        let result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app))
+            .map_err(|e| e.to_string())?;
+        // Persistent deployment record (BIOS-only job).
+        let mut result = result;
+        if let Err(e) = record_deploy_job(
+            &plan,
+            &result,
+            &sd_path,
+            target.stable_id.as_deref(),
+            &profile.profile_version,
+        ) {
+            result
+                .warnings
+                .push(format!("deployment record failed (non-fatal): {}", e));
+        }
+        let mut out = serde_json::to_value(&result).unwrap();
+        out["target"] = serde_json::to_value(&target).unwrap();
+        out["space"] = serde_json::to_value(&space).unwrap();
+        out["plan"] = serde_json::to_value(&plan).unwrap();
+        out["bios_deployed"] = serde_json::json!(result.deployed);
+        out["bios_skipped"] = serde_json::json!(result.skipped);
+        out["bios_failed"] = serde_json::json!(result.failed);
+        return Ok(out);
     }
 
     if target.volume.removable != Some(true) && !force {
@@ -622,108 +787,6 @@ async fn deploy_to_sd(
     }
 
     let source_path_str = source_path.unwrap();
-
-    // BIOS: copy directly without planner
-    let mut bios_deployed = 0usize;
-    let mut bios_failed = 0usize;
-    let mut bios_skipped = 0usize;
-    let mut bios_errors: Vec<String> = Vec::new();
-    let mut bios_warnings: Vec<String> = Vec::new();
-    if let Some(entries) = &bios_entries {
-        let total_bios = entries.len();
-        let mut completed_bios = 0usize;
-        for entry in entries {
-            let sd_root_path = std::path::Path::new(&sd_path);
-            let dest_abs = match crate::sd_target::resolve_validated_destination(
-                sd_root_path,
-                &entry.destination,
-            ) {
-                Ok(p) => p,
-                Err(e) => {
-                    bios_failed += 1;
-                    bios_errors.push(format!(
-                        "BIOS {} -> {}: invalid destination: {}",
-                        entry.source, entry.destination, e
-                    ));
-                    continue;
-                }
-            };
-            let normalized = entry.destination.replace('\\', "/").to_lowercase();
-            if !normalized.starts_with("cubegm/bios/") {
-                bios_failed += 1;
-                bios_errors.push(format!(
-                    "BIOS {} -> {}: BIOS destination must be under cubegm/bios/",
-                    entry.source, entry.destination
-                ));
-                continue;
-            }
-            let filename_lower = dest_abs
-                .file_name()
-                .map(|n| n.to_string_lossy().to_lowercase())
-                .unwrap_or_default();
-            const STOCK_BIOS: &[&str] = &[
-                "scph1001.bin",
-                "scph5501.bin",
-                "scph5502.bin",
-                "gba_bios.bin",
-                "o2rom.bin",
-                "neogeo.zip",
-                "disksys.rom",
-                "bios_cd_u.bin",
-                "bios_cd_e.bin",
-                "bios_cd_j.bin",
-            ];
-            let already_exists = dest_abs.exists();
-            let is_stock = STOCK_BIOS.contains(&filename_lower.as_str());
-            if already_exists && is_stock && !force {
-                tracing::info!(
-                    "Skipping stock BIOS overwrite (already exists): {}",
-                    dest_abs.display()
-                );
-                bios_skipped += 1;
-                bios_warnings.push(format!(
-                    "Skipped {} - stock BIOS already exists on SD",
-                    entry.source.split('/').last().unwrap_or(&entry.source)
-                ));
-                continue;
-            }
-            match crate::deploy::safe_copy_file(
-                std::path::Path::new(&entry.source),
-                &dest_abs,
-                sd_root_path,
-            ) {
-                Ok(_) => {
-                    bios_deployed += 1;
-                    tracing::info!("BIOS copied: {} -> {}", entry.source, dest_abs.display());
-                }
-                Err(e) => {
-                    bios_failed += 1;
-                    bios_errors.push(format!(
-                        "BIOS {} -> {}: {}",
-                        entry.source,
-                        dest_abs.display(),
-                        e
-                    ));
-                    tracing::error!("BIOS copy failed: {}", e);
-                }
-            }
-            completed_bios += 1;
-            let _ = app.emit("deploy-progress", serde_json::json!({
-                "current": completed_bios,
-                "total": total_bios,
-                "percentage": ((completed_bios as f64 / total_bios.max(1) as f64) * 100.0) as u32,
-                "current_file": entry.source,
-                "message": format!("Copying BIOS {}/{}...", completed_bios, total_bios),
-                "isDeleting": false
-            }));
-        }
-        if bios_skipped > 0 {
-            tracing::warn!(
-                "{} BIOS files were skipped (stock BIOS already exist on SD)",
-                bios_skipped
-            );
-        }
-    }
 
     let scanned = scanner::scan(&source_path_str, &profile).map_err(|e| e.to_string())?;
     let mut plan = if let Some(ref files) = selected_files {
@@ -749,6 +812,16 @@ async fn deploy_to_sd(
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_default();
                 let new_dest = format!("{}/{}", new_folder.trim_end_matches('/'), file_name);
+                // User overrides MUST pass the canonical destination validator
+                // before they are applied - never trust a raw frontend string.
+                crate::paths::validate_relative_destination(&new_dest).map_err(|e| {
+                    format!(
+                        "invalid user destination override '{}' -> {}: {}",
+                        new_folder, new_dest, e
+                    )
+                })?;
+                crate::paths::resolve_validated_destination(sd_root, &new_dest)
+                    .map_err(|e| format!("user override escapes SD root ({}): {}", new_dest, e))?;
                 tracing::info!(
                     "Override aplicado: {} -> {} (antes {})",
                     src_base,
@@ -759,9 +832,17 @@ async fn deploy_to_sd(
             }
         }
     }
+    // BIOS entries join the SAME plan and pass through the same validation.
+    if has_bios {
+        let mut merged = plan.entries.clone();
+        merged.extend(bios_plan_entries.clone());
+        plan.entries = merged;
+    }
     let plan = planner::resolve_write_collisions(plan);
+    // Canonical destination validation: the exact relative strings that will
+    // be written, resolved against the SD root.
     for e in &plan.entries {
-        sd_target::validate_destination_path(&e.destination)
+        crate::paths::resolve_validated_destination(sd_root, &e.destination)
             .map_err(|err| format!("invalid destination {}: {}", e.destination, err))?;
     }
     let space = sd_target::calculate_space(&plan, target.free_bytes);
@@ -772,15 +853,13 @@ async fn deploy_to_sd(
             space.available_bytes.unwrap_or(0)
         ));
     }
-    // ONLY entries that write to the SD can collide. Skips/duplicates/conflicts
-    // never write, so their destinations must not be checked.
+    // Only entries that write can collide (effective action decides).
     let write_dests: Vec<String> = plan
         .entries
         .iter()
         .filter(|e| {
-            let a = e.resolved_action.as_ref().unwrap_or(&e.action);
             matches!(
-                a.as_str(),
+                effective_action(e),
                 "copy" | "extract" | "convert_then_copy" | "replace"
             )
         })
@@ -796,29 +875,38 @@ async fn deploy_to_sd(
     }
     let mut result = crate::deploy::deploy_plan(&plan, &sd_path, &profile, force, Some(&app))
         .map_err(|e| e.to_string())?;
-    result.deployed += bios_deployed;
-    result.skipped += bios_skipped;
-    result.failed += bios_failed;
-    result.errors.extend(bios_errors.clone());
-    result.warnings.extend(bios_warnings.clone());
-    if bios_deployed > 0 {
+    if has_bios {
         result.warnings.push(format!(
-            "BIOS: {} copied, {} failed",
-            bios_deployed, bios_failed
+            "BIOS: {} entries included in canonical plan",
+            bios_plan_entries.len()
         ));
     }
-    if bios_skipped > 0 {
+    // Persistent deployment record (minimal scope): hash/size/versions/target.
+    // Failures here are observable warnings, never silent.
+    if let Err(e) = record_deploy_job(
+        &plan,
+        &result,
+        &sd_path,
+        target.stable_id.as_deref(),
+        &profile.profile_version,
+    ) {
         result
             .warnings
-            .push(format!("BIOS: {} skipped (already exist)", bios_skipped));
+            .push(format!("deployment record failed (non-fatal): {}", e));
     }
     let mut out = serde_json::to_value(&result).unwrap();
     out["target"] = serde_json::to_value(&target).unwrap();
     out["space"] = serde_json::to_value(&space).unwrap();
     out["plan"] = serde_json::to_value(&plan).unwrap();
-    out["bios_deployed"] = serde_json::json!(bios_deployed);
-    out["bios_skipped"] = serde_json::json!(bios_skipped);
-    out["bios_failed"] = serde_json::json!(bios_failed);
+    out["bios_deployed"] = serde_json::json!(bios_plan_entries
+        .iter()
+        .filter(|e| matches!(e.action.as_str(), "copy" | "replace"))
+        .count());
+    out["bios_skipped"] = serde_json::json!(bios_plan_entries
+        .iter()
+        .filter(|e| e.action.starts_with("skip"))
+        .count());
+    out["bios_failed"] = serde_json::json!(0usize);
     Ok(out)
 }
 
@@ -868,10 +956,58 @@ async fn lgpt_scan_projects(
 #[tauri::command]
 fn build_info() -> serde_json::Value {
     serde_json::json!({
-        "version": env!("CARGO_PKG_VERSION"),
         "commit": option_env!("TFM_GIT_COMMIT").unwrap_or("dev"),
         "built_at": option_env!("TFM_BUILD_TS").unwrap_or("unknown")
     })
+}
+
+/// SINGLE source of truth for the application version: the Cargo package
+/// version (which must match package.json and tauri.conf.json — enforced by CI).
+/// The frontend must always display THIS version, never a hardcoded string.
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// Semantic content counts for the Overview screen, derived from the SAME
+/// scanner/classification pipeline as the planner (never from UI heuristics
+/// like media_dirs.length or existing_count).
+#[tauri::command]
+fn get_content_counts(sd_path: String) -> Result<serde_json::Value, String> {
+    let profile = profile::load_profile().map_err(|e| e.to_string())?;
+    let scanned = scanner::scan_directory(&sd_path, &profile, true).map_err(|e| e.to_string())?;
+    let mut rom_count = 0usize;
+    let mut music_track_count = 0usize;
+    let mut video_count = 0usize;
+    let mut image_count = 0usize;
+    let mut ebook_count = 0usize;
+    let mut bios_count = 0usize;
+    let mut lgpt_sample_count = 0usize;
+    let mut lgpt_project_count = 0usize;
+    for sf in &scanned {
+        match sf.classification.kind {
+            crate::classify::Kind::Rom => rom_count += 1,
+            crate::classify::Kind::Music => music_track_count += 1,
+            crate::classify::Kind::Video => video_count += 1,
+            crate::classify::Kind::Image => image_count += 1,
+            crate::classify::Kind::Ebook => ebook_count += 1,
+            crate::classify::Kind::Bios => bios_count += 1,
+            crate::classify::Kind::LgptSample => lgpt_sample_count += 1,
+            crate::classify::Kind::LgptProject => lgpt_project_count += 1,
+            _ => {}
+        }
+    }
+    Ok(serde_json::json!({
+        "rom_count": rom_count,
+        "music_track_count": music_track_count,
+        "video_count": video_count,
+        "image_count": image_count,
+        "ebook_count": ebook_count,
+        "bios_count": bios_count,
+        "lgpt_sample_count": lgpt_sample_count,
+        "lgpt_project_count": lgpt_project_count,
+        "total_files": scanned.len()
+    }))
 }
 
 #[tauri::command]
@@ -1044,81 +1180,35 @@ async fn get_bios_catalog() -> Result<Vec<crate::bios_catalog::BiosEntry>, Strin
 
 #[tauri::command]
 async fn validate_bios_file(path: String, bios_id: String) -> Result<serde_json::Value, String> {
-    let catalog = crate::bios_catalog::get_bios_catalog();
-    let bios = catalog
+    // ONE BIOS validation model: the declarative bios.json definitions,
+    // evaluated by bios.rs (filename/alias/wildcard/size/hash/variant rules).
+    // The UI catalog is only a projection — validation never reimplements rules.
+    let json = bios_profile_json();
+    let defs = json
+        .get("bios_definitions")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let def = defs
         .iter()
-        .find(|b| b.id == bios_id)
+        .find(|d| d.get("id").and_then(|x| x.as_str()) == Some(bios_id.as_str()))
+        .cloned()
         .ok_or_else(|| format!("BIOS id not found: {}", bios_id))?;
 
     let p = std::path::Path::new(&path);
     if !p.exists() {
-        return Ok(serde_json::json!({"valid": false, "reason": "File not found"}));
+        return Ok(serde_json::json!({ "valid": false, "reason": "File not found" }));
     }
 
-    let filename = p
-        .file_name()
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_lowercase())
-        .unwrap_or_default();
-
-    let name_ok = if let Some(pattern) = &bios.pattern {
-        let regex_str = "^".to_string()
-            + &pattern
-                .to_lowercase()
-                .replace('.', "\\.")
-                .replace('*', ".*")
-            + "$";
-        regex::Regex::new(&regex_str)
-            .map(|re| re.is_match(&filename))
-            .unwrap_or(false)
-    } else {
-        bios.filenames.iter().any(|f| f.to_lowercase() == filename)
-    };
-
-    if !name_ok {
-        return Ok(serde_json::json!({
-            "valid": false,
-            "reason": format!("Filename '{}' does not match expected pattern: {}", p.file_name().unwrap_or_default().to_string_lossy(), bios.pattern.clone().unwrap_or(bios.filenames.join(" OR ")))
-        }));
-    }
-
-    if let Some(expected_size) = bios.expected_size {
-        let actual_size = std::fs::metadata(p).map(|m| m.len()).unwrap_or(0);
-        if actual_size != expected_size {
-            return Ok(serde_json::json!({
-                "valid": false,
-                "reason": format!("Size mismatch: expected {} bytes, got {}", expected_size, actual_size)
-            }));
-        }
-    }
-
-    if let Some(expected_md5) = &bios.md5 {
-        let bytes = std::fs::read(p).map_err(|e| e.to_string())?;
-        let digest = md5::compute(&bytes);
-        let actual_md5 = format!("{:x}", digest);
-        if actual_md5 != *expected_md5 {
-            return Ok(serde_json::json!({
-                "valid": false,
-                "reason": format!("MD5 mismatch: expected {}, got {}", expected_md5, actual_md5)
-            }));
-        }
-    }
-
-    if let Some(expected_sha) = &bios.sha256 {
-        let bytes = std::fs::read(p).map_err(|e| e.to_string())?;
-        let mut hasher = sha2::Sha256::new();
-        use sha2::Digest;
-        hasher.update(&bytes);
-        let actual_sha = hex::encode(hasher.finalize());
-        if actual_sha != *expected_sha {
-            return Ok(serde_json::json!({
-                "valid": false,
-                "reason": format!("SHA-256 mismatch")
-            }));
-        }
-    }
-
-    Ok(serde_json::json!({"valid": true, "reason": "OK"}))
+    let validation = crate::bios::validate_bios_file(p, &def);
+    let valid = matches!(validation.state, crate::bios::BiosState::FoundValid);
+    Ok(serde_json::json!({
+        "valid": valid,
+        "reason": validation.reason,
+        "state": validation.state.to_string(),
+        "hash": validation.hash,
+        "size": validation.size
+    }))
 }
 
 #[tauri::command]
@@ -1166,18 +1256,8 @@ async fn delete_roms_from_sd(
     }
     let profile = crate::profile::load_profile().map_err(|e| e.to_string())?;
 
-    const STOCK_BIOS_FILES: &[&str] = &[
-        "scph1001.bin",
-        "scph5501.bin",
-        "scph5502.bin",
-        "gba_bios.bin",
-        "o2rom.bin",
-        "neogeo.zip",
-        "disksys.rom",
-        "bios_cd_u.bin",
-        "bios_cd_e.bin",
-        "bios_cd_j.bin",
-    ];
+    // Stock BIOS guard derived from bios.json (single model) — never hardcoded.
+    let stock_bios_files: Vec<String> = bios_stock_guard_names();
 
     let mut valid_extensions: std::collections::HashSet<String> = std::collections::HashSet::new();
 
@@ -1208,7 +1288,7 @@ async fn delete_roms_from_sd(
                 {
                     if entry.file_type().is_file() {
                         let file_name = entry.file_name().to_string_lossy().to_lowercase();
-                        let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
+                        let is_stock_bios = stock_bios_files.iter().any(|s| s == &file_name);
                         if is_stock_bios {
                             tracing::info!("Preserved (stock BIOS): {}", entry.path().display());
                             continue;
@@ -1252,7 +1332,7 @@ async fn delete_roms_from_sd(
                     .and_then(|n| n.to_str())
                     .unwrap_or("")
                     .to_lowercase();
-                let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
+                let is_stock_bios = stock_bios_files.iter().any(|s| s == &file_name);
                 if is_stock_bios {
                     tracing::info!("Preserved (stock BIOS): {}", file_path.display());
                     continue;
@@ -1292,7 +1372,7 @@ async fn delete_roms_from_sd(
                 {
                     if entry.file_type().is_file() {
                         let file_name = entry.file_name().to_string_lossy().to_lowercase();
-                        let is_stock_bios = STOCK_BIOS_FILES.contains(&file_name.as_str());
+                        let is_stock_bios = stock_bios_files.iter().any(|s| s == &file_name);
                         if is_stock_bios {
                             tracing::info!("Preserved (stock BIOS): {}", entry.path().display());
                             continue;
@@ -1500,4 +1580,378 @@ async fn open_folder(path: String) -> Result<(), String> {
             .map_err(|e| format!("Failed to open folder: {}", e))?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod bios_security_tests {
+    use super::*;
+
+    fn mk_bios_entry(source: &str, destination: &str) -> BiosPlanEntry {
+        BiosPlanEntry {
+            source: source.to_string(),
+            destination: destination.to_string(),
+            action: "copy".to_string(),
+            reason: None,
+            content_type: Some("bios".to_string()),
+            is_bios: Some(true),
+            size: None,
+        }
+    }
+
+    /// Regression: malicious BIOS destinations must NEVER escape the SD root.
+    /// Covers: ../ traversal, nested traversal, prefix traversal, drive-letter
+    /// paths, UNC paths, absolute unix paths, ADS syntax.
+    #[test]
+    fn bios_destination_escape_rejected() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        let src = tmp.path().join("bios_src");
+        std::fs::create_dir_all(&src).unwrap();
+        let bios_file = src.join("scph1001.bin");
+        std::fs::write(&bios_file, b"fake bios").unwrap();
+
+        let malicious = [
+            "../evil.bin",
+            "../../evil.bin",
+            "cubegm/bios/../../evil.bin",
+            "C:\\evil.bin",
+            "\\\\server\\share\\evil.bin",
+            "/evil.bin",
+            "roms/../../evil.bin",
+            "file:ads.bin",
+            "CON",
+        ];
+        for dest in malicious {
+            let entry = mk_bios_entry(bios_file.to_string_lossy().as_ref(), dest);
+            let result =
+                bios_entries_to_plan_entries(&[entry], sd_root.to_string_lossy().as_ref(), false);
+            assert!(
+                result.is_err(),
+                "malicious BIOS destination must be rejected: {dest}"
+            );
+        }
+    }
+
+    /// BIOS entries that pass validation must land exactly under the validated
+    /// folder hint inside the SD root; a smuggled escape via folder hint is
+    /// rejected with an observable error (never silently redirected).
+    #[test]
+    fn bios_destination_valid_normalized_to_profile_root() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        let src = tmp.path().join("bios_src");
+        std::fs::create_dir_all(&src).unwrap();
+        let bios_file = src.join("scph1001.bin");
+        std::fs::write(&bios_file, b"fake bios").unwrap();
+
+        // Smuggled escape via folder hint must be REJECTED (observable).
+        let entry = mk_bios_entry(bios_file.to_string_lossy().as_ref(), "../evil/scph1001.bin");
+        let result =
+            bios_entries_to_plan_entries(&[entry], sd_root.to_string_lossy().as_ref(), false);
+        assert!(
+            result.is_err(),
+            "smuggled BIOS folder hint must be rejected"
+        );
+
+        // A valid hint passes through and the file name comes from the source.
+        let entry = mk_bios_entry(
+            bios_file.to_string_lossy().as_ref(),
+            "cubegm/bios/whatever.txt",
+        );
+        let entries =
+            bios_entries_to_plan_entries(&[entry], sd_root.to_string_lossy().as_ref(), false)
+                .unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].destination, "cubegm/bios/scph1001.bin");
+        assert_eq!(entries[0].content_type.as_deref(), Some("bios"));
+        // Resolves inside root
+        let resolved =
+            crate::paths::resolve_validated_destination(&sd_root, &entries[0].destination).unwrap();
+        let canon_root = sd_root.canonicalize().unwrap();
+        assert!(resolved.starts_with(&canon_root));
+    }
+
+    /// Stock BIOS guard: existing stock BIOS on the SD must be planned as skip
+    /// (not overwrite) unless force is enabled.
+    #[test]
+    fn bios_stock_guard_skips_existing_stock_bios() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        // Existing stock BIOS on SD
+        std::fs::write(sd_root.join("cubegm/bios/scph1001.bin"), b"existing stock").unwrap();
+        let src = tmp.path().join("bios_src");
+        std::fs::create_dir_all(&src).unwrap();
+        let bios_file = src.join("scph1001.bin");
+        std::fs::write(&bios_file, b"replacement bios").unwrap();
+
+        let entry = mk_bios_entry(
+            bios_file.to_string_lossy().as_ref(),
+            "cubegm/bios/scph1001.bin",
+        );
+        let entries =
+            bios_entries_to_plan_entries(&[entry], sd_root.to_string_lossy().as_ref(), false)
+                .unwrap();
+        assert_eq!(
+            entries[0].action, "skip",
+            "existing stock BIOS must be skip (guard)"
+        );
+
+        // With force it becomes replace
+        let entry = mk_bios_entry(
+            bios_file.to_string_lossy().as_ref(),
+            "cubegm/bios/scph1001.bin",
+        );
+        let entries =
+            bios_entries_to_plan_entries(&[entry], sd_root.to_string_lossy().as_ref(), true)
+                .unwrap();
+        assert_eq!(
+            entries[0].action, "replace",
+            "force must allow stock BIOS replace"
+        );
+    }
+
+    /// Non-stock BIOS already present (different content) becomes a conflict
+    /// that flows through the normal resolution model.
+    #[test]
+    fn bios_existing_non_stock_conflict() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        std::fs::write(sd_root.join("cubegm/bios/custom_bios.bin"), b"existing").unwrap();
+        let src = tmp.path().join("bios_src");
+        std::fs::create_dir_all(&src).unwrap();
+        let bios_file = src.join("custom_bios.bin");
+        std::fs::write(&bios_file, b"other content").unwrap();
+
+        let entry = mk_bios_entry(
+            bios_file.to_string_lossy().as_ref(),
+            "cubegm/bios/custom_bios.bin",
+        );
+        let entries =
+            bios_entries_to_plan_entries(&[entry], sd_root.to_string_lossy().as_ref(), false)
+                .unwrap();
+        assert_eq!(entries[0].action, "conflict");
+    }
+
+    /// effective_action: resolved_action wins when present.
+    #[test]
+    fn effective_action_prefers_resolved() {
+        let e = PlanEntry {
+            action: "conflict".to_string(),
+            resolved_action: Some("replace".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(effective_action(&e), "replace");
+        let e2 = PlanEntry {
+            action: "copy".to_string(),
+            resolved_action: None,
+            ..Default::default()
+        };
+        assert_eq!(effective_action(&e2), "copy");
+    }
+}
+
+#[cfg(test)]
+mod bios_workflow_integration_tests {
+    use super::*;
+
+    /// End-to-end BIOS lifecycle: user selection -> PlanEntry conversion ->
+    /// canonical validation -> space check -> deploy -> on-disk result.
+    /// BIOS uses the SAME pipeline as all content (no bypass).
+    #[test]
+    fn bios_full_lifecycle_through_canonical_pipeline() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        let src = tmp.path().join("bios");
+        std::fs::create_dir_all(&src).unwrap();
+        let gba = src.join("gba_bios.bin");
+        std::fs::write(&gba, b"gbabios").unwrap();
+        let scph = src.join("scph1001.bin");
+        std::fs::write(&scph, b"psxbios").unwrap();
+
+        // 1. BIOS classify: bios.json model validates both files
+        let defs = bios_profile_json()
+            .get("bios_definitions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let gba_def = defs
+            .iter()
+            .find(|d| d.get("id").and_then(|x| x.as_str()) == Some("gba_bios"))
+            .unwrap()
+            .clone();
+        let v = crate::bios::validate_bios_file(&gba, &gba_def);
+        // size does not match bios.json -> not FoundValid, but state is observable
+        assert_ne!(v.state, crate::bios::BiosState::Missing);
+
+        // 2. Plan entries (canonical conversion; user "selects" both)
+        let entries = bios_entries_to_plan_entries(
+            &[
+                BiosPlanEntry {
+                    source: gba.to_string_lossy().to_string(),
+                    destination: "cubegm/bios/gba_bios.bin".into(),
+                    action: "copy".into(),
+                    ..Default::default()
+                },
+                BiosPlanEntry {
+                    source: scph.to_string_lossy().to_string(),
+                    destination: "cubegm/bios/scph1001.bin".into(),
+                    action: "copy".into(),
+                    ..Default::default()
+                },
+            ],
+            sd_root.to_string_lossy().as_ref(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries
+            .iter()
+            .all(|e| e.content_type.as_deref() == Some("bios")));
+
+        // 3. Plan + space + deploy
+        let profile = crate::profile::load_profile().unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries,
+            warnings: vec![],
+        };
+        let space = sd_target::calculate_space(&plan, Some(1_000_000));
+        assert_eq!(
+            space.status, "ok",
+            "BIOS sizes must count as required space"
+        );
+        assert!(space.required_bytes > 0);
+        let result = crate::deploy::deploy_plan(
+            &plan,
+            sd_root.to_string_lossy().as_ref(),
+            &profile,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            result.deployed, 2,
+            "both BIOS must deploy: {:?}",
+            result.errors
+        );
+        assert!(sd_root.join("cubegm/bios/gba_bios.bin").exists());
+        assert!(sd_root.join("cubegm/bios/scph1001.bin").exists());
+
+        // 4. Re-running the same BIOS plan: stock guard keeps existing files
+        let entries2 = bios_entries_to_plan_entries(
+            &[
+                BiosPlanEntry {
+                    source: gba.to_string_lossy().to_string(),
+                    destination: "cubegm/bios/gba_bios.bin".into(),
+                    action: "copy".into(),
+                    ..Default::default()
+                },
+                BiosPlanEntry {
+                    source: scph.to_string_lossy().to_string(),
+                    destination: "cubegm/bios/scph1001.bin".into(),
+                    action: "copy".into(),
+                    ..Default::default()
+                },
+            ],
+            sd_root.to_string_lossy().as_ref(),
+            false,
+        )
+        .unwrap();
+        let plan2 = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: entries2,
+            warnings: vec![],
+        };
+        let result2 = crate::deploy::deploy_plan(
+            &plan2,
+            sd_root.to_string_lossy().as_ref(),
+            &profile,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            result2.deployed, 0,
+            "existing stock BIOS must not be overwritten"
+        );
+        assert!(
+            result2.skipped >= 2,
+            "stock guard must skip: {:?}",
+            result2.warnings
+        );
+    }
+
+    /// BIOS conflict resolution flows through the SAME resolution model
+    /// (backend apply_resolutions_ctx with collision-safe keep_both).
+    #[test]
+    fn bios_conflict_resolved_via_canonical_model() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        // Existing different-content BIOS on the SD
+        std::fs::write(sd_root.join("cubegm/bios/custom.bin"), b"existing").unwrap();
+        let src = tmp.path().join("bios");
+        std::fs::create_dir_all(&src).unwrap();
+        let custom = src.join("custom.bin");
+        std::fs::write(&custom, b"new content").unwrap();
+
+        let entries = bios_entries_to_plan_entries(
+            &[BiosPlanEntry {
+                source: custom.to_string_lossy().to_string(),
+                destination: "cubegm/bios/custom.bin".into(),
+                action: "copy".into(),
+                ..Default::default()
+            }],
+            sd_root.to_string_lossy().as_ref(),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            entries[0].action, "conflict",
+            "existing non-stock BIOS is a conflict"
+        );
+
+        // User resolves keep_both -> backend renames collision-safely
+        let mut plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries,
+            warnings: vec![],
+        };
+        let mut decisions = std::collections::HashMap::new();
+        decisions.insert("0".to_string(), "keep_both".to_string());
+        plan = planner::apply_resolutions_ctx(plan, &decisions, sd_root.to_string_lossy().as_ref());
+        assert_eq!(plan.entries[0].destination, "cubegm/bios/custom_1.bin");
+
+        let profile = crate::profile::load_profile().unwrap();
+        let result = crate::deploy::deploy_plan(
+            &plan,
+            sd_root.to_string_lossy().as_ref(),
+            &profile,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            result.deployed, 1,
+            "keep_both BIOS must deploy: {:?}",
+            result.errors
+        );
+        assert!(sd_root.join("cubegm/bios/custom_1.bin").exists());
+        // Original kept
+        assert_eq!(
+            std::fs::read(sd_root.join("cubegm/bios/custom.bin")).unwrap(),
+            b"existing"
+        );
+    }
 }

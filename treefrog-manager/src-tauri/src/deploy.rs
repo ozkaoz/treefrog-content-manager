@@ -1,10 +1,11 @@
+use crate::effective_action;
 use crate::profile::LoadedProfile;
 use crate::sd_target;
 use crate::Plan;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -28,11 +29,80 @@ pub struct DeployResult {
     pub breakdown: Option<Vec<serde_json::Value>>,
 }
 
-fn ensure_parent_exists(dest: &Path) -> anyhow::Result<()> {
-    if let Some(parent) = dest.parent() {
+fn emit_phase(app: Option<&AppHandle>, phase: &str, current: usize, total: usize, file: &str) {
+    if let Some(app_handle) = app {
+        let _ = app_handle.emit("deploy-progress", serde_json::json!({
+            "current": current,
+            "total": total,
+            "percentage": if total == 0 { 100 } else { ((current as f64 / total as f64) * 100.0) as u32 },
+            "current_file": file,
+            "phase": phase,
+            "message": format!("{} {}/{} ...", phase, current, total),
+            "isDeleting": false
+        }));
+    }
+}
+
+/// THE ONE SAFE WRITER. Resolves and validates the destination with the
+/// canonical path model (paths::resolve_validated_destination) — secure even
+/// when called directly. The staged temp file + atomic rename guarantees the
+/// final path is only ever written after successful copy + size verification.
+fn safe_copy_file_resolved(src: &Path, dest_resolved: &Path) -> anyhow::Result<()> {
+    if let Some(parent) = dest_resolved.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    Ok(())
+    let parent = dest_resolved.parent().unwrap_or_else(|| Path::new("."));
+    // Unique temp file per operation (no collisions between parallel writers)
+    let tmp_name = format!(
+        ".treefrog_staging_{}_{}_{}.tmp",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos(),
+        dest_resolved
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+    );
+    let tmp_path = parent.join(tmp_name);
+    std::fs::copy(src, &tmp_path)?;
+    // Integrity check: staged file size must match source exactly
+    if std::fs::metadata(&tmp_path)?.len() != std::fs::metadata(src)?.len() {
+        let _ = std::fs::remove_file(&tmp_path);
+        anyhow::bail!(
+            "copy verification failed: size mismatch for {} -> {}",
+            src.display(),
+            dest_resolved.display()
+        );
+    }
+    // Atomic rename within the same directory
+    match std::fs::rename(&tmp_path, dest_resolved) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            // Windows/exFAT: rename onto an existing file can fail; fall back
+            // to replace-by-copy with the staged temp file as source.
+            match std::fs::copy(&tmp_path, dest_resolved) {
+                Ok(_) => {
+                    let _ = std::fs::remove_file(&tmp_path);
+                    Ok(())
+                }
+                Err(_) => Err(anyhow::anyhow!("atomic rename failed: {}", e)),
+            }
+        }
+    }
+}
+
+/// Back-compat wrapper: validate + resolve destination from (sd_root, dest_rel)
+/// and delegate to the resolved writer. Callers MUST pass the SD root.
+/// Kept for direct-call compatibility (e.g. tests, future callers); secure by
+/// itself — never writes outside the canonical resolved destination.
+#[allow(dead_code)]
+fn safe_copy_file(src: &Path, sd_root: &Path, dest_rel: &str) -> anyhow::Result<()> {
+    let dest_resolved = crate::paths::resolve_validated_destination(sd_root, dest_rel)
+        .map_err(|e| anyhow::anyhow!("invalid destination '{}': {}", dest_rel, e))?;
+    safe_copy_file_resolved(src, &dest_resolved)
 }
 
 fn validate_rom_file(src: &Path) -> anyhow::Result<()> {
@@ -49,53 +119,76 @@ fn validate_rom_file(src: &Path) -> anyhow::Result<()> {
     }
 }
 
-pub fn safe_copy_file(src: &Path, dest: &Path, sd_root: &Path) -> anyhow::Result<()> {
-    // Canonical validation: derive relative path and ensure it stays inside sd_root
-    let relative = dest
-        .strip_prefix(sd_root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| dest.to_string_lossy().replace('\\', "/"));
-    // Use the single canonical resolver — writer itself remains secure if called directly
-    let validated_dest = sd_target::resolve_validated_destination(sd_root, &relative)
-        .map_err(|e| anyhow::anyhow!("invalid destination {}: {}", dest.display(), e))?;
-    // Use validated path (handles normalization)
-    let dest = validated_dest;
-    ensure_parent_exists(&dest)?;
-    let parent = dest.parent().unwrap_or_else(|| Path::new("."));
-    // Use a unique temp file per operation to avoid collisions
-    let tmp_name = format!(
-        ".treefrog_staging_{}_{}_{}.tmp",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_nanos(),
-        dest.file_name().unwrap_or_default().to_string_lossy()
-    );
-    let tmp_path = parent.join(tmp_name);
-    std::fs::copy(src, &tmp_path)?;
-    // Integrity check: temp file size must match source exactly
-    if std::fs::metadata(&tmp_path)?.len() != std::fs::metadata(src)?.len() {
-        let _ = std::fs::remove_file(&tmp_path);
+/// Real video conversion pipeline (P1):
+///   probe source -> (already evaluated at plan time) -> stage temp output ->
+///   run ffmpeg -> probe converted output -> validate compatibility ->
+///   only then deploy the staged output to the SD destination.
+/// The ORIGINAL source is never modified and never copied as-is for
+/// convert_then_copy. Failure/cancellation removes the staged output.
+fn deploy_converted_video(
+    entry_source: &str,
+    sd_root: &Path,
+    dest_rel: &str,
+    profile: &LoadedProfile,
+    app: Option<&AppHandle>,
+    entry_hash: &mut Option<String>,
+) -> anyhow::Result<()> {
+    let src = Path::new(entry_source);
+    if !src.exists() {
+        anyhow::bail!("video source not found: {}", src.display());
+    }
+    // Phase event: probing
+    emit_phase(app, "Probing", 0, 1, entry_source);
+    // Re-probe source for freshness (planner decision may be stale)
+    let probe = crate::video::probe(&src.to_string_lossy())
+        .map_err(|e| anyhow::anyhow!("ffprobe failed for {}: {}", src.display(), e))?;
+    let eval = crate::video::evaluate_compatibility(&probe, &profile.video_preset);
+    if eval.status == "compatible" {
+        // Source became compatible since planning: copy the ORIGINAL (allowed,
+        // explicit and observable in the reason).
+        let dest_resolved = crate::paths::resolve_validated_destination(sd_root, dest_rel)
+            .map_err(|e| anyhow::anyhow!("invalid destination '{}': {}", dest_rel, e))?;
+        return safe_copy_file_resolved(src, &dest_resolved);
+    }
+    if eval.status != "conversion_required" {
         anyhow::bail!(
-            "copy verification failed: size mismatch for {} -> {}",
-            src.display(),
-            dest.display()
+            "video no longer convertible (status: {}): {}",
+            eval.status,
+            eval.reason
         );
     }
-    match std::fs::rename(&tmp_path, &dest) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp_path);
-            Err(anyhow::anyhow!("atomic rename failed: {}", e))
-        }
+    // Phase event: converting
+    emit_phase(app, "Converting", 0, 1, entry_source);
+    // Temp staging area — output is validated BEFORE any SD write.
+    let staging = tempfile::TempDir::new().map_err(|e| anyhow::anyhow!("tempdir failed: {}", e))?;
+    let conv = crate::video::convert(src, staging.path(), &profile.video_preset);
+    // TempDir drops automatically on error paths below (removes staged output).
+    if !conv.success {
+        anyhow::bail!(
+            "video conversion failed for {}: {}",
+            src.display(),
+            conv.error
+                .unwrap_or_else(|| "unknown conversion error".to_string())
+        );
     }
+    let converted = conv
+        .output_path
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("conversion produced no output for {}", src.display()))?;
+    // converted output already ffprobe-validated by video::convert; recompute
+    // hash so the deployment records the DEPLOYED content's identity.
+    *entry_hash = crate::hash::sha256_file(converted).ok();
+    // Phase event: deploying
+    emit_phase(app, "Deploying", 0, 1, entry_source);
+    let dest_resolved = crate::paths::resolve_validated_destination(sd_root, dest_rel)
+        .map_err(|e| anyhow::anyhow!("invalid destination '{}': {}", dest_rel, e))?;
+    safe_copy_file_resolved(converted, &dest_resolved)
 }
 
 pub fn deploy_plan(
     plan: &Plan,
     sd_root: &str,
-    _profile: &LoadedProfile,
+    profile: &LoadedProfile,
     force: bool,
     app: Option<&AppHandle>,
 ) -> anyhow::Result<DeployResult> {
@@ -123,8 +216,19 @@ pub fn deploy_plan(
             space.available_bytes.unwrap_or(0)
         );
     }
-    let dests: Vec<String> = plan.entries.iter().map(|e| e.destination.clone()).collect();
-    let collisions = sd_target::check_case_collision(&dests);
+    // Only entries that write can collide (effective action decides).
+    let write_dests: Vec<String> = plan
+        .entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                effective_action(e),
+                "copy" | "extract" | "convert_then_copy" | "replace"
+            )
+        })
+        .map(|e| e.destination.clone())
+        .collect();
+    let collisions = sd_target::check_case_collision(&write_dests);
     if !collisions.is_empty() {
         anyhow::bail!(
             "Case collision detected: {} collides with {}",
@@ -147,21 +251,21 @@ pub fn deploy_plan(
         .iter()
         .filter(|e| {
             matches!(
-                e.resolved_action.as_ref().unwrap_or(&e.action).as_str(),
-                "copy" | "extract" | "convert_then_copy"
+                effective_action(e),
+                "copy" | "extract" | "convert_then_copy" | "replace"
             )
         })
         .count();
     let mut completed = 0usize;
 
     for entry in &plan.entries {
-        let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
+        let action = effective_action(entry).to_string();
         info!(
             "Processing: {} -> {} (action: {}, reason: {})",
             entry.source, entry.destination, action, entry.reason
         );
         let dest_rel = &entry.destination;
-        // Skip UNKNOWN destinations (no file should ever be written to roms/UNKNOWN)
+        // UNKNOWN destinations are NEVER written (state machine invariant).
         if dest_rel.contains("roms/UNKNOWN") {
             tracing::warn!("Skipping file with UNKNOWN destination: {}", entry.source);
             warnings.push(format!(
@@ -171,29 +275,16 @@ pub fn deploy_plan(
             skipped += 1;
             continue;
         }
-        // Validate (for relative dest)
-        let dest_for_validation =
-            if dest_rel.contains(':') || dest_rel.starts_with('/') || dest_rel.starts_with('\\') {
-                // If it's an absolute Windows path, extract the file name for validation
-                Path::new(dest_rel)
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or(dest_rel)
-                    .to_string()
-            } else {
-                dest_rel.clone()
-            };
-        if let Err(e) = sd_target::validate_destination_path(&dest_for_validation) {
-            // Try validating as roms/... + file name
-            if let Err(e2) =
-                sd_target::validate_destination_path(&format!("roms/{}", dest_for_validation))
-            {
-                errors.push(format!("{}: {} (also {})", dest_rel, e, e2));
+        // Canonical destination validation + resolution (single model).
+        let dest_resolved = match crate::paths::resolve_validated_destination(sd_path, dest_rel) {
+            Ok(p) => p,
+            Err(e) => {
+                errors.push(format!("{}: {}", dest_rel, e));
                 failed += 1;
                 continue;
             }
-        }
-        let dest_abs = sd_path.join(dest_rel);
+        };
+        let dest_abs = dest_resolved.clone();
 
         // ---- Fresh on-disk verification: never trust a stale skip decision ----
         let dest_exists_now = dest_abs.exists();
@@ -252,7 +343,7 @@ pub fn deploy_plan(
             }
         }
 
-        // Record breakdown row with absolute verified path (loop-collected)
+        // Record breakdown row with absolute verified path
         breakdown_rows.push(serde_json::json!({
             "source": entry.source,
             "destination": dest_rel,
@@ -270,7 +361,7 @@ pub fn deploy_plan(
                 if is_group {
                     let base = raw_src.split("::").next().unwrap_or(&raw_src);
                     let base = base.split(" (group ").next().unwrap_or(base).trim();
-                    let cue_path = std::path::PathBuf::from(base);
+                    let cue_path = PathBuf::from(base);
                     let src_dir = cue_path
                         .parent()
                         .map(|p| p.to_path_buf())
@@ -279,6 +370,12 @@ pub fn deploy_plan(
                         .parent()
                         .map(|p| p.to_path_buf())
                         .unwrap_or_else(|| dest_abs.clone());
+                    // Group base destination in RELATIVE canonical form
+                    let dest_dir_rel = entry
+                        .destination
+                        .rsplit_once('/')
+                        .map(|(dir, _)| dir.to_string())
+                        .unwrap_or_default();
 
                     let mut members = entry
                         .members
@@ -293,8 +390,21 @@ pub fn deploy_plan(
 
                     let mut ok = true;
                     for m in &members {
+                        // Group member names must be valid single components
+                        // (no traversal, no separators, no reserved names).
+                        if let Err(e) = crate::paths::validate_relative_destination(m) {
+                            errors.push(format!("group member name invalid {}: {}", m, e));
+                            ok = false;
+                            continue;
+                        }
                         let s = src_dir.join(m);
-                        let d = dest_dir.join(m);
+                        let member_dest = if dest_dir_rel.is_empty() {
+                            m.clone()
+                        } else {
+                            format!("{}/{}", dest_dir_rel, m)
+                        };
+                        let d = crate::paths::resolve_validated_destination(sd_path, &member_dest)
+                            .unwrap_or_else(|_| dest_dir.join(m));
                         if !s.exists() {
                             errors.push(format!("group member not found: {}", s.display()));
                             ok = false;
@@ -314,7 +424,7 @@ pub fn deploy_plan(
                                 meta.len()
                             );
                         }
-                        match safe_copy_file(&s, &d, sd_path) {
+                        match safe_copy_file_resolved(&s, &d) {
                             Ok(()) => {
                                 written_dests.insert(d.to_string_lossy().to_lowercase(), None);
                             }
@@ -338,7 +448,6 @@ pub fn deploy_plan(
                     } else {
                         failed += 1;
                     }
-                    // breakdown row con action final y miembros
                     continue;
                 }
                 let src_str = entry.source.split("::").next().unwrap_or(&entry.source);
@@ -362,29 +471,15 @@ pub fn deploy_plan(
                         meta.len()
                     );
                 }
-                match safe_copy_file(src, &dest_abs, sd_path) {
+                match safe_copy_file_resolved(src, &dest_abs) {
                     Ok(()) => {
                         deployed += 1;
                         written_dests.insert(
                             dest_abs.to_string_lossy().to_lowercase(),
                             entry.hash.clone().or_else(|| entry.source_hash.clone()),
                         );
-                        // Emitir progreso después de cada archivo copiado
-                        if matches!(
-                            action_final.as_str(),
-                            "copy" | "extract" | "convert_then_copy"
-                        ) {
-                            completed += 1;
-                            if let Some(app_handle) = app {
-                                let _ = app_handle.emit("deploy-progress", serde_json::json!({
-                                    "current": completed,
-                                    "total": total,
-                                    "percentage": (completed as f64 / total as f64 * 100.0) as u32,
-                                    "current_file": entry.source,
-                                    "message": format!("Transferring {}/{} files...", completed, total)
-                                }));
-                            }
-                        }
+                        completed += 1;
+                        emit_phase(app, "Transferring", completed, total, &entry.source);
                     }
                     Err(e) => {
                         errors.push(format!(
@@ -417,31 +512,57 @@ pub fn deploy_plan(
                 ) {
                     Ok(extracted) => {
                         let mut ok = true;
-                        // For grouped, dest_abs is a directory; for single, it's a file's parent
-                        let dest_base = if dest_abs.extension().is_some() && !dest_abs.is_dir() {
-                            // Single file: dest_abs is like roms/SFC/game.sfc, so parent is roms/SFC
-                            dest_abs.parent().unwrap_or(sd_path).to_path_buf()
+                        // Destination base in RELATIVE form (canonical model):
+                        // - grouped: entry.destination is the target folder (roms/PS/Game)
+                        // - single:   entry.destination is the file (roms/SFC/game.sfc) -> its parent
+                        let dest_base_rel = if dest_abs.extension().is_some() && !dest_abs.is_dir()
+                        {
+                            entry
+                                .destination
+                                .rsplit_once('/')
+                                .map(|(dir, _)| dir.to_string())
+                                .unwrap_or_default()
                         } else {
-                            // Grouped: dest_abs is like roms/PS/Game (directory)
-                            dest_abs.clone()
+                            entry.destination.clone().trim_end_matches('/').to_string()
                         };
                         for p in extracted {
                             // Preserve relative path from temp dir
                             let rel = p.strip_prefix(tmp_dir.path()).unwrap_or(&p);
-                            let dest_file = dest_base.join(rel);
-                            // Validate before copy
-                            if let Err(e) = sd_target::validate_destination_path(
-                                &rel.to_string_lossy().to_string().replace('\\', "/"),
-                            ) {
+                            let rel_str = rel.to_string_lossy().replace('\\', "/");
+                            // Canonical validation of the member name BEFORE join
+                            if let Err(e) = crate::paths::validate_relative_destination(&rel_str) {
                                 errors.push(format!(
                                     "extracted path invalid {} -> {}: {}",
                                     p.display(),
-                                    dest_file.display(),
+                                    rel_str,
                                     e
                                 ));
                                 ok = false;
                                 continue;
                             }
+                            // Combined destination (base + member), canonically validated
+                            let member_dest = if dest_base_rel.is_empty() {
+                                rel_str.clone()
+                            } else {
+                                format!("{}/{}", dest_base_rel, rel_str)
+                            };
+                            let dest_file_resolved =
+                                match crate::paths::resolve_validated_destination(
+                                    sd_path,
+                                    &member_dest,
+                                ) {
+                                    Ok(d) => d,
+                                    Err(e) => {
+                                        errors.push(format!(
+                                            "extracted member destination invalid {} -> {}: {}",
+                                            p.display(),
+                                            member_dest,
+                                            e
+                                        ));
+                                        ok = false;
+                                        continue;
+                                    }
+                                };
                             if let Err(e) = validate_rom_file(&p) {
                                 errors.push(format!("validation failed {}: {}", p.display(), e));
                                 warn!("validation failed {}: {}", p.display(), e);
@@ -452,21 +573,23 @@ pub fn deploy_plan(
                                 info!(
                                     "Copying ROM (extract): {} -> {} ({} bytes)",
                                     p.display(),
-                                    dest_file.display(),
+                                    dest_file_resolved.display(),
                                     meta.len()
                                 );
                             }
-                            if let Err(e) = safe_copy_file(&p, &dest_file, sd_path) {
+                            if let Err(e) = safe_copy_file_resolved(&p, &dest_file_resolved) {
                                 errors.push(format!(
                                     "extract copy {} -> {}: {}",
                                     p.display(),
-                                    dest_file.display(),
+                                    dest_file_resolved.display(),
                                     e
                                 ));
                                 ok = false;
                             } else {
-                                written_dests
-                                    .insert(dest_file.to_string_lossy().to_lowercase(), None);
+                                written_dests.insert(
+                                    dest_file_resolved.to_string_lossy().to_lowercase(),
+                                    None,
+                                );
                             }
                         }
                         if ok {
@@ -475,35 +598,24 @@ pub fn deploy_plan(
                                 dest_abs.to_string_lossy().to_lowercase(),
                                 entry.hash.clone().or_else(|| entry.source_hash.clone()),
                             );
-                            if matches!(
-                                action_final.as_str(),
-                                "copy" | "extract" | "convert_then_copy"
-                            ) {
-                                completed += 1;
-                                if let Some(app_handle) = app {
-                                    let _ = app_handle.emit("deploy-progress", serde_json::json!({
-                                        "current": completed,
-                                        "total": total,
-                                        "percentage": (completed as f64 / total as f64 * 100.0) as u32,
-                                        "current_file": entry.source,
-                                        "message": format!("Transferring {}/{} files...", completed, total)
-                                    }));
-                                }
-                            }
+                            completed += 1;
+                            emit_phase(app, "Transferring", completed, total, &entry.source);
                         } else {
                             failed += 1;
                         }
                     }
                     Err(e) => {
-                        // Fallback: copy archive as is if it's a payload (e.g., cps1 zip)
-                        if entry.destination.ends_with(".zip")
-                            || entry.content_type.as_deref() == Some("archive-payload")
-                        {
-                            match safe_copy_file(archive_src, &dest_abs, sd_path) {
+                        // UNSUPPORTED formats are NEVER silently copied as
+                        // supported content. Only payload archives (zip kept
+                        // intact per profile) fall back to a plain copy.
+                        let is_payload = entry.destination.ends_with(".zip")
+                            || entry.content_type.as_deref() == Some("archive-payload");
+                        if is_payload {
+                            match safe_copy_file_resolved(archive_src, &dest_abs) {
                                 Ok(()) => deployed += 1,
                                 Err(e2) => {
                                     errors.push(format!(
-                                        "extract {}: {} (fallback copy also failed: {})",
+                                        "extract {}: {} (payload copy also failed: {})",
                                         archive_src.display(),
                                         e,
                                         e2
@@ -519,84 +631,35 @@ pub fn deploy_plan(
                 }
             }
             "convert_then_copy" => {
-                let src = Path::new(&entry.source);
-                if !src.exists() {
-                    errors.push(format!("video source not found: {}", src.display()));
-                    failed += 1;
-                    continue;
-                }
-                // Real pipeline: create temp staging, run ffmpeg, probe converted output, validate, deploy
-                // Original source remains untouched; staged output is removed on failure/cancellation
-                if let Some(app_handle) = app {
-                    let _ = app_handle.emit(
-                        "deploy-progress",
-                        serde_json::json!({
-                            "current": completed,
-                            "total": total,
-                            "percentage": (completed as f64 / total as f64 * 100.0) as u32,
-                            "current_file": entry.source,
-                            "message": format!("Converting video {}/{}...", completed + 1, total)
-                        }),
-                    );
-                }
-                let temp_dir = match tempfile::TempDir::new() {
-                    Ok(d) => d,
-                    Err(e) => {
-                        errors.push(format!("temp staging failed for {}: {}", src.display(), e));
-                        failed += 1;
-                        continue;
-                    }
-                };
-                let preset = &_profile.video_preset;
-                let result = crate::video::convert(src, temp_dir.path(), preset);
-                if !result.success {
-                    let err = result
-                        .error
-                        .unwrap_or_else(|| "conversion failed".to_string());
-                    // Staged output already removed by video::convert on failure
-                    errors.push(format!("video conversion {}: {}", src.display(), err));
-                    failed += 1;
-                    // TempDir will be cleaned (staged output already removed)
-                    continue;
-                }
-                let converted_path = match result.output_path {
-                    Some(p) => p,
-                    None => {
-                        errors.push(format!("video conversion {}: no output", src.display()));
-                        failed += 1;
-                        continue;
-                    }
-                };
-                // Deploy converted output (final SD destination is never written before validation)
-                match safe_copy_file(&converted_path, &dest_abs, sd_path) {
+                // REAL conversion: original is never deployed for this action.
+                let mut entry_hash = entry.hash.clone();
+                match deploy_converted_video(
+                    &entry.source,
+                    sd_path,
+                    &entry.destination,
+                    profile,
+                    app,
+                    &mut entry_hash,
+                ) {
                     Ok(()) => {
                         deployed += 1;
                         written_dests.insert(
                             dest_abs.to_string_lossy().to_lowercase(),
-                            entry.hash.clone().or_else(|| entry.source_hash.clone()),
+                            entry_hash.clone().or_else(|| entry.source_hash.clone()),
                         );
                         completed += 1;
-                        if let Some(app_handle) = app {
-                            let _ = app_handle.emit("deploy-progress", serde_json::json!({
-                                "current": completed,
-                                "total": total,
-                                "percentage": (completed as f64 / total as f64 * 100.0) as u32,
-                                "current_file": entry.source,
-                                "message": format!("Deployed converted video {}/{}...", completed, total)
-                            }));
-                        }
+                        emit_phase(app, "Transferring", completed, total, &entry.source);
                     }
                     Err(e) => {
                         errors.push(format!(
-                            "video copy {} -> {}: {}",
-                            converted_path.display(),
+                            "video conversion {} -> {}: {}",
+                            entry.source,
                             dest_abs.display(),
                             e
                         ));
                         failed += 1;
                     }
                 }
-                // temp_dir dropped here — staged output removed
             }
             "skip" | "skip_unchanged" | "skip_duplicate" => {
                 skipped += 1;
@@ -633,19 +696,20 @@ pub fn deploy_plan(
             .entries
             .iter()
             .filter(|e| {
-                let action = e.resolved_action.as_ref().unwrap_or(&e.action);
                 matches!(
-                    action.as_str(),
+                    effective_action(e),
                     "skip" | "skip_unchanged" | "skip_duplicate" | "conflict" | "manual_review"
                 )
             })
             .collect();
 
         for entry in skipped_entries {
-            let action = entry.resolved_action.as_ref().unwrap_or(&entry.action);
             warn!(
                 "Skipped: {} -> {} (action: {}, reason: {})",
-                entry.source, entry.destination, action, entry.reason
+                entry.source,
+                entry.destination,
+                effective_action(entry),
+                entry.reason
             );
         }
     }
@@ -667,4 +731,96 @@ pub fn deploy_plan(
         warnings,
         breakdown: Some(breakdown_rows.clone()),
     })
+}
+
+#[cfg(test)]
+mod deploy_security_tests {
+    use super::*;
+
+    /// The writer must be secure when called DIRECTLY: any traversal attempt
+    /// is rejected regardless of caller validation.
+    #[test]
+    fn safe_writer_rejects_traversal_when_called_directly() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(&sd_root).unwrap();
+        let src = tmp.path().join("rom.bin");
+        std::fs::write(&src, b"rom").unwrap();
+        for bad in [
+            "../evil.bin",
+            "a/../evil.bin",
+            "/evil.bin",
+            "C:\\evil.bin",
+            "\\\\srv\\s\\e.bin",
+        ] {
+            assert!(
+                safe_copy_file(&src, &sd_root, bad).is_err(),
+                "must reject: {bad}"
+            );
+        }
+        // Valid relative dest writes INSIDE the root
+        safe_copy_file(&src, &sd_root, "roms/FC/rom.bin").unwrap();
+        assert!(sd_root.join("roms/FC/rom.bin").exists());
+        // Nothing escaped
+        assert!(!tmp.path().join("evil.bin").exists());
+    }
+
+    /// Staging + atomic rename: a successful copy leaves no staging temp files.
+    #[test]
+    fn successful_copy_leaves_no_staging_files() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        let src = tmp.path().join("fake.bin");
+        std::fs::write(&src, b"x").unwrap();
+        safe_copy_file(&src, &sd_root, "roms/game.bin").unwrap();
+        assert!(sd_root.join("roms/game.bin").exists());
+        for e in std::fs::read_dir(sd_root.join("roms")).unwrap() {
+            let name = e.unwrap().file_name().to_string_lossy().to_string();
+            assert!(
+                !name.starts_with(".treefrog_staging_"),
+                "staging file leaked: {name}"
+            );
+        }
+    }
+
+    /// BIOS deployments go through the same writer: end-to-end BIOS deploy via
+    /// a canonical Plan proves BIOS uses identical write safety rules.
+    #[test]
+    fn bios_uses_same_plan_deploy_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd_root = tmp.path().join("sd");
+        std::fs::create_dir_all(sd_root.join("cubegm/bios")).unwrap();
+        std::fs::create_dir_all(sd_root.join("roms")).unwrap();
+        let src = tmp.path().join("bios");
+        std::fs::create_dir_all(&src).unwrap();
+        let bios_file = src.join("gba_bios.bin");
+        std::fs::write(&bios_file, b"bios").unwrap();
+
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![crate::PlanEntry {
+                source: bios_file.to_string_lossy().to_string(),
+                destination: "cubegm/bios/gba_bios.bin".to_string(),
+                action: "copy".to_string(),
+                reason: "BIOS (user-supplied)".to_string(),
+                content_type: Some("bios".to_string()),
+                size: Some(4),
+                ..Default::default()
+            }],
+            warnings: vec![],
+        };
+        // analyze_target requires a TreeFrogUI-like target; create markers
+        let profile = crate::profile::load_profile().unwrap();
+        let result = deploy_plan(
+            &plan,
+            sd_root.to_string_lossy().as_ref(),
+            &profile,
+            false,
+            None,
+        )
+        .unwrap();
+        assert_eq!(result.deployed, 1);
+        assert!(sd_root.join("cubegm/bios/gba_bios.bin").exists());
+    }
 }

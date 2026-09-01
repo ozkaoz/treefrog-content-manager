@@ -245,30 +245,28 @@ def check_case_collision(dests):
     return out
 
 def calculate_space(plan, free_bytes=None):
+    """Space is computed from the EFFECTIVE action (resolved_action when
+    present, otherwise action) — one decision per entry, mirroring the Rust
+    backend exactly. A conflict resolved to replace counts; a skip_duplicate
+    resolved to copy counts; the original action never double-counts."""
     to_copy = 0
     to_extract = 0
     to_generate = 0
     to_skip = 0
     for e in plan.get("entries", []):
         size = e.get("size") or 0
-        action = e.get("action")
-        if action == "copy":
+        eff = e.get("resolved_action") or e.get("action")
+        if eff in ("copy", "replace"):
             to_copy += size
-        elif action == "extract":
+        elif eff == "extract":
             to_extract += size
-        elif action == "convert_then_copy":
+        elif eff == "convert_then_copy":
             to_generate += size
-        elif action in ("skip_unchanged", "skip_duplicate", "skip"):
+        elif eff in ("skip", "skip_unchanged", "skip_duplicate"):
             to_skip += size
-        # resolved_action
-        ra = e.get("resolved_action")
-        if ra and ra != action:
-            if ra in ("copy", "replace"):
-                to_copy += size
-            elif ra == "extract":
-                to_extract += size
-            elif ra == "convert_then_copy":
-                to_generate += size
+        # conflict/manual_review/unsupported/conversion_error never write by
+        # default — counted only when resolved to a write action (which
+        # changes the effective action above).
     required = to_copy + to_extract + to_generate
     if free_bytes is not None:
         status = "insufficient_space" if required > free_bytes else "ok"

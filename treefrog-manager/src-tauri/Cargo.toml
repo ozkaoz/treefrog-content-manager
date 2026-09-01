@@ -34,8 +34,9 @@ tracing = "0.1"
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_WindowsProgramming"] }
 
-# archive extras (feature-gated, keep 7z/rar via tool adapters for now)
-# sevenz-rust and unrar when available — otherwise fallback to external tools
+# Archive formats: ZIP only (maintained safe adapter in src/archive.rs).
+# 7z/RAR are EXPLICITLY unsupported — surfaced as unsupported_archive with a
+# precise reason; there is no external-tool fallback.
 
 [features]
 default = [ "custom-protocol" ]

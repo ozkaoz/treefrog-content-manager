@@ -18,17 +18,20 @@ export function UpdateChecker() {
   const [updateAvailable, setUpdateAvailable] = useState<GitHubRelease | null>(null);
   const [isChecking, setIsChecking] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
-  const [currentVersion, setCurrentVersion] = useState<string>("");
+  const [appVersion, setAppVersion] = useState<string>("");
 
+  // Version comes from the BACKEND (Cargo package version — single source of
+  // truth). Never a hardcoded frontend string.
   useEffect(() => {
-    invoke("build_info").then((info: any) => setCurrentVersion(info.version || "")).catch(() => setCurrentVersion("0.1.0"));
+    invoke<string>('app_version').then(setAppVersion).catch(() => setAppVersion(""));
   }, []);
 
   const checkForUpdates = async () => {
+    if (!appVersion) return;
     setIsChecking(true);
     try {
-      const release = await invoke('check_for_updates', { 
-        currentVersion 
+      const release = await invoke('check_for_updates', {
+        currentVersion: appVersion
       }) as GitHubRelease | null;
       setUpdateAvailable(release);
     } catch (error) {
@@ -40,11 +43,11 @@ export function UpdateChecker() {
 
   const downloadUpdate = async () => {
     if (!updateAvailable) return;
-    
-    const exeAsset = updateAvailable.assets.find(a => 
+
+    const exeAsset = updateAvailable.assets.find(a =>
       a.name.includes('Windows-x64.exe') && !a.name.includes('Setup')
     );
-    
+
     if (!exeAsset) {
       alert('Windows executable not found in release');
       return;
@@ -55,14 +58,14 @@ export function UpdateChecker() {
     try {
       const tempPath = await invoke('get_temp_path') as string;
       const savePath = `${tempPath}/TreeFrog-Content-Manager-${updateAvailable.tag_name}.exe`;
-      
+
       await invoke('download_update', {
         url: exeAsset.browser_download_url,
         savePath: savePath,
       });
 
       await invoke('open_folder', { path: tempPath });
-      
+
       alert(`Update downloaded to:\n${savePath}\n\nPlease close the current app and run the new version.`);
     } catch (error) {
       console.error('Download failed:', error);
@@ -73,8 +76,8 @@ export function UpdateChecker() {
   };
 
   useEffect(() => {
-    checkForUpdates();
-  }, []);
+    if (appVersion) checkForUpdates();
+  }, [appVersion]);
 
   return (
     <div style={{ 

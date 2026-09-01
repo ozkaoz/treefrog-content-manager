@@ -12,7 +12,11 @@ export default function SettingsPanel() {
   const [theme, setTheme] = useState<string>("light");
   const [error, setError] = useState("");
   const [buildInfo, setBuildInfo] = useState<any>(null);
+  const [appVersion, setAppVersion] = useState<string>("—");
   useEffect(() => { invoke("build_info").then(setBuildInfo).catch(() => {}); }, []);
+  // Application version comes from the backend (Cargo package version) — one
+  // source of truth shared with the update checker and the release artifacts.
+  useEffect(() => { invoke<string>("app_version").then(setAppVersion).catch(() => {}); }, []);
 
   useEffect(() => {
     setTheme(getSystemTheme());
@@ -55,7 +59,7 @@ export default function SettingsPanel() {
             <div><strong>Media:</strong> <code>media.json</code> (music, videos, images, ebooks)</div>
             <div><strong>BIOS:</strong> <code>bios.json</code> 1.1.0 formal (13 definiciones)</div>
             <div><strong>LGPT:</strong> <code>lgpt.json</code> (samples, projects)</div>
-            <div><strong>Video:</strong> <code>video_presets.json</code> <code>PROVISIONAL_UNVALIDATED</code></div>
+            <div><strong>Video:</strong> <code>video_presets.json</code> (conversions ffprobe-validated; not hardware-validated)</div>
             <div><strong>SD markers:</strong> <code>sd_markers.json</code> (cubegm + roms)</div>
           </div>
           {error && <div style={{ fontSize: 11, color: "var(--danger)", marginTop: 6 }}>{error}</div>}
@@ -90,10 +94,10 @@ export default function SettingsPanel() {
           <h4 style={{ margin: "0 0 8px 0" }}>Application</h4>
           <div style={{ fontSize: 12 }}>
             <div><strong>Name:</strong> TreeFrog Content Manager</div>
-            <div><strong>Version:</strong> 0.1.0 (Tauri 2 + Rust + React + TypeScript)</div>
+            <div><strong>Version:</strong> {appVersion} (Tauri 2 + Rust + React + TypeScript)</div>
             <div><strong>Branding:</strong> <code>frog-canonical.png</code> 314×280 (TreeFrogUI CC BY-NC-SA 4.0)</div>
-            <div><strong>Portable:</strong> <code>TreeFrog-Content-Manager-0.1.0-Windows-x64.exe</code> 14 MB</div>
-            <div><strong>Installer:</strong> <code>TreeFrog-Content-Manager-0.1.0-Windows-x64-Setup.exe</code> 3.5 MB</div>
+            <div><strong>Portable:</strong> <code>TreeFrog-Content-Manager-{appVersion}-Windows-x64.exe</code></div>
+            <div><strong>Installer:</strong> <code>TreeFrog-Content-Manager-{appVersion}-Windows-x64-Setup.exe</code></div>
             <div><strong>Profiles:</strong> embedded via <code>include_str!</code> for portable</div>
           </div>
         </div>

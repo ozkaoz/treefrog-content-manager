@@ -425,8 +425,11 @@ pub fn conversion_command(input: &Path, output: &Path, _preset: &serde_json::Val
         "3.0".to_string(),
         "-pix_fmt".to_string(),
         "yuv420p".to_string(),
+        // NOTE: the comma inside scale=min(...) must be escaped for the
+        // ffmpeg filtergraph parser ("\,"); a raw "," breaks parsing with
+        // "No option name near 'lanczos'" and the conversion silently fails.
         "-vf".to_string(),
-        "scale=min(640,iw):-2:flags=lanczos".to_string(),
+        "scale=min(640\\,iw):-2:flags=lanczos".to_string(),
         "-r".to_string(),
         "30".to_string(),
         "-c:a".to_string(),
@@ -624,5 +627,186 @@ fn parse_fps(s: &str) -> Option<f32> {
         None
     } else {
         s.parse().ok()
+    }
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    use super::*;
+
+    /// Generate a small test video with ffmpeg (skipped if ffmpeg missing).
+    fn make_test_video(dir: &Path, name: &str, extra_args: &[&str]) -> Option<PathBuf> {
+        let out = dir.join(name);
+        let mut cmd = std::process::Command::new("ffmpeg");
+        cmd.args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=1:size=320x240:rate=30",
+        ]);
+        cmd.args(extra_args);
+        cmd.arg(out.to_string_lossy().to_string());
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000);
+        }
+        let status = cmd.output().ok()?;
+        if status.status.success() && out.exists() {
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    fn ffmpeg_available() -> bool {
+        std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
+    fn preset() -> serde_json::Value {
+        crate::profile::load_profile()
+            .map(|p| p.video_preset)
+            .unwrap_or(serde_json::json!({}))
+    }
+
+    /// Compatible video (h264/yuv420p/mp4) must NOT require conversion.
+    #[test]
+    fn compatible_video_evaluates_compatible() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let vid = make_test_video(
+            tmp.path(),
+            "good.mp4",
+            &[
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000",
+            ],
+        )
+        .expect("ffmpeg should produce test video");
+        let probe_result = probe(vid.to_string_lossy().as_ref()).expect("ffprobe must work");
+        let eval = evaluate_compatibility(&probe_result, &preset());
+        assert_eq!(
+            eval.status, "compatible",
+            "test video must be compatible: {} ({})",
+            eval.status, eval.reason
+        );
+    }
+
+    /// Incompatible codec (mpeg4 or high-res) must require conversion.
+    #[test]
+    fn incompatible_video_requires_conversion() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        // 4K exceeds the conservative preset max width
+        let vid = make_test_video(
+            tmp.path(),
+            "big.mp4",
+            &["-c:v", "libx264", "-pix_fmt", "yuv420p", "-s", "3840x2160"],
+        )
+        .expect("ffmpeg should produce test video");
+        let probe_result = probe(vid.to_string_lossy().as_ref()).expect("ffprobe must work");
+        let eval = evaluate_compatibility(&probe_result, &preset());
+        assert_eq!(
+            eval.status, "conversion_required",
+            "4K video must require conversion: {}",
+            eval.reason
+        );
+    }
+
+    /// Incompatible container (flv — not in the preset's allowed list) must
+    /// require conversion.
+    #[test]
+    fn incompatible_container_requires_conversion() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let vid = make_test_video(
+            tmp.path(),
+            "video.flv",
+            &["-c:v", "libx264", "-pix_fmt", "yuv420p"],
+        )
+        .expect("ffmpeg should produce flv");
+        let probe_result = probe(vid.to_string_lossy().as_ref()).expect("ffprobe must work");
+        let eval = evaluate_compatibility(&probe_result, &preset());
+        assert_eq!(
+            eval.status, "conversion_required",
+            "flv must require conversion: {}",
+            eval.reason
+        );
+    }
+
+    /// REAL conversion: staged in temp, ffprobe-validated, output compatible.
+    /// The ORIGINAL file must remain untouched (size + mtime).
+    #[test]
+    fn conversion_produces_validated_output_and_original_untouched() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let vid = make_test_video(
+            tmp.path(),
+            "src.mp4",
+            &["-c:v", "libx264", "-pix_fmt", "yuv420p", "-s", "3840x2160"],
+        )
+        .expect("ffmpeg should produce test video");
+        let original_size = std::fs::metadata(&vid).unwrap().len();
+        let stage = tempfile::TempDir::new().unwrap();
+        let result = convert(&vid, stage.path(), &preset());
+        assert!(
+            result.success,
+            "conversion must succeed: {:?}",
+            result.error
+        );
+        let out = result.output_path.expect("output path must be set");
+        assert!(out.exists(), "staged output must exist");
+        assert!(
+            out.starts_with(stage.path()),
+            "output must be staged in temp dir"
+        );
+        // Converted output is ffprobe-validated and compatible
+        let probe_out =
+            probe(out.to_string_lossy().as_ref()).expect("converted output must be probeable");
+        let eval = evaluate_compatibility(&probe_out, &preset());
+        assert_eq!(
+            eval.status, "compatible",
+            "converted output must pass compatibility: {}",
+            eval.reason
+        );
+        // Original untouched
+        assert_eq!(std::fs::metadata(&vid).unwrap().len(), original_size);
+    }
+
+    /// Conversion of a NON-video input must fail and leave no staged output.
+    #[test]
+    fn conversion_failure_removes_staged_output() {
+        if !ffmpeg_available() {
+            return;
+        }
+        let tmp = tempfile::TempDir::new().unwrap();
+        let not_video = tmp.path().join("not_a_video.bin");
+        std::fs::write(&not_video, b"garbage bytes").unwrap();
+        let stage = tempfile::TempDir::new().unwrap();
+        let result = convert(&not_video, stage.path(), &preset());
+        assert!(!result.success, "garbage input must fail to convert");
+        // No staged output remains
+        let leftovers: Vec<_> = walkdir::WalkDir::new(stage.path())
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "failed conversion must leave no staged files: {:?}",
+            leftovers
+        );
     }
 }

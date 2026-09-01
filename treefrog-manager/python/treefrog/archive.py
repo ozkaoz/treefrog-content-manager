@@ -2,11 +2,14 @@ import pathlib, zipfile, re, os, tempfile
 
 LIMITS = {"max_entries": 1024, "max_expansion_bytes": 1024*1024*1024, "max_depth": 1, "max_total_files_per_job": 10000}
 
-# Handler registry — ZIP implemented, 7z/RAR stubs return unsupported_archive
+# Handler registry — ZIP implemented; 7z/RAR explicitly unsupported (precise reason)
 HANDLERS = {
     ".zip": {"implemented": True, "library": "zipfile"},
-    ".7z": {"implemented": False, "stub_action": "unsupported_archive"},
-    ".rar": {"implemented": False, "stub_action": "unsupported_archive"},
+    # 7z/RAR are EXPLICITLY unsupported (no maintained safe adapter).
+    # They surface as unsupported_archive with a precise reason and can
+    # never be extracted or copied as supported content. Only ZIP is supported.
+    ".7z": {"implemented": False, "reason": "7z archives are not supported (only ZIP is supported)"},
+    ".rar": {"implemented": False, "reason": "RAR archives are not supported (only ZIP is supported)"},
 }
 
 class ArchiveError(ValueError):
@@ -139,10 +142,9 @@ def inspect_archive(path: pathlib.Path, profile=None, limits=None):
     if handler is None:
         raise UnsupportedArchive(f"unsupported archive format: {ext}")
     if not handler.get("implemented"):
-        raise UnsupportedArchive(f"archive handler not available for {ext}: {handler.get('note','')} stub")
+        raise UnsupportedArchive(handler.get("reason", f"archive handler not available for {ext}"))
     if ext == ".zip":
         return inspect_zip(path, limits)
-    # For 7z/rar, if implemented would dispatch to other lib; for now stub
     raise UnsupportedArchive(f"handler for {ext} not implemented")
 
 def is_archive_runtime_payload(path: pathlib.Path, inner_entries, profile):

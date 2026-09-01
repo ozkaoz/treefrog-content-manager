@@ -1,6 +1,82 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+/// Windows: resolve the stable volume GUID (`\\?\Volume{...}\`) for the mount
+/// point. This identifies the VOLUME, not the mount path, so it survives
+/// drive-letter changes and remounts.
+#[cfg(target_os = "windows")]
+fn windows_volume_guid(mount_point: &str) -> Option<String> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::GetVolumeNameForVolumeMountPointW;
+    // Ensure trailing backslash for the mount point (API requirement)
+    let mp = if mount_point.ends_with('\\') || mount_point.ends_with('/') {
+        mount_point.to_string()
+    } else {
+        format!("{}\\", mount_point)
+    };
+    let mp_w: Vec<u16> = OsStr::new(&mp)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut buf = [0u16; 50];
+    let res = unsafe {
+        GetVolumeNameForVolumeMountPointW(windows::core::PCWSTR(mp_w.as_ptr()), &mut buf)
+    };
+    if res.is_ok() {
+        let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        let s = String::from_utf16_lossy(&buf[..len]);
+        if !s.is_empty() {
+            return Some(s);
+        }
+    }
+    None
+}
+
+/// Windows: filesystem serial number (stable across mount path changes).
+#[cfg(target_os = "windows")]
+fn windows_volume_serial(mount_point: &str) -> Option<u32> {
+    use std::ffi::OsStr;
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::GetVolumeInformationW;
+    // Root of the mount point
+    let p = Path::new(mount_point);
+    let root = p
+        .ancestors()
+        .find(|a| {
+            let s = a.to_string_lossy();
+            s.len() == 3 && s.chars().nth(1) == Some(':')
+        })
+        .map(|a| a.to_string_lossy().to_string())
+        .unwrap_or_else(|| {
+            if mount_point.ends_with('\\') {
+                mount_point.to_string()
+            } else {
+                format!("{}\\", mount_point)
+            }
+        });
+    let root_w: Vec<u16> = OsStr::new(&root)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut serial = 0u32;
+    let res = unsafe {
+        GetVolumeInformationW(
+            windows::core::PCWSTR(root_w.as_ptr()),
+            None,
+            Some(&mut serial),
+            None,
+            None,
+            None,
+        )
+    };
+    if res.is_ok() && serial != 0 {
+        Some(serial)
+    } else {
+        None
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct VolumeInfo {
     pub path: String,
@@ -11,8 +87,6 @@ pub struct VolumeInfo {
     pub removable: Option<bool>,
     pub accessible: bool,
     pub error: Option<String>,
-    #[serde(default)]
-    pub serial: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -39,15 +113,6 @@ pub struct TargetAnalysis {
     pub stable_id: Option<String>,
     pub physical_device: Option<PhysicalDevice>,
     pub folder_breakdown: std::collections::HashMap<String, usize>,
-    // Semantic counts for Overview (single source of truth from backend)
-    pub rom_count: usize,
-    pub music_track_count: usize,
-    pub video_count: usize,
-    pub image_count: usize,
-    pub ebook_count: usize,
-    pub bios_count: usize,
-    pub lgpt_sample_count: usize,
-    pub lgpt_project_count: usize,
 }
 
 #[cfg(target_os = "windows")]
@@ -89,7 +154,6 @@ fn get_volume_info_windows(path: &str) -> VolumeInfo {
 
     let mut label: Option<String> = None;
     let mut filesystem: Option<String> = None;
-    let mut serial_opt: Option<u32> = None;
     let mut accessible = Path::new(path).exists();
     let mut error: Option<String> = None;
 
@@ -117,7 +181,6 @@ fn get_volume_info_windows(path: &str) -> VolumeInfo {
         if !s2.is_empty() {
             filesystem = Some(s2);
         }
-        serial_opt = Some(serial);
     } else if !accessible {
         error = Some(format!("GetVolumeInformationW failed for {}", root));
     }
@@ -184,7 +247,6 @@ fn get_volume_info_windows(path: &str) -> VolumeInfo {
         removable: Some(removable),
         accessible,
         error,
-        serial: serial_opt,
     }
 }
 
@@ -208,7 +270,6 @@ fn get_volume_info_fallback(path: &str) -> VolumeInfo {
         removable: None,
         accessible,
         error,
-        serial: None,
     }
 }
 
@@ -473,7 +534,6 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
                 removable: Some(vol.removable),
                 accessible: vol.accessible,
                 error: None,
-                serial: vol.serial,
             });
         } else {
             for mp in vol.mount_points {
@@ -486,7 +546,6 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
                     removable: Some(vol.removable),
                     accessible: vol.accessible,
                     error: None,
-                    serial: vol.serial,
                 });
             }
         }
@@ -525,7 +584,6 @@ pub fn list_volumes() -> Vec<VolumeInfo> {
                 removable: Some(v.removable),
                 accessible: v.accessible,
                 error: None,
-                serial: v.serial,
             })
             .collect();
     }
@@ -621,14 +679,6 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
             stable_id: None,
             physical_device: None,
             folder_breakdown: std::collections::HashMap::new(),
-            rom_count: 0,
-            music_track_count: 0,
-            video_count: 0,
-            image_count: 0,
-            ebook_count: 0,
-            bios_count: 0,
-            lgpt_sample_count: 0,
-            lgpt_project_count: 0,
         });
     }
 
@@ -740,39 +790,6 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     }
 
     let existing_count = scanned_files.len();
-    // Semantic counts for Overview (single source of truth)
-    let rom_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::Rom)
-        .count();
-    let music_track_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::Music)
-        .count();
-    let video_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::Video)
-        .count();
-    let image_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::Image)
-        .count();
-    let ebook_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::Ebook)
-        .count();
-    let bios_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::Bios)
-        .count();
-    let lgpt_sample_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::LgptSample)
-        .count();
-    let lgpt_project_count = scanned_files
-        .iter()
-        .filter(|f| f.classification.kind == crate::classify::Kind::LgptProject)
-        .count();
     // Also ensure lgpt_dirs from filesystem if scanner didn't find them (for empty lgpt)
     if lgpt_detected {
         if p.join("lgpt/samples").exists() && !seen_lgpt_dirs.contains("lgpt/samples") {
@@ -791,34 +808,41 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
     bios_dirs.sort();
     lgpt_dirs.sort();
 
-    // Stable ID: volume GUID + serial (if available) for stale_target detection
+    // Stable ID: the most stable identifiers available on this platform, in
+    // priority order: Windows volume GUID -> filesystem serial -> (fallback)
+    // label+filesystem+capacity. The MOUNT PATH is deliberately NOT part of
+    // the stable id (mount points change between sessions); it is stored in
+    // the session state via `path`.
     let stable_id = {
         #[cfg(target_os = "windows")]
         {
-            // Try to get volume GUID and serial from FindFirstVolume path
-            // For now, use label + serial + filesystem + capacity as proxy
-            // A full implementation would use GetVolumeInformation's serial and FindFirstVolume's GUID
-            let mut id = String::new();
-            if let Some(label) = &vol.label {
-                id.push_str(label);
-                id.push('-');
+            let mut id = windows_volume_guid(&path);
+            if let Some(serial) = windows_volume_serial(&path) {
+                if let Some(guid) = &id {
+                    id = Some(format!("{}|serial={:08X}", guid, serial));
+                } else {
+                    id = Some(format!("serial={:08X}", serial));
+                }
             }
-            if let Some(fs) = &vol.filesystem {
-                id.push_str(fs);
-                id.push('-');
-            }
-            if let Some(total) = vol.total_bytes {
-                id.push_str(&total.to_string());
-                id.push('-');
-            }
-            // Also include the volume path's canonical GUID if we can get it via GetVolumeNameForVolumeMountPointW
-            // For now, use the path itself as part of ID, but also include serial if available via GetVolumeInformation
-            // We already have serial in Volume (if we had it), but our VolumeInfo doesn't store serial yet
-            // For this milestone, use path + label + serial fallback
-            if id.is_empty() {
-                Some(vol.path.clone())
+            if id.is_none() {
+                // Last-resort fallback (observable, not a mount path): label +
+                // filesystem + capacity. Explicit fallback — recorded in the id
+                // prefix so consumers can see it is not a volume GUID.
+                let mut fallback = String::from("fallback:");
+                if let Some(label) = &vol.label {
+                    fallback.push_str(label);
+                    fallback.push('-');
+                }
+                if let Some(fs) = &vol.filesystem {
+                    fallback.push_str(fs);
+                    fallback.push('-');
+                }
+                if let Some(total) = vol.total_bytes {
+                    fallback.push_str(&total.to_string());
+                }
+                Some(fallback)
             } else {
-                Some(id)
+                id
             }
         }
         #[cfg(not(target_os = "windows"))]
@@ -876,165 +900,70 @@ pub fn analyze_target(path: &str) -> anyhow::Result<TargetAnalysis> {
         stable_id,
         physical_device,
         folder_breakdown,
-        rom_count,
-        music_track_count,
-        video_count,
-        image_count,
-        ebook_count,
-        bios_count,
-        lgpt_sample_count,
-        lgpt_project_count,
     })
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum DestinationError {
-    #[error("empty destination")]
-    Empty,
-    #[error("absolute path not allowed: {0}")]
-    Absolute(String),
-    #[error("drive injection not allowed: {0}")]
-    Drive(String),
-    #[error("UNC not allowed: {0}")]
-    Unc(String),
-    #[error("traversal detected: {0}")]
-    Traversal(String),
-    #[error("empty path component in {0}")]
-    EmptyComponent(String),
-    #[error("reserved name not allowed: {0}")]
-    Reserved(String),
-    #[error("trailing dot/space not allowed: {0}")]
-    Trailing(String),
-    #[error("illegal character '{0}' in {1}")]
-    IllegalChar(char, String),
-    #[error("ADS not allowed: {0}")]
-    Ads(String),
-    #[error("path escapes SD root: {0} not inside {1}")]
-    Escape(String, String),
-}
-
 pub fn validate_destination_path(dest: &str) -> Result<(), String> {
-    // Backwards compat: validate as if sd_root is a dummy, but use canonical logic
-    // Use a fake sd_root to leverage the same checks without needing a real path
-    let fake_root = Path::new(if cfg!(windows) {
-        "C:\\fake_sd_root"
-    } else {
-        "/tmp/fake_sd_root"
-    });
-    resolve_validated_destination(fake_root, dest)
-        .map(|_| ())
-        .map_err(|e| e.to_string())
-}
-
-pub fn resolve_validated_destination(
-    sd_root: &Path,
-    relative_destination: &str,
-) -> Result<PathBuf, DestinationError> {
-    let raw = relative_destination.trim();
-    if raw.is_empty() {
-        return Err(DestinationError::Empty);
+    if dest.is_empty() {
+        return Err("empty destination".to_string());
     }
-    // Normalize separators: treat both / and \ as /
-    let normalized = raw.replace('\\', "/");
-    // Reject absolute Unix
-    if normalized.starts_with('/') {
-        return Err(DestinationError::Absolute(relative_destination.to_string()));
+    if dest.contains("..") {
+        for part in dest.split('/') {
+            if part == ".." {
+                return Err(format!("traversal detected: {}", dest));
+            }
+        }
+        if dest.contains("../") || dest.starts_with("../") {
+            return Err(format!("traversal detected: {}", dest));
+        }
     }
-    // Reject drive-letter absolute (e.g., C:, C:\, C:/, D:foo)
-    if normalized.len() >= 2
-        && normalized.chars().nth(1) == Some(':')
-        && normalized
+    if dest.starts_with('/') || dest.starts_with('\\') {
+        return Err(format!("absolute path not allowed: {}", dest));
+    }
+    if dest.len() >= 2
+        && dest.chars().nth(1) == Some(':')
+        && dest
             .chars()
             .next()
             .map(|c| c.is_ascii_alphabetic())
             .unwrap_or(false)
     {
-        return Err(DestinationError::Drive(relative_destination.to_string()));
+        return Err(format!("drive injection not allowed: {}", dest));
     }
-    // Reject UNC (after normalization //server/share)
-    if normalized.starts_with("//") {
-        return Err(DestinationError::Unc(relative_destination.to_string()));
+    if dest.contains("\\\\") {
+        if dest.starts_with("\\\\") {
+            return Err(format!("UNC not allowed: {}", dest));
+        }
     }
-    // Reject ADS (any colon not already drive-checked)
-    if normalized.contains(':') {
-        return Err(DestinationError::Ads(relative_destination.to_string()));
+    if dest.contains(':') {
+        // Any colon after drive check is ADS
+        return Err(format!("ADS not allowed: {}", dest));
     }
     let reserved = [
         "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
         "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
-    // Split and validate each component
-    // Use split('/') after normalization; this also catches empty components from // or trailing /
-    let parts: Vec<&str> = normalized.split('/').collect();
-    for part in &parts {
+    for part in dest.split('/') {
         if part.is_empty() {
-            return Err(DestinationError::EmptyComponent(
-                relative_destination.to_string(),
-            ));
+            return Err(format!("empty path component in {}", dest));
         }
-        if *part == "." || *part == ".." {
-            return Err(DestinationError::Traversal(
-                relative_destination.to_string(),
-            ));
-        }
-        // Reserved names (case-insensitive, before dot)
         let base = part.split('.').next().unwrap_or(part).to_uppercase();
         if reserved.contains(&base.as_str()) {
-            return Err(DestinationError::Reserved(part.to_string()));
+            return Err(format!("reserved name not allowed: {}", part));
         }
         if part.ends_with('.') || part.ends_with(' ') {
-            return Err(DestinationError::Trailing(part.to_string()));
+            return Err(format!("trailing dot/space not allowed: {}", part));
         }
-        for ch in ['<', '>', '"', '|', '?', '*'] {
+        for ch in ['<', '>', ':', '"', '\\', '|', '?', '*'] {
             if part.contains(ch) {
-                return Err(DestinationError::IllegalChar(ch, part.to_string()));
+                return Err(format!("illegal character '{}' in {}", ch, part));
             }
         }
-        // Note: we already normalized \ to /, so no need to check \ separately;
-        // ':' already checked for ADS
     }
-    // Construct final path and verify it stays inside sd_root
-    // Use PathBuf join with OS-specific separator handling
-    let relative_path = PathBuf::from(normalized.clone());
-    let final_path = sd_root.join(&relative_path);
-    // Canonicalize sd_root if possible for comparison; otherwise use as-is
-    let sd_root_canon = sd_root
-        .canonicalize()
-        .unwrap_or_else(|_| sd_root.to_path_buf());
-    // For final_path, we cannot canonicalize if it doesn't exist, so do lexical check
-    // Ensure final_path's string representation starts with sd_root_canon
-    let sd_root_str = sd_root_canon
-        .to_string_lossy()
-        .replace('\\', "/")
-        .trim_end_matches('/')
-        .to_string();
-    let final_str = final_path.to_string_lossy().replace('\\', "/");
-    // Case-insensitive on Windows
-    let is_windows = cfg!(windows);
-    let sd_cmp = if is_windows {
-        sd_root_str.to_lowercase()
-    } else {
-        sd_root_str.clone()
-    };
-    let final_cmp = if is_windows {
-        final_str.to_lowercase()
-    } else {
-        final_str.clone()
-    };
-    if final_cmp == sd_cmp {
-        return Err(DestinationError::EmptyComponent(
-            relative_destination.to_string(),
-        ));
+    if dest.contains('\\') {
+        return Err(format!("backslash not allowed in destination: {}", dest));
     }
-    if !final_cmp.starts_with(&sd_cmp) {
-        return Err(DestinationError::Escape(final_str, sd_root_str));
-    }
-    // Ensure separator after sd_root
-    let remainder = &final_cmp[sd_cmp.len()..];
-    if !remainder.starts_with('/') {
-        return Err(DestinationError::Escape(final_str, sd_root_str));
-    }
-    Ok(final_path)
+    Ok(())
 }
 
 pub fn check_case_collision(dests: &[String]) -> Vec<(String, String)> {
@@ -1062,37 +991,26 @@ pub struct SpaceInfo {
     pub status: String, // ok, insufficient_space, unknown
 }
 
-pub fn effective_action(entry: &crate::PlanEntry) -> &str {
-    entry.resolved_action.as_deref().unwrap_or(&entry.action)
-}
-
 pub fn calculate_space(plan: &crate::Plan, free_bytes: Option<u64>) -> SpaceInfo {
     let mut to_copy = 0u64;
     let mut to_extract = 0u64;
     let mut to_generate = 0u64;
     let mut to_skip = 0u64;
     for e in &plan.entries {
+        // Space is computed from the EFFECTIVE action (resolved_action when
+        // present, otherwise action). A conflict resolved to `replace` must
+        // count as required space; a `skip_duplicate` resolved to `copy` must
+        // count too. Never mix the two fields — one decision per entry.
         let size = e.size.unwrap_or(0);
-        match effective_action(e) {
+        match crate::effective_action(e) {
             "copy" | "replace" => to_copy += size,
             "extract" => to_extract += size,
             "convert_then_copy" => to_generate += size,
             "skip" | "skip_unchanged" | "skip_duplicate" => to_skip += size,
-            _ => {
-                // conflict/manual_review/unsupported etc. with no effective write -> counted as skip
-                // If effective is still conflict/manual, it is not required
-                if matches!(
-                    e.action.as_str(),
-                    "conflict"
-                        | "manual_review"
-                        | "unsupported_archive"
-                        | "unsupported"
-                        | "conversion_error"
-                ) {
-                    // Will be counted as skip if effective remains non-write
-                    to_skip += size;
-                }
-            }
+            // conflict/manual_review/unsupported/conversion_error never write
+            // by default — counted only when the user resolves them to a
+            // write action (which changes the effective action above).
+            _ => {}
         }
     }
     let required = to_copy + to_extract + to_generate;
@@ -1148,4 +1066,133 @@ pub fn check_stale_target(
         }
     }
     false
+}
+
+#[cfg(test)]
+mod space_tests {
+    use super::*;
+
+    fn entry(action: &str, resolved: Option<&str>, size: u64) -> crate::PlanEntry {
+        crate::PlanEntry {
+            source: format!("src/{}", size),
+            destination: format!("roms/{}.bin", size),
+            action: action.to_string(),
+            reason: "test".to_string(),
+            size: Some(size),
+            resolved_action: resolved.map(|s| s.to_string()),
+            ..Default::default()
+        }
+    }
+
+    /// Regression: space is computed from EFFECTIVE actions (one decision per
+    /// entry — no double counting, no under-counting).
+    #[test]
+    fn space_uses_effective_action_exclusively() {
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![
+                entry("copy", None, 100),                  // copy -> 100
+                entry("conflict", Some("replace"), 50),    // resolved replace -> 50 REQUIRED
+                entry("skip_duplicate", Some("copy"), 70), // resolved copy -> 70 REQUIRED
+                entry("skip_duplicate", None, 999), // still skip -> 999 skipped, not required
+                entry("convert_then_copy", None, 200), // generate -> 200
+                entry("extract", Some("skip"), 500), // resolved skip -> skipped
+            ],
+            warnings: vec![],
+        };
+        let s = calculate_space(&plan, Some(10_000));
+        assert_eq!(s.bytes_to_copy, 100 + 50 + 70, "copy+replace+resolved-copy");
+        assert_eq!(s.bytes_to_generate, 200);
+        assert_eq!(
+            s.bytes_to_extract, 0,
+            "extract resolved to skip must NOT count"
+        );
+        assert_eq!(s.bytes_to_skip, 999 + 500, "skips from effective action");
+        assert_eq!(s.required_bytes, 420);
+        assert_eq!(s.status, "ok");
+    }
+
+    #[test]
+    fn space_insufficient_detected() {
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry("copy", None, 1000)],
+            warnings: vec![],
+        };
+        let s = calculate_space(&plan, Some(100));
+        assert_eq!(s.status, "insufficient_space");
+        assert_eq!(s.required_bytes, 1000);
+        assert_eq!(s.available_bytes, Some(100));
+    }
+
+    #[test]
+    fn space_unknown_without_free_bytes() {
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry("copy", None, 1000)],
+            warnings: vec![],
+        };
+        let s = calculate_space(&plan, None);
+        assert_eq!(s.status, "unknown");
+    }
+
+    /// conflict default does not count, conflict resolved to replace counts.
+    #[test]
+    fn conflict_counts_only_when_resolved_to_write() {
+        let unresolved = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry("conflict", None, 50)],
+            warnings: vec![],
+        };
+        assert_eq!(calculate_space(&unresolved, Some(1000)).required_bytes, 0);
+        let resolved = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry("conflict", Some("replace"), 50)],
+            warnings: vec![],
+        };
+        assert_eq!(calculate_space(&resolved, Some(1000)).required_bytes, 50);
+    }
+
+    /// check_case_collision only reports write-destination duplicates.
+    #[test]
+    fn case_collision_detection_case_insensitive() {
+        let d = vec![
+            "roms/FC/a.nes".to_string(),
+            "roms/FC/A.NES".to_string(),
+            "roms/FC/b.nes".to_string(),
+        ];
+        let c = check_case_collision(&d);
+        assert_eq!(c.len(), 1);
+        assert_eq!(c[0].0, "roms/FC/A.NES");
+    }
+}
+
+#[cfg(test)]
+mod stable_id_tests {
+    /// stable_id must never embed the MOUNT PATH (mount points change between
+    /// sessions). It is either the volume GUID (+serial) or an explicitly
+    /// prefixed fallback.
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn stable_id_never_contains_mount_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd = tmp.path().join("sd");
+        std::fs::create_dir_all(sd.join("cubegm")).unwrap();
+        std::fs::create_dir_all(sd.join("roms")).unwrap();
+        let analysis = super::analyze_target(sd.to_string_lossy().as_ref()).unwrap();
+        let id = analysis
+            .stable_id
+            .expect("stable_id must be Some on windows");
+        let mount = sd.to_string_lossy().to_string();
+        // The volume GUID form is \\?\Volume{...}\ — the drive letter or tmp
+        // path must NOT appear in the id.
+        assert!(
+            !id.contains(&mount),
+            "stable_id must not embed mount path: {id}"
+        );
+        assert!(
+            !id.contains(":"),
+            "stable_id must not embed drive paths: {id}"
+        );
+    }
 }

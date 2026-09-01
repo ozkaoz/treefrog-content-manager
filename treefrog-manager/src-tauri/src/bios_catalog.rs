@@ -14,128 +14,146 @@ pub struct BiosEntry {
     pub description: String,
 }
 
+/// BIOS catalog is derived from the DECLARATIVE profile (bios.json) — the
+/// single authoritative BIOS validation model. No hardcoded BIOS lists here;
+/// the catalog is a projection of the profile for the UI.
 pub fn get_bios_catalog() -> Vec<BiosEntry> {
-    vec![
-        BiosEntry {
-            id: "ps1".into(),
-            system_name: "PlayStation 1".into(),
-            filenames: vec!["scph1001.bin".into(), "scph5501.bin".into(), "scph5500.bin".into(),
-                          "scph7001.bin".into(), "scph7502.bin".into(), "scph101.bin".into()],
-            pattern: Some("scph*.bin".into()),
-            destination: "cubegm/bios".into(),
-            required: true,
-            sha256: None,
-            md5: None,
-            expected_size: Some(524288),
-            description: "PS1 BIOS (any 512 KiB scph variant). Required for PS1 games.".into(),
-        },
-        BiosEntry {
-            id: "gba".into(),
-            system_name: "Game Boy Advance (gpsp)".into(),
-            filenames: vec!["gba_bios.bin".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: true,
-            sha256: Some("a860e8c0b6d573745853e7d8f1a0f3c6f0a6e9c5e0c8d9c7b6a5e4d3c2b1a0f9".into()),
-            md5: None,
-            expected_size: Some(16384),
-            description: "Official Nintendo GBA BIOS (16 KiB). Required for gpsp core.".into(),
-        },
-        BiosEntry {
-            id: "o2em".into(),
-            system_name: "Odyssey² / Videopac".into(),
-            filenames: vec!["o2rom.bin".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: true,
-            sha256: None,
-            md5: Some("562d5ebf9e030a40d6fabfc2f33139fd".into()),
-            expected_size: None,
-            description: "Odyssey² BIOS. Exact filename required.".into(),
-        },
-        BiosEntry {
-            id: "fds".into(),
-            system_name: "Famicom Disk System".into(),
-            filenames: vec!["disksys.rom".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: true,
-            sha256: None, md5: None, expected_size: None,
-            description: "Famicom Disk System BIOS.".into(),
-        },
-        BiosEntry {
-            id: "neogeo".into(),
-            system_name: "Neo Geo (arcade)".into(),
-            filenames: vec!["neogeo.zip".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: true,
-            sha256: None, md5: None, expected_size: None,
-            description: "Neo Geo arcade BIOS bundle. Required for neogeo/geolith cores.".into(),
-        },
-        BiosEntry {
-            id: "segacd".into(),
-            system_name: "Sega CD / Mega CD".into(),
-            filenames: vec!["bios_CD_U.bin".into(), "bios_CD_E.bin".into(), "bios_CD_J.bin".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: true,
-            sha256: None, md5: None, expected_size: None,
-            description: "Sega CD region BIOS: bios_CD_U.bin (USA), bios_CD_E.bin (Europe), bios_CD_J.bin (Japan). All 3 recommended for full regional support.".into(),
-        },
-        BiosEntry {
-            id: "amiga".into(),
-            system_name: "Commodore Amiga".into(),
-            filenames: vec!["kick13.rom".into(), "kick20.rom".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: false,
-            sha256: None, md5: None, expected_size: None,
-            description: "Amiga Kickstart ROM. Only kick13.rom (1.3, recommended) and kick20.rom (2.0) are supported. Kickstart 3.0/3.1 is NOT supported by this core.".into(),
-        },
-        BiosEntry {
-            id: "atari_st".into(),
-            system_name: "Atari ST".into(),
-            filenames: vec!["tos.img".into(), "tos104.img".into(), "tos162.img".into(), "tos206.img".into()],
-            pattern: Some("tos*.img".into()),
-            destination: "cubegm/bios".into(),
-            required: false,
-            sha256: None, md5: None, expected_size: None,
-            description: "Atari ST TOS ROM image.".into(),
-        },
-        BiosEntry {
-            id: "pcfx".into(),
-            system_name: "PC-FX".into(),
-            filenames: vec!["pcfx.rom".into()],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: false,
-            sha256: None, md5: None, expected_size: None,
-            description: "PC-FX BIOS.".into(),
-        },
-        BiosEntry {
-            id: "pc88".into(),
-            system_name: "NEC PC-88".into(),
-            filenames: vec![
-                "n88.rom".into(), "n88_0.rom".into(), "n88_1.rom".into(), "n88_2.rom".into(),
-                "n88_3.rom".into(), "n88n.rom".into(), "disk.rom".into(), "n88knj1.rom".into(),
-                "n88ext0.rom".into(), "n88ext1.rom".into(), "n88ext2.rom".into(), "n88ext3.rom".into()
-            ],
-            pattern: None,
-            destination: "cubegm/bios".into(),
-            required: false,
-            sha256: None, md5: None, expected_size: None,
-            description: "NEC PC-88 BIOS set (11 files).".into(),
-        },
-        BiosEntry {
-            id: "vice_jiffydos".into(),
-            system_name: "VICE (C64/VIC-20) JiffyDOS".into(),
-            filenames: vec!["JiffyDOS_C64.bin".into(), "JiffyDOS_1541-II.bin".into(), "JiffyDOS_1571.bin".into()],
-            pattern: None,
-            destination: "cubegm/bios/vice".into(),
-            required: false,
-            sha256: None, md5: None, expected_size: None,
-            description: "Optional JiffyDOS ROMs for VICE (C64/VIC-20). Faster disk loading.".into(),
-        },
-    ]
+    let json = crate::bios_profile_json_public();
+    let mut out: Vec<BiosEntry> = Vec::new();
+    if let Some(defs) = json.get("bios_definitions").and_then(|v| v.as_array()) {
+        for def in defs {
+            let id = def
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown")
+                .to_string();
+            let system_name = def
+                .get("system_name")
+                .or_else(|| def.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown system")
+                .to_string();
+            let mut filenames = Vec::new();
+            if let Some(arr) = def.get("accepted_filenames").and_then(|v| v.as_array()) {
+                for f in arr {
+                    if let Some(s) = f.as_str() {
+                        filenames.push(s.to_string());
+                    }
+                }
+            }
+            // variants contribute filenames too (merged projection)
+            if let Some(vars) = def.get("variants").and_then(|v| v.as_array()) {
+                for var in vars {
+                    if let Some(arr) = var.get("filenames").and_then(|v| v.as_array()) {
+                        for f in arr {
+                            if let Some(s) = f.as_str() {
+                                if !filenames.iter().any(|x| x.eq_ignore_ascii_case(s)) {
+                                    filenames.push(s.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let pattern = def
+                .get("accepted_patterns")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.iter().find_map(|x| x.as_str().map(|s| s.to_string())));
+            let destination = def
+                .get("primary_destination")
+                .or_else(|| def.get("destination"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("cubegm/bios")
+                .trim_end_matches('/')
+                .to_string();
+            let required_str = def
+                .get("required")
+                .and_then(|v| v.as_str())
+                .unwrap_or("optional");
+            let required = matches!(required_str, "required" | "conditional");
+            // Single-hash projection: first declared hash (variants merged by bios.rs).
+            let sha256 = def
+                .get("hashes_sha256")
+                .and_then(|v| v.as_array())
+                .and_then(|arr| arr.iter().find_map(|x| x.as_str().map(|s| s.to_string())))
+                .map(|s| s.to_string());
+            let md5 = def
+                .get("md5")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let expected_size = def.get("expected_size").and_then(|v| v.as_u64());
+            let description = def
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            out.push(BiosEntry {
+                id,
+                system_name,
+                filenames,
+                pattern,
+                destination,
+                required,
+                sha256,
+                md5,
+                expected_size,
+                description,
+            });
+        }
+    }
+    // Deterministic order
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
+}
+
+#[cfg(test)]
+mod bios_catalog_tests {
+    use super::*;
+
+    /// Catalog is derived from bios.json (single model): ids are stable,
+    /// destinations match the declared profile, and no entry is fabricated.
+    #[test]
+    fn catalog_derived_from_profile() {
+        let cat = get_bios_catalog();
+        assert!(!cat.is_empty(), "bios.json must provide definitions");
+        // Deterministic sort
+        let mut sorted_ids: Vec<&String> = cat.iter().map(|b| &b.id).collect();
+        sorted_ids.sort();
+        let ids: Vec<&String> = cat.iter().map(|b| &b.id).collect();
+        assert_eq!(sorted_ids, ids);
+        // Every entry mirrors the profile's declared primary_destination
+        let profile = crate::bios_profile_json_public();
+        let defs = profile
+            .get("bios_definitions")
+            .and_then(|v| v.as_array())
+            .unwrap();
+        for b in &cat {
+            let def = defs
+                .iter()
+                .find(|d| d.get("id").and_then(|x| x.as_str()) == Some(b.id.as_str()));
+            let def =
+                def.unwrap_or_else(|| panic!("catalog entry {} must exist in bios.json", b.id));
+            let declared = def
+                .get("primary_destination")
+                .or_else(|| def.get("destination"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("cubegm/bios");
+            assert_eq!(
+                b.destination,
+                declared.trim_end_matches('/'),
+                "destination must mirror profile for {}",
+                b.id
+            );
+            assert!(
+                !b.filenames.is_empty() || b.pattern.is_some(),
+                "entry must declare names or pattern: {}",
+                b.id
+            );
+        }
+        // Spot-check a known definition (from bios.json, not hardcoded here)
+        assert!(cat.iter().any(|b| b.id == "ps1_bios"
+            && b.filenames
+                .iter()
+                .any(|f| f.eq_ignore_ascii_case("scph1001.bin"))));
+    }
 }

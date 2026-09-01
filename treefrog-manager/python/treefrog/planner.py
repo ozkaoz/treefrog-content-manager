@@ -216,6 +216,63 @@ def _default_resolution_for_action(action: str) -> str:
         return "copy"
     return "skip"
 
+
+def _next_available_destination(current: str, sd_root, plan_destinations):
+    """Collision-safe renaming for keep_both: file_N.ext with N starting at 1
+    and increasing until the candidate is FREE with respect to (1) files that
+    already exist at the destination and (2) destinations already present in
+    the current plan (case-insensitive). Mirrors the Rust backend exactly."""
+    p = pathlib.PurePosixPath(current.replace(chr(92), chr(47)))
+    parent = str(p.parent)
+    if parent in ('.', ''):
+        parent = ''
+    stem = p.stem or 'file'
+    ext = p.suffix or ''
+    n = 1
+    while n <= 10000:
+        candidate_name = f'{stem}_{n}{ext}'
+        candidate = f'{parent}/{candidate_name}' if parent else candidate_name
+        if candidate.lower() not in plan_destinations:
+            if not (pathlib.Path(sd_root) / candidate).exists():
+                return candidate
+        n += 1
+    return f'{parent}/{stem}_colliding_{os.getpid()}' if parent else f'{stem}_colliding_{os.getpid()}'
+
+
+def _apply_single_resolution_ctx(entry, resolution: str, ctx):
+    """Context-aware resolution: keep_both renames are verified against the
+    real SD root and the destinations already claimed by the plan."""
+    orig_action = entry.get('action')
+    dest = entry.get('destination')
+    if not resolution or resolution not in VALID_RESOLUTIONS:
+        return entry
+    resolved = dict(entry)
+    resolved['resolution'] = resolution
+    if 'default_action' not in resolved:
+        resolved['default_action'] = orig_action
+    if resolution == 'skip':
+        resolved['resolved_action'] = 'skip'
+        resolved['reason'] = entry.get('reason', '') + ' [resolved: skip]'
+    elif resolution == 'keep_destination':
+        resolved['resolved_action'] = 'skip'
+        resolved['reason'] = entry.get('reason', '') + ' [resolved: keep_destination]'
+    elif resolution in ('replace', 'keep_source'):
+        if orig_action in ('conflict', 'manual_review', 'skip_duplicate'):
+            resolved['resolved_action'] = 'copy' if orig_action == 'skip_duplicate' else 'replace'
+        else:
+            resolved['resolved_action'] = 'copy'
+        resolved['reason'] = entry.get('reason', '') + f' [resolved: {resolution}]'
+    elif resolution == 'keep_both':
+        new_dest = _next_available_destination(dest, ctx.get('sd_root', '.'), ctx['plan_destinations'])
+        resolved['destination'] = new_dest
+        resolved['original_destination'] = dest
+        resolved['resolved_action'] = 'copy' if orig_action != 'extract' else 'extract'
+        resolved['reason'] = entry.get('reason', '') + f' [resolved: keep_both -> renamed to {new_dest}]'
+    else:
+        resolved['resolved_action'] = orig_action
+    return resolved
+
+
 def _apply_single_resolution(entry, resolution: str):
     orig_action = entry.get("action")
     dest = entry.get("destination")
@@ -256,18 +313,23 @@ def _apply_single_resolution(entry, resolution: str):
         resolved["resolved_action"] = orig_action
     return resolved
 
-def apply_resolutions(plan, decisions: dict):
+def apply_resolutions(plan, decisions: dict, sd_root: str = '.'):
+    """Apply user resolutions to a plan. ALL business rules (resolve, rename,
+    effective action, collisions) live HERE (backend parity with Rust
+    planner::apply_resolutions_ctx). keep_both renames are collision-safe
+    against the SD root and destinations already claimed by the plan."""
     if not decisions:
         return plan
+    plan_destinations = {e.get('destination', '').lower() for e in plan.get('entries', [])}
     new_entries = []
-    for idx, entry in enumerate(plan.get("entries", [])):
+    for idx, entry in enumerate(plan.get('entries', [])):
         key = None
         if str(idx) in decisions:
             key = str(idx)
-        elif entry.get("source") in decisions:
-            key = entry.get("source")
-        elif entry.get("destination") in decisions:
-            key = entry.get("destination")
+        elif entry.get('source') in decisions:
+            key = entry.get('source')
+        elif entry.get('destination') in decisions:
+            key = entry.get('destination')
         combined = f"{entry.get('source')}->{entry.get('destination')}"
         if combined in decisions:
             key = combined
@@ -275,28 +337,32 @@ def apply_resolutions(plan, decisions: dict):
         if idx in decisions:
             resolution = decisions[idx]
         if resolution:
-            new_entries.append(_apply_single_resolution(entry, resolution))
+            resolved = _apply_single_resolution_ctx(entry, resolution, {
+                'sd_root': sd_root,
+                'plan_destinations': plan_destinations,
+            })
+            plan_destinations.add(resolved.get('destination', '').lower())
+            new_entries.append(resolved)
         else:
             e = dict(entry)
-            if "resolved_action" not in e:
-                e["resolved_action"] = e.get("action")
-                e["resolution"] = _default_resolution_for_action(e.get("action"))
-                if "default_action" not in e:
-                    e["default_action"] = e.get("action")
+            if 'resolved_action' not in e:
+                e['resolved_action'] = e.get('action')
+                e['resolution'] = _default_resolution_for_action(e.get('action'))
+                if 'default_action' not in e:
+                    e['default_action'] = e.get('action')
             new_entries.append(e)
     new_plan = dict(plan)
-    new_plan["entries"] = new_entries
+    new_plan['entries'] = new_entries
     resolved_summary = {
-        "skip": sum(1 for e in new_entries if e.get("resolved_action") == "skip"),
-        "copy": sum(1 for e in new_entries if e.get("resolved_action") == "copy"),
-        "extract": sum(1 for e in new_entries if e.get("resolved_action") == "extract"),
-        "replace": sum(1 for e in new_entries if e.get("resolved_action") == "replace"),
-        "conflict": sum(1 for e in new_entries if e.get("resolved_action") == "conflict"),
-        "manual_review": sum(1 for e in new_entries if e.get("resolved_action") == "manual_review"),
+        'skip': sum(1 for e in new_entries if e.get('resolved_action') == 'skip'),
+        'copy': sum(1 for e in new_entries if e.get('resolved_action') == 'copy'),
+        'extract': sum(1 for e in new_entries if e.get('resolved_action') == 'extract'),
+        'replace': sum(1 for e in new_entries if e.get('resolved_action') == 'replace'),
+        'conflict': sum(1 for e in new_entries if e.get('resolved_action') == 'conflict'),
+        'manual_review': sum(1 for e in new_entries if e.get('resolved_action') == 'manual_review'),
     }
-    new_plan["resolved_summary"] = resolved_summary
+    new_plan['resolved_summary'] = resolved_summary
     return new_plan
-
 def plan(scanned, sd_root: str, profile):
     sd_path = pathlib.Path(sd_root)
     entries = []
@@ -842,7 +908,8 @@ def plan(scanned, sd_root: str, profile):
                     dest_abs_conv = sd_path / converted_dest
                     exists_conv = dest_abs_conv.exists()
                     # For duplicate handling, we need to consider converted file hash, not original
-                    # Since we haven't actually converted, we can't hash converted file, so we use original hash as placeholder
+                    # Hash of the source identity; the deployed (converted) file's hash is
+# recomputed at deploy time after ffprobe validation.
                     # But we should indicate that conversion is required and original remains untouched
                     # For planner, we will mark as convert_then_copy and not yet check duplicate/unchanged for converted file
                     # Instead, we can check if converted dest already exists and is identical to what converted would be?
@@ -878,7 +945,7 @@ def plan(scanned, sd_root: str, profile):
                             "destination": converted_dest,
                             "action": "convert_then_copy",
                             "status": status,
-                            "reason": f"{reason} | conversion_required via {video_preset_id} (provisional) -> {converted_name}",
+                            "reason": f"{reason} | conversion_required via {video_preset_id} -> {converted_name} (converted output validated with ffprobe before deploy)",
                             "hash": None,
                             "source_hash": None,
                             "destination_hash": None,
@@ -1157,5 +1224,5 @@ def plan(scanned, sd_root: str, profile):
         "manual_review": sum(1 for e in entries if e.get("action") in ("manual_review", "unsupported", "unsupported_archive")),
         "unsupported_archive": sum(1 for e in entries if e.get("action") in ("unsupported_archive", "unsupported")),
     }
-    warnings = ["PROVISIONAL_UNVALIDATED video preset — not hardware validated", "arch archives bounded: depth=1 entries=1024 expansion=1GiB"]
+    warnings = ["video preset not hardware-validated on device - conversions validated with ffprobe only — not hardware validated", "arch archives bounded: depth=1 entries=1024 expansion=1GiB"]
     return {"summary": summary, "entries": entries, "warnings": warnings}

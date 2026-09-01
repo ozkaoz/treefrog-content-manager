@@ -317,7 +317,7 @@ def test_planner_conversion_action():
             assert c["destination"].endswith(".mp4")
             assert "converted" in c["destination"]
             # Ensure warnings still present
-            assert any("PROVISIONAL_UNVALIDATED" in w for w in plan["warnings"])
+            assert any("ffprobe" in w and "hardware" in w for w in plan["warnings"])
 
 def test_deterministic_output_path():
     p = profile.load_profile()

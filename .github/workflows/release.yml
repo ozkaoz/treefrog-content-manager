@@ -6,8 +6,14 @@ on:
       - "v*"
 
 jobs:
+  validate:
+    name: Validation gates (must pass before release)
+    uses: ./.github/workflows/validate.yml
+
   build-windows:
+    name: Build + Release artifacts
     runs-on: windows-latest
+    needs: [validate]
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node

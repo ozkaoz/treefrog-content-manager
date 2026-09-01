@@ -18,16 +18,13 @@ fn main() {
                 println!("profile loaded: {}", p.profile_version);
                 println!("systems: {}", p.systems.len());
                 println!("archive handlers: {:?}", p.archive_valid_exts);
-                // Check video preset is provisional
+                // Report video preset validation status
                 let preset_status = p
                     .video_preset
                     .get("status")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
                 println!("video preset status: {}", preset_status);
-                if preset_status != "PROVISIONAL_UNVALIDATED" {
-                    eprintln!("warning: video preset status is not PROVISIONAL_UNVALIDATED");
-                }
                 // Check ffmpeg/ffprobe availability
                 let mut ffprobe_cmd = std::process::Command::new("ffprobe");
                 ffprobe_cmd.arg("-version");

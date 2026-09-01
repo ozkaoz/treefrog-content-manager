@@ -1,0 +1,99 @@
+name: Validate — TreeFrog Content Manager
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call: {}
+
+jobs:
+  frontend:
+    name: Frontend (npm ci + typecheck + build)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: treefrog-manager
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: treefrog-manager/package-lock.json
+      - run: npm ci
+      - name: Explicit type check (tsc --noEmit)
+        run: npx tsc --noEmit
+      - run: npm run build
+
+  rust:
+    name: Rust (fmt + check + tests)
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: treefrog-manager/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --check
+      - name: cargo check
+        run: cargo check
+      - name: cargo test (unit + security fixtures)
+        run: cargo test
+
+  python:
+    name: Python (pytest incl. security + archive + BIOS traversal + video conversion)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install FFmpeg (video conversion + ffprobe fixtures)
+        run: |
+          choco install ffmpeg -y --no-progress
+          ffmpeg -version
+          ffprobe -version
+      - name: pytest
+        working-directory: treefrog-manager
+        run: python -m pytest tests -v
+
+  version-consistency:
+    name: Version single source of truth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cargo / package.json / tauri.conf.json must agree
+        run: |
+          python - <<'EOF'
+          import json, re, sys
+          cargo = open("treefrog-manager/src-tauri/Cargo.toml", encoding="utf-8").read()
+          m = re.search(r'^version\s*=\s*"([^"]+)"', cargo, re.M)
+          assert m, "Cargo.toml version missing"
+          v_cargo = m.group(1)
+          v_pkg = json.load(open("treefrog-manager/package.json", encoding="utf-8"))["version"]
+          v_tauri = json.load(open("treefrog-manager/src-tauri/tauri.conf.json", encoding="utf-8"))["version"]
+          assert v_cargo == v_pkg == v_tauri, f"version drift: cargo={v_cargo} package={v_pkg} tauri={v_tauri}"
+          print(f"versions consistent: {v_cargo}")
+          EOF
+
+  build-tauri:
+    name: Build Tauri artifact (packaging gate)
+    runs-on: windows-latest
+    needs: [frontend, rust, python, version-consistency]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: treefrog-manager/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Windows x64 (Tauri)
+        working-directory: treefrog-manager
+        run: npx tauri build
+        env:
+          TFM_GIT_COMMIT: ${{ github.sha }}

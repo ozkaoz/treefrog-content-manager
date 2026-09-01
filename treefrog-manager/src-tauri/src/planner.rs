@@ -290,7 +290,98 @@ fn default_resolution_for_action(action: &str) -> String {
     }
 }
 
-fn apply_single_resolution(entry: &crate::PlanEntry, resolution: &str) -> crate::PlanEntry {
+/// Collision-safe renaming for `keep_both`: generates `file_N.ext` with N
+/// starting at 1 and increasing until the candidate is FREE with respect to:
+///   1. files that already exist at the destination (sd_root join)
+///   2. destinations already present in the current plan (case-insensitive)
+/// Returns the new destination (caller must ensure it differs from `current`).
+fn next_available_destination(
+    current: &str,
+    sd_root: &Path,
+    plan_destinations: &HashSet<String>,
+) -> String {
+    let p = Path::new(current);
+    let parent = p
+        .parent()
+        .map(|pp| pp.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let file_name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "file".to_string());
+    let (stem, ext) = match p.extension() {
+        Some(e) => (
+            p.file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default(),
+            format!(".{}", e.to_string_lossy()),
+        ),
+        None => (file_name.clone(), String::new()),
+    };
+    let prefix = if stem.is_empty() {
+        "file".to_string()
+    } else {
+        stem.clone()
+    };
+    let mut n: u32 = 1;
+    loop {
+        let candidate_name = format!("{}_{}{}", prefix, n, ext);
+        let candidate = if parent.is_empty() || parent == "." {
+            candidate_name.clone()
+        } else {
+            format!("{}/{}", parent, candidate_name)
+        };
+        let candidate_norm = candidate.to_lowercase();
+        // 1. not already in the plan (case-insensitive)
+        if !plan_destinations.contains(&candidate_norm) {
+            // 2. does not exist on disk at the SD root
+            let abs = sd_root.join(&candidate);
+            if !abs.exists() {
+                return candidate;
+            }
+        }
+        n += 1;
+        if n > 10_000 {
+            // Absolute guard: never loop forever. Use a name that cannot be
+            // produced by chance.
+            return if parent.is_empty() {
+                format!("{}_colliding_{}", prefix, std::process::id())
+            } else {
+                format!("{}/{}_colliding_{}", parent, prefix, std::process::id())
+            };
+        }
+    }
+}
+
+/// Context needed to resolve one entry: the SD root (for on-disk collision
+/// checks) and the set of destinations already claimed by the plan.
+pub struct ResolutionContext {
+    pub sd_root: std::path::PathBuf,
+    pub plan_destinations: HashSet<String>,
+}
+
+impl ResolutionContext {
+    /// Build a resolution context from a plan: every entry destination is
+    /// claimed (case-insensitive), so keep_both renames never collide with
+    /// any destination the plan already writes to.
+    pub fn from_plan(plan: &crate::Plan, sd_root: &str) -> Self {
+        let plan_destinations = plan
+            .entries
+            .iter()
+            .map(|e| e.destination.to_lowercase())
+            .collect();
+        ResolutionContext {
+            sd_root: std::path::PathBuf::from(sd_root),
+            plan_destinations,
+        }
+    }
+}
+
+fn apply_single_resolution_ctx(
+    entry: &crate::PlanEntry,
+    resolution: &str,
+    ctx: &ResolutionContext,
+) -> crate::PlanEntry {
     let mut resolved = entry.clone();
     resolved.resolution = Some(resolution.to_string());
     if resolved.default_action.is_none() {
@@ -315,54 +406,22 @@ fn apply_single_resolution(entry: &crate::PlanEntry, resolution: &str) -> crate:
             resolved.reason = format!("{} [resolved: {}]", entry.reason, resolution);
         }
         "keep_both" => {
-            // Collision-safe: file_1, file_2, ... checking case-insensitive and already planned destinations
-            // This is a best-effort without sd_root; the deploy writer will do final filesystem check.
-            // For now, generate _1 and let deploy's safe_copy handle final uniqueness if needed.
-            // However, we improve to check against already resolved destinations in the same plan
-            // by using a simple counter that will be validated at deploy time via safe_copy's atomic check.
             let dest = entry.destination.clone();
-            let p = Path::new(&dest);
-            let (stem, ext, parent) = if p.extension().is_some() && p.file_name().is_some() {
-                let stem = p.file_stem().unwrap().to_string_lossy().to_string();
-                let ext = p
-                    .extension()
-                    .map(|e| format!(".{}", e.to_string_lossy()))
-                    .unwrap_or_default();
-                let parent = p
-                    .parent()
-                    .map(|pp| pp.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                (stem, ext, parent)
-            } else {
-                (dest.clone(), String::new(), String::new())
-            };
-            // Generate _1, _2, ... — the deploy layer will verify against filesystem and plan collisions
-            // To avoid immediate collision with existing _1, we could check a global set, but we don't have it here.
-            // So we generate _1 and let the caller (deploy) handle further increment if needed.
-            // For now, we implement simple increment to _1, but the real collision-safe logic is in sd_target::generate_keep_both_destination
-            // which is called from deploy if needed. Here we just do _1 as baseline; deploy will ensure uniqueness.
-            let counter = 1;
-            let new_dest = {
-                let raw = if parent.is_empty() || parent == "." {
-                    format!("{}_{}{}", stem, counter, ext)
-                } else {
-                    format!("{}/{}_{}{}", parent, stem, counter, ext)
-                };
-                raw.replace('\\', "/")
-            };
-            // If the original dest already ends with _N, increment from there
-            // Check if stem already has _\d+ suffix from previous keep_both in same plan — we handle by scanning
-            // For now, keep simple _1; the deploy writer's safe_copy will ensure atomic uniqueness via temp file and will fail if still collides,
-            // but we will also make the planner's resolve_write_collisions handle it.
-            // To be truly collision-safe, we need to check against a global set — we do that in a helper below.
-            resolved.destination = new_dest;
+            // Collision-safe rename: _1, _2, _3... verified against existing
+            // files AND all destinations already claimed by this plan
+            // (case-insensitive). Uniqueness is GUARANTEED, not assumed.
+            let new_dest = next_available_destination(&dest, &ctx.sd_root, &ctx.plan_destinations);
+            resolved.destination = new_dest.replace('\\', "/");
             resolved.original_destination = Some(dest);
             resolved.resolved_action = Some(if entry.action == "extract" {
                 "extract".to_string()
             } else {
                 "copy".to_string()
             });
-            resolved.reason = format!("{} [resolved: keep_both -> renamed]", entry.reason);
+            resolved.reason = format!(
+                "{} [resolved: keep_both -> renamed to {}]",
+                entry.reason, resolved.destination
+            );
         }
         _ => {
             resolved.resolved_action = Some(entry.action.clone());
@@ -371,24 +430,42 @@ fn apply_single_resolution(entry: &crate::PlanEntry, resolution: &str) -> crate:
     resolved
 }
 
-pub fn apply_resolutions(
+#[allow(dead_code)]
+fn apply_single_resolution(entry: &crate::PlanEntry, resolution: &str) -> crate::PlanEntry {
+    let ctx = ResolutionContext {
+        sd_root: std::path::PathBuf::from("."),
+        plan_destinations: HashSet::new(),
+    };
+    apply_single_resolution_ctx(entry, resolution, &ctx)
+}
+
+/// Apply user resolutions to a plan. ALL business rules (resolve, rename,
+/// effective action, collisions) live HERE in the backend — the frontend only
+/// collects the user's choice and sends it.
+/// Decisions keys may be: index, source, destination, or "source->destination".
+pub fn apply_resolutions_ctx(
     plan: crate::Plan,
     decisions: &std::collections::HashMap<String, String>,
+    sd_root: &str,
 ) -> crate::Plan {
+    let mut ctx = ResolutionContext::from_plan(&plan, sd_root);
     let mut new_entries = Vec::new();
     for (idx, entry) in plan.entries.iter().enumerate() {
-        let key_idx = idx.to_string();
         let key_src = entry.source.clone();
         let key_dst = entry.destination.clone();
         let key_combined = format!("{}->{}", entry.source, entry.destination);
         let resolution = decisions
-            .get(&key_idx)
+            .get(&idx.to_string())
             .or_else(|| decisions.get(&key_src))
             .or_else(|| decisions.get(&key_dst))
-            .or_else(|| decisions.get(&key_combined))
-            .or_else(|| decisions.get(&idx.to_string()));
+            .or_else(|| decisions.get(&key_combined));
         if let Some(res) = resolution {
-            new_entries.push(apply_single_resolution(entry, res));
+            let resolved = apply_single_resolution_ctx(entry, res, &ctx);
+            // Claim the (possibly renamed) destination so subsequent
+            // keep_both operations cannot collide with it.
+            ctx.plan_destinations
+                .insert(resolved.destination.to_lowercase());
+            new_entries.push(resolved);
         } else {
             let mut e = entry.clone();
             if e.resolved_action.is_none() {
@@ -401,11 +478,19 @@ pub fn apply_resolutions(
             new_entries.push(e);
         }
     }
-    crate::Plan {
-        summary: plan.summary.clone(),
+    let fixed = resolve_write_collisions(crate::Plan {
+        summary: plan.summary,
         entries: new_entries,
-        warnings: plan.warnings.clone(),
-    }
+        warnings: plan.warnings,
+    });
+    fixed
+}
+
+pub fn apply_resolutions(
+    plan: crate::Plan,
+    decisions: &std::collections::HashMap<String, String>,
+) -> crate::Plan {
+    apply_resolutions_ctx(plan, decisions, ".")
 }
 
 pub fn plan_with_selection(
@@ -473,36 +558,37 @@ fn plan_internal(
                 .and_then(|e| e.to_str())
                 .map(|e| format!(".{}", e.to_lowercase()))
                 .unwrap_or_default();
-            // Check handler first via archive abstraction
+            // Supported handler registry decides: no handler = unsupported_archive
+            // with an explicit reason (7z/RAR unsupported; only ZIP supported).
             let handler = archive::get_handler_for_ext(&ext);
-            if handler.is_none() || (ext == ".7z" || ext == ".rar") {
-                // 7z/rar are stubbed as unsupported
-                if matches!(ext.as_str(), ".7z" | ".rar") {
-                    let dest2 = if sf.classification.destination.is_empty() {
-                        format!(
-                            "roms/UNKNOWN/{}",
-                            sf.source_path.file_name().unwrap().to_string_lossy()
-                        )
-                    } else {
-                        format!(
-                            "{}/{}",
-                            sf.classification.destination,
-                            sf.source_path.file_name().unwrap().to_string_lossy()
-                        )
-                    };
-                    entries.push(PlanEntry {
-                        source: sf.source_path.to_string_lossy().to_string(),
-                        destination: dest2,
-                        action: "unsupported_archive".into(),
-                        reason: format!("archive handler not available for {} (stub)", ext),
-                        hash: None,
-                        size: Some(sf.size),
-                        group: None,
-                        ..Default::default()
-                    });
-                    unsupported += 1;
-                    continue;
-                }
+            if handler.is_none() {
+                let dest2 = if sf.classification.destination.is_empty() {
+                    format!(
+                        "roms/UNKNOWN/{}",
+                        sf.source_path.file_name().unwrap().to_string_lossy()
+                    )
+                } else {
+                    format!(
+                        "{}/{}",
+                        sf.classification.destination,
+                        sf.source_path.file_name().unwrap().to_string_lossy()
+                    )
+                };
+                entries.push(PlanEntry {
+                    source: sf.source_path.to_string_lossy().to_string(),
+                    destination: dest2,
+                    action: "unsupported_archive".into(),
+                    reason: format!(
+                        "archive format {} is not supported (only ZIP is supported)",
+                        ext
+                    ),
+                    hash: None,
+                    size: Some(sf.size),
+                    group: None,
+                    ..Default::default()
+                });
+                unsupported += 1;
+                continue;
             }
 
             let inspected = archive::inspect_archive(&sf.source_path, &limits);
@@ -1298,15 +1384,7 @@ fn plan_internal(
                         source: sf.source_path.to_string_lossy().to_string(),
                         destination: converted_dest.clone(),
                         action: "convert_then_copy".to_string(),
-                        reason: format!(
-                            "{} | conversion_required via {} -> {}",
-                            reason_str,
-                            video_preset
-                                .get("id")
-                                .and_then(|x| x.as_str())
-                                .unwrap_or("unknown"),
-                            converted_name
-                        ),
+                        reason: format!("{} | conversion_required via {} -> {} (converted output validated with ffprobe before deploy)", reason_str, video_preset.get("id").and_then(|x| x.as_str()).unwrap_or("unknown"), converted_name),
                         hash: None,
                         source_hash: None,
                         destination_hash: None,
@@ -1641,11 +1719,7 @@ fn plan_internal(
             .filter(|e| matches!(e.action.as_str(), "unsupported_archive" | "unsupported"))
             .count(),
     };
-    Ok(Plan {
-        summary,
-        entries,
-        warnings: vec!["arch archives bounded: depth=1 entries=1024 expansion=1GiB".into()],
-    })
+    Ok(Plan { summary, entries, warnings: vec!["video preset not hardware-validated on device — conversions validated with ffprobe only".into(), "arch archives bounded: depth=1 entries=1024 expansion=1GiB".into()] })
 }
 
 #[allow(dead_code)]
@@ -1920,6 +1994,156 @@ pub fn resolve_write_collisions(plan: crate::Plan) -> crate::Plan {
         summary,
         entries,
         warnings: plan.warnings,
+    }
+}
+
+#[cfg(test)]
+mod keep_both_tests {
+    use super::*;
+    use crate::PlanEntry;
+
+    fn entry_with_dest(source: &str, dest: &str) -> PlanEntry {
+        PlanEntry {
+            source: source.to_string(),
+            destination: dest.to_string(),
+            action: "conflict".to_string(),
+            reason: "test".to_string(),
+            size: Some(1),
+            ..Default::default()
+        }
+    }
+
+    fn decisions_for(idx: usize, res: &str) -> std::collections::HashMap<String, String> {
+        let mut d = std::collections::HashMap::new();
+        d.insert(idx.to_string(), res.to_string());
+        d
+    }
+
+    /// keep_both picks _1 when free, _2 when _1 exists on the SD.
+    #[test]
+    fn keep_both_skips_existing_1_on_disk() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd = tmp.path().join("sd");
+        std::fs::create_dir_all(sd.join("roms/FC")).unwrap();
+        std::fs::write(sd.join("roms/FC/game_1.nes"), b"existing").unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry_with_dest("src/a.nes", "roms/FC/game.nes")],
+            warnings: vec![],
+        };
+        let out = apply_resolutions_ctx(
+            plan,
+            &decisions_for(0, "keep_both"),
+            sd.to_string_lossy().as_ref(),
+        );
+        assert_eq!(out.entries[0].destination, "roms/FC/game_2.nes");
+        assert_eq!(
+            out.entries[0].original_destination.as_deref(),
+            Some("roms/FC/game.nes")
+        );
+    }
+
+    /// keep_both picks _3 when _1 and _2 exist.
+    #[test]
+    fn keep_both_skips_existing_1_and_2_on_disk() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd = tmp.path().join("sd");
+        std::fs::create_dir_all(sd.join("roms/FC")).unwrap();
+        std::fs::write(sd.join("roms/FC/game_1.nes"), b"a").unwrap();
+        std::fs::write(sd.join("roms/FC/game_2.nes"), b"b").unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry_with_dest("src/a.nes", "roms/FC/game.nes")],
+            warnings: vec![],
+        };
+        let out = apply_resolutions_ctx(
+            plan,
+            &decisions_for(0, "keep_both"),
+            sd.to_string_lossy().as_ref(),
+        );
+        assert_eq!(out.entries[0].destination, "roms/FC/game_3.nes");
+    }
+
+    /// keep_both must see destinations already in the plan (case-insensitive).
+    #[test]
+    fn keep_both_respects_plan_destinations_case_insensitive() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd = tmp.path().join("sd");
+        std::fs::create_dir_all(sd.join("roms/FC")).unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![
+                entry_with_dest("src/a.nes", "roms/FC/game.nes"),
+                // Another entry (already writing) occupies GAME_1.NES
+                entry_with_dest("src/b.nes", "roms/FC/GAME_1.NES"),
+            ],
+            warnings: vec![],
+        };
+        let out = apply_resolutions_ctx(
+            plan,
+            &decisions_for(0, "keep_both"),
+            sd.to_string_lossy().as_ref(),
+        );
+        // _1 is taken by the second entry (case-insensitive) -> must pick _2
+        assert_eq!(out.entries[0].destination, "roms/FC/game_2.nes");
+        assert_eq!(
+            out.entries[1].destination, "roms/FC/GAME_1.NES",
+            "non-resolved entry unchanged"
+        );
+    }
+
+    /// Multiple keep_both in the same plan: each rename must be unique.
+    #[test]
+    fn multiple_keep_both_never_collide() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd = tmp.path().join("sd");
+        std::fs::create_dir_all(sd.join("roms/FC")).unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![
+                entry_with_dest("src/a.nes", "roms/FC/game.nes"),
+                entry_with_dest("src/b.nes", "roms/FC/game.nes"),
+                entry_with_dest("src/c.nes", "roms/FC/game.nes"),
+            ],
+            warnings: vec![],
+        };
+        let mut d = std::collections::HashMap::new();
+        d.insert("0".to_string(), "keep_both".to_string());
+        d.insert("1".to_string(), "keep_both".to_string());
+        d.insert("2".to_string(), "keep_both".to_string());
+        let out = apply_resolutions_ctx(plan, &d, sd.to_string_lossy().as_ref());
+        let dests: Vec<&str> = out.entries.iter().map(|e| e.destination.as_str()).collect();
+        let mut lower: Vec<String> = dests.iter().map(|s| s.to_lowercase()).collect();
+        lower.sort();
+        // All three must be distinct (case-insensitively)
+        lower.dedup();
+        assert_eq!(
+            lower.len(),
+            3,
+            "all keep_both renames must be unique: {dests:?}"
+        );
+        assert_eq!(out.entries[0].destination, "roms/FC/game_1.nes");
+        assert_eq!(out.entries[1].destination, "roms/FC/game_2.nes");
+        assert_eq!(out.entries[2].destination, "roms/FC/game_3.nes");
+    }
+
+    /// File without extension: rename appends _N to the whole name.
+    #[test]
+    fn keep_both_no_extension() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let sd = tmp.path().join("sd");
+        std::fs::create_dir_all(sd.join("roms/X")).unwrap();
+        let plan = crate::Plan {
+            summary: crate::PlanSummary::default(),
+            entries: vec![entry_with_dest("src/dir", "roms/X/payload")],
+            warnings: vec![],
+        };
+        let out = apply_resolutions_ctx(
+            plan,
+            &decisions_for(0, "keep_both"),
+            sd.to_string_lossy().as_ref(),
+        );
+        assert_eq!(out.entries[0].destination, "roms/X/payload_1");
     }
 }
 

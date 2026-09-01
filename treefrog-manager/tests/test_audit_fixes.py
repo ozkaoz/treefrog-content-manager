@@ -70,7 +70,11 @@ def test_deploy_staging_atomic():
         assert len(staging_left) == 0, f"staging files left {staging_left}"
 
 def test_video_deploy_does_not_call_ffmpeg_on_copy():
-    # Ensure video copy doesn't modify source
+    # convert_then_copy must NEVER silently degrade to copying the original.
+    # A garbage "video" cannot be probed/converted: the deploy must FAIL with
+    # an observable error, write NOTHING to the SD, and leave the source
+    # untouched. (Previously the original was silently copied — the exact
+    # hidden-fallback behavior this audit removed.)
     with tempfile.TemporaryDirectory() as tmp:
         src = pathlib.Path(tmp) / "video.mp4"
         src.write_bytes(b"fakevideo")
@@ -83,10 +87,18 @@ def test_video_deploy_does_not_call_ffmpeg_on_copy():
         plan = {"entries": [{"source": str(src), "destination": "roms/videos/video.mp4", "action": "convert_then_copy", "reason": "test", "size": len(b"fakevideo")}]}
         from treefrog import deploy
         result = deploy.deploy_plan(plan, str(sd), p)
-        # Should deploy (copy) and not modify source
+        # Source is never modified
         assert src.exists()
         assert src.read_bytes() == b"fakevideo"
-        assert (sd / "roms" / "videos" / "video.mp4").exists()
+        # Conversion of garbage fails: nothing deployed, error recorded
+        assert result["deployed"] == 0
+        assert result["failed"] == 1
+        assert len(result["errors"]) == 1
+        # Nothing written to the SD destination
+        assert not (sd / "roms" / "videos" / "video.mp4").exists()
+        # No staging files remain anywhere
+        staging_left = list(sd.rglob(".treefrog_staging*"))
+        assert len(staging_left) == 0, f"staging files left {staging_left}"
 
 def test_sd_target_stale_detection():
     with tempfile.TemporaryDirectory() as tmp:

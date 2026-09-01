@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { dialogService } from '../services/dialog';
 import { t } from '../i18n';
 
 interface BiosEntry {
@@ -79,11 +79,11 @@ export default function BiosManager({
     const bios = catalog.find(b => b.id === biosId);
     if (!bios) return;
     try {
-      const selected = await open({
-        multiple: false,
+      const selected = await dialogService.pickFile({
+        title: 'Select BIOS file',
         filters: [{ name: 'BIOS files', extensions: ['bin', 'rom', 'zip', 'img', 'pk3'] }],
       });
-      if (selected && typeof selected === 'string') {
+      if (selected) {
         const validation = await invoke('validate_bios_file', {
           path: selected,
           biosId: biosId,

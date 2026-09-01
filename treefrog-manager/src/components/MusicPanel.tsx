@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-dialog';
+import { dialogService } from '../services/dialog';
 import { t } from '../i18n';
 import EmptyState from "./EmptyState";
 
@@ -49,9 +49,9 @@ export default function MusicPanel({
 
   const handleBrowse = async () => {
     try {
-      const selected = await open({ directory: true });
+      const selected = await dialogService.pickFolder({ title: 'Select music folder' });
       if (selected) {
-        const selectedPath = selected as string;
+        const selectedPath = selected;
         setMusicSource(selectedPath);
         // Auto-scan immediately with the selected path (avoid React state race)
         setIsScanning(true);

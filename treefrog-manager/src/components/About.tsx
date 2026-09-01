@@ -19,7 +19,7 @@ export default function About() {
             <strong>Branding:</strong> Frog pixel-art is from upstream <a href="https://github.com/tzubertowski/TreeFrogUI" target="_blank" rel="noreferrer">TreeFrogUI</a> (<code>xgame-logo.bmp</code>, 480×854) — see <code>src/assets/branding/README.md</code>. Frog is cropped and made transparent for the application/window/installer icon; the full frog + wordmark is shown here only as secondary About/Credits asset. TreeFrogUI is CC BY-NC-SA 4.0 (frog asset from FrogUI).
           </p>
           <p style={{ fontSize: 12, color: "var(--text-muted)" }}>
-            Stack: Tauri 2 + Rust + React + TypeScript + SQLite + serde versioned JSON 1.1.0 + SHA-256 + FFmpeg/ffprobe + ZIP (7z/RAR stubs). Windows x64 first, portable filesystem layer.
+            Stack: Tauri 2 + Rust + React + TypeScript + SQLite + serde versioned JSON 1.1.0 + SHA-256 + FFmpeg/ffprobe + ZIP only (7z/RAR explicitly unsupported). Windows x64 first, portable filesystem layer.
           </p>
           <div className="row" style={{ marginTop: 12 }}>
             <a href="https://github.com/tzubertowski/TreeFrogUI" target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)" }}>TreeFrogUI upstream</a>

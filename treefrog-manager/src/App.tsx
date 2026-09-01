@@ -181,28 +181,30 @@ export default function App() {
     } as any;
   }, [globalPlan, biosPlanEntries]);
 
-  // Calculate global space from aggregated plan (including BIOS)
+  // Calculate global space from aggregated plan — using EFFECTIVE actions
+  // (resolved_action || action), matching the backend's space model exactly.
   const globalSpace = useMemo(() => {
     const planForSpace = combinedPlan || globalPlan;
     if (!planForSpace || !sdAnalysis) return null;
-    
+
     let to_copy = 0;
     let to_extract = 0;
     let to_generate = 0;
     let to_skip = 0;
-    
+
     for (const e of planForSpace.entries) {
       const size = (e as any).size || 0;
-      if (e.action === 'copy') to_copy += size;
-      else if (e.action === 'extract') to_extract += size;
-      else if (e.action === 'convert_then_copy') to_generate += size;
-      else if (['skip_unchanged', 'skip_duplicate', 'skip'].includes(e.action)) to_skip += size;
+      const eff = e.resolved_action || e.action; // effective action (backend parity)
+      if (eff === "copy" || eff === "replace") to_copy += size;
+      else if (eff === "extract") to_extract += size;
+      else if (eff === "convert_then_copy") to_generate += size;
+      else if (["skip", "skip_unchanged", "skip_duplicate"].includes(eff)) to_skip += size;
     }
-    
+
     const required = to_copy + to_extract + to_generate;
     const available = (sdAnalysis as any).free_bytes || 0;
-    const status = required > available ? 'insufficient_space' : 'ok';
-    
+    const status = required > available ? "insufficient_space" : "ok";
+
     return {
       bytes_to_copy: to_copy,
       bytes_to_extract: to_extract,
@@ -466,35 +468,38 @@ export default function App() {
     { id: "about", label: "About" },
   ];
 
-  // Derived counts for Overview from REAL sdAnalysis and globalPlan (no fake placeholders)
+  // Semantic content counts from the BACKEND scanner/classification pipeline
+  // (get_content_counts). The UI never derives counts from unrelated values
+  // like existing_count, media_dirs.length, or lgpt_dirs.length.
+  const [sdCounts, setSdCounts] = useState<Record<string, number> | null>(null);
+  useEffect(() => {
+    if (!sdAnalysis?.is_treefrog || !sdPath) { setSdCounts(null); return; }
+    let cancelled = false;
+    invoke<Record<string, number>>("get_content_counts", { sdPath }).then((c) => {
+      if (!cancelled) setSdCounts(c);
+    }).catch(() => setSdCounts(null));
+    return () => { cancelled = true; };
+  }, [sdPath, sdAnalysis?.is_treefrog, sdAnalysis?.existing_count]);
+
   const contentCounts = (() => {
-    if (!sdAnalysis) {
-      return { Games: 0, Music: 0, Videos: 0, BIOS: 0, "LGPT Samples": 0, "LGPT Projects": 0 };
-    }
-    if (globalPlan || biosPlanEntries.length > 0) {
-      const gamesFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped")).length : 0;
-      const musicFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "music").length : 0;
-      const videosFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "video").length : 0;
-      const biosFromPlan = biosPlanEntries.length;
-      const lgptSamplesFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "lgpt/sample").length : 0;
-      const lgptProjectsFromPlan = globalPlan ? globalPlan.entries.filter((e) => e.content_type === "lgpt/project").length : 0;
-      return {
-        Games: gamesFromPlan + (sdAnalysis.rom_dirs.length > 0 ? sdAnalysis.existing_count : 0),
-        Music: musicFromPlan + (sdAnalysis.media_dirs.includes("music") ? sdAnalysis.existing_count : 0),
-        Videos: videosFromPlan,
-        BIOS: biosFromPlan + sdAnalysis.bios_dirs.length,
-        "LGPT Samples": lgptSamplesFromPlan || (sdAnalysis.lgpt_dirs.includes("lgpt/samples") ? 1 : 0) * 100,
-        "LGPT Projects": lgptProjectsFromPlan || (sdAnalysis.lgpt_dirs.includes("lgpt/projects") ? 1 : 0) * 10,
-      };
-    }
-    // No plan yet, show real SD existing counts
+    const base = {
+      Games: sdCounts?.rom_count ?? 0,
+      Music: sdCounts?.music_track_count ?? 0,
+      Videos: sdCounts?.video_count ?? 0,
+      BIOS: sdCounts?.bios_count ?? 0,
+      "LGPT Samples": sdCounts?.lgpt_sample_count ?? 0,
+      "LGPT Projects": sdCounts?.lgpt_project_count ?? 0,
+    };
+    if (!globalPlan) return base;
+    // Pending additions from the current plan are shown ALONGSIDE the real
+    // SD counts (planned, not yet deployed).
     return {
-      Games: sdAnalysis.rom_dirs.length,
-      Music: sdAnalysis.media_dirs.filter((d) => d.toLowerCase() === "music").length > 0 ? sdAnalysis.existing_count : 0,
-      Videos: sdAnalysis.media_dirs.filter((d) => d.toLowerCase() === "videos").length > 0 ? sdAnalysis.media_dirs.length : 0,
-      BIOS: sdAnalysis.bios_dirs.length,
-      "LGPT Samples": sdAnalysis.lgpt_dirs.includes("lgpt/samples") ? sdAnalysis.existing_count : 0,
-      "LGPT Projects": sdAnalysis.lgpt_dirs.includes("lgpt/projects") ? sdAnalysis.lgpt_dirs.length : 0,
+      Games: base.Games + globalPlan.entries.filter((e) => e.content_type?.startsWith("rom/") || e.content_type?.startsWith("grouped")).filter((e) => (e.resolved_action || e.action) !== "skip_unchanged").length,
+      Music: base.Music + globalPlan.entries.filter((e) => e.content_type === "music").filter((e) => (e.resolved_action || e.action) !== "skip_unchanged").length,
+      Videos: base.Videos + globalPlan.entries.filter((e) => e.content_type === "video").filter((e) => (e.resolved_action || e.action) !== "skip_unchanged").length,
+      BIOS: base.BIOS + biosPlanEntries.length,
+      "LGPT Samples": base["LGPT Samples"] + globalPlan.entries.filter((e) => e.content_type === "lgpt/sample").filter((e) => (e.resolved_action || e.action) !== "skip_unchanged").length,
+      "LGPT Projects": base["LGPT Projects"] + globalPlan.entries.filter((e) => e.content_type === "lgpt/project").filter((e) => (e.resolved_action || e.action) !== "skip_unchanged").length,
     };
   })();
 

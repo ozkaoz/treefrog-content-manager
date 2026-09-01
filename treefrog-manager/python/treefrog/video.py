@@ -211,7 +211,10 @@ def conversion_command(input_path: pathlib.Path, output_path: pathlib.Path, pres
             "-profile:v", "baseline",
             "-level", "3.0",
             "-pix_fmt", "yuv420p",
-            "-vf", "scale=min(640,iw):-2:flags=lanczos",
+            # NOTE: the comma inside scale=min(...) must be escaped for the
+            # ffmpeg filtergraph parser; a raw "," breaks parsing and the
+            # conversion silently fails (mirrors the Rust fix).
+            "-vf", "scale=min(640\\,iw):-2:flags=lanczos",
             "-r", "30",
             "-c:a", "aac",
             "-ar", "48000",

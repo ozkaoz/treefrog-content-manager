@@ -421,6 +421,40 @@
 
 ---
 
+## DEC-2026-08-31-01 - Full audit + hardening: canonical plan model, zero path escapes, zero silent fallbacks
+
+**ID:** DEC-2026-08-31-01
+**Date:** 2026-08-31
+**Status:** ACTIVE
+
+**Scope:** treefrog-manager full audit (P0 security, P1 correctness, P2 quality) per audit task `docs/ai/AUDIT_2026-08-31_TREEFROG_MANAGER.md`.
+
+**Context:** Full repository audit identified: BIOS parallel write path with no canonical destination validation (P0 path escape), string-only destination validation with a mismatched writer (`safe_copy_file` re-derived paths by string-splitting), `convert_then_copy` silently copying the ORIGINAL video with a "provisional" warning, space calc double-counting via mixed `action`/`resolved_action`, `keep_both` always `_1` with no uniqueness check, frontend reimplementing resolution semantics, `sd::detect` inferring writable=healthy=true from markers, hardcoded BIOS filename lists in 4 places, hardcoded frontend version, unstable stable_id (label+capacity), unused SQLite schema, misleading 7z/RAR "stub" handlers, release workflow without validation gates.
+
+**Decision:**
+1. ONE canonical destination model: `paths.rs::resolve_validated_destination(sd_root, rel)` (rejects absolute/UNC/drive/`..`/empty/ADS/reserved/illegal/trailing; normalizes separators; resolves + verifies containment + symlink-escape check). Used by the writer, planner validation, BIOS conversion, user overrides, archive members. The writer (`deploy::safe_copy_file_resolved`) is secure when called directly.
+2. BIOS = normal PlanEntry (content_type="bios") through planner→resolution→destination validation→space→deploy. No parallel write path. Stock guard + delete-guard + catalog + validation all derive from `bios.json` (single model).
+3. `convert_then_copy` executes real conversion (staged temp → ffmpeg → ffprobe-validate → deploy). Never copies the original (unless re-probe shows compatible — explicit). Also fixed real ffmpeg filtergraph escaping bug (`scale=min(640\,iw)`) that made ALL conversions fail silently.
+4. `effective_action(entry) = resolved_action.unwrap_or(action)` used everywhere (deploy, progress totals, summary, space, collision detection).
+5. Space from effective actions only (one decision per entry).
+6. `keep_both` collision-safe: `_1,_2,…_N` against existing files + plan destinations (case-insensitive), computed in Rust (`planner::apply_resolutions_ctx` + `resolve_plan` command) and mirrored in Python. Frontend thin (collect choice → invoke → display).
+7. `sd::detect` explicit states: `accessible` (observed), `writable` (None=unknown until probed), `healthy` (only Some(true) after successful probe). Never inferred from markers.
+8. Version single source: `app_version` command = CARGO_PKG_VERSION; CI gate enforces Cargo=package.json=tauri.conf.json.
+9. Stable SD identity: Windows volume GUID + serial; mount path excluded (session state only); fallback explicitly prefixed.
+10. SQLite scoped persistence: migrations + job/job_entry/deployment/content_fingerprint (hash/size/timestamps/profile+app version/target identity/status). Read-back incremental scans remain future work (documented in `db.rs`, not faked).
+11. Archives: ZIP only (maintained safe adapter); 7z/RAR explicitly `unsupported_archive` with precise reason. No external-tool fallback claim.
+12. CI `validate.yml` gates (frontend tsc+build; rust fmt/check/test; pytest incl. security+archive+BIOS-traversal+conversion with ffmpeg; version consistency) — release `needs: validate`.
+
+**Reason:** The manager's core promise is safe SD writes driven by one plan. Multiple divergent business-rule implementations and an unvalidated BIOS write path were correctness/security defects, not style issues. Physical SD deploys make path escapes and silent fallbacks dangerous.
+
+**Consequences:** New `src-tauri/src/paths.rs`; `deploy.rs` rewritten around resolved destinations + real conversion; `lib.rs` BIOS pipeline canonical + `resolve_plan`/`app_version`/`get_content_counts` commands; planner resolution context; sd.rs/sd_target.rs/db.rs/bios_catalog.rs rewritten; Python mirrors updated; frontend DryRunPreview thin, UpdateChecker/SettingsPanel backend version, App.tsx semantic counts + effective-action space; `.github/workflows/validate.yml` + release gating. Rust tests 2→43 (security/unit/integration); Python 189→213 (pre-existing failure fixed; new invariant suites).
+
+**Evidence:** `cargo fmt --check` PASS; `cargo check` PASS; `cargo test` 43/43 PASS; `pytest` 213/213 PASS; `tsc --noEmit` PASS; `npm run build` PASS; `npx tauri build` PASS (`treefrog-manager.exe` 19,652,096 B, `--self-check` PASS, GUI smoke PASS); `docs/ai/AUDIT_2026-08-31_TREEFROG_MANAGER.md` resolution table.
+
+**Related:** `treefrog-manager/src-tauri/src/{paths,deploy,planner,sd,sd_target,db,bios_catalog,archive,video}.rs`, `python/treefrog/{planner,deploy,sd,sd_target,archive,video}.py`, `src/components/{DryRunPreview,UpdateChecker,SettingsPanel,BiosManager,MusicPanel,VideosPanel}.tsx`, `src/App.tsx`, `.github/workflows/{validate,release}.yml`, `DEC-2026-08-30-01`.
+
+---
+
 ### Removed / migrated (not durable — history stays in Git)
 
 - Operational pushes `999A2B27`, `3423e35`, `bdbda77`, `f3273f6`, `588270c`, `c74bd86`, `21bee8d`, `8cc0a47`, `10C9B608`, `38F8CF02`, `E9B23E36`, `DBAD57A7` etc. (DEC-2026-08-21-13..27, DEC-2026-08-21-29) — Git log is authority.

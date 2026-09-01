@@ -237,7 +237,7 @@ export default function VideosPanel({
           </table>
           {displayFiltered.length === 0 && <EmptyState kind="empty" title="No Videos found" description="No video files (MP4, MKV, AVI, etc.) matched in the selected source. Check media.json and video_presets.json." />}
           <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 8 }}>
-            Conversion: staging in <code>temp</code>, re-probe, only if valid is copied to SD. Original intact. Conservative preset <code>PROVISIONAL_UNVALIDATED</code> until physical validation R36SX.
+            Conversion: staging in <code>temp</code>, re-probe, only if valid is copied to SD. Original intact. Conservative preset - conversions are executed with ffmpeg and ffprobe-validated before deploy; not yet hardware-validated on R36SX.
           </p>
         </>
       )}

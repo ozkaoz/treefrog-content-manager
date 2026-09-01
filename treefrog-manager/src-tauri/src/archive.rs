@@ -211,14 +211,13 @@ pub fn inspect_archive(path: &Path, limits: &Limits) -> Result<Vec<ArchiveEntry>
         .unwrap_or_default();
     match ext.as_str() {
         ".zip" => inspect_zip(path, limits),
-        ".7z" | ".rar" => Err(ArchiveError::Unsupported(format!(
-            "archive handler not available for {} (stub)",
-            ext
-        ))),
-        _ => Err(ArchiveError::Unsupported(format!(
-            "unsupported archive format: {}",
-            ext
-        ))),
+        // 7z/RAR are EXPLICITLY unsupported (no maintained safe adapter): they
+        // are surfaced as unsupported_archive with a precise reason and can
+        // never be extracted or copied as supported content. ZIP is the only
+        // supported archive format.
+        ".7z" => Err(ArchiveError::Unsupported(format!("7z archives are not supported (only ZIP is supported); file kept for manual handling: {}", path.display()))),
+        ".rar" => Err(ArchiveError::Unsupported(format!("RAR archives are not supported (only ZIP is supported); file kept for manual handling: {}", path.display()))),
+        _ => Err(ArchiveError::Unsupported(format!("unsupported archive format: {}", ext))),
     }
 }
 
@@ -407,11 +406,11 @@ pub fn safe_join(dest_root: &Path, dest_dir: &str, file_name: &str) -> anyhow::R
     Ok(dest)
 }
 
+/// Supported archive handler registry. Only formats with a maintained, safe
+/// adapter are listed; 7z/RAR are intentionally absent (unsupported).
 pub fn get_handler_for_ext(ext: &str) -> Option<&'static str> {
     match ext.to_lowercase().as_str() {
         ".zip" => Some("zip"),
-        ".7z" => Some("sevenz-stub"),
-        ".rar" => Some("rar-stub"),
         _ => None,
     }
 }
