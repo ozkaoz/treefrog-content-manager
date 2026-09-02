@@ -1,4 +1,8 @@
 # F8 - Harness de regresion funcional en host
+> **⚠️ DOC HEREDADO del port LGPT (lgpt-r36sx-port) — NO aplica al Content Manager.**
+> Este documento vino con la historia del repositorio. El Content Manager es una app
+> Tauri 2 (npm + cargo). Para compilar el port LGPT, ver `D:\GitHub\lgpt-r36sx-port`
+> y `docs/TOOLCHAINS.md` de ese repo (rutas: `/mnt/d/Toolchains/R36SX`).
 
 Tramo del refactor `refactor/bacon-1.2.1-preserve` (golden Bacon 1.2.1).
 Sin cambio de binario: el core se mantiene en el sha `ea7a80e4` y el

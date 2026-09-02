@@ -1,4 +1,8 @@
 # Compilación en español
+> **⚠️ DOC HEREDADO del port LGPT (lgpt-r36sx-port) — NO aplica al Content Manager.**
+> Este documento vino con la historia del repositorio. El Content Manager es una app
+> Tauri 2 (npm + cargo). Para compilar el port LGPT, ver `D:\GitHub\lgpt-r36sx-port`
+> y `docs/TOOLCHAINS.md` de ese repo (rutas: `/mnt/d/Toolchains/R36SX`).
 
 ## Requisitos
 

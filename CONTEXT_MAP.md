@@ -40,7 +40,7 @@ Stable navigation only — no mutable branch/HEAD/SHA/objective here (those live
 
 | Script | Status | Note |
 |---|---|---|
-| `scripts/install.sh` | **LEGACY U2523 — NOT CANONICAL FOR BACON-1.5** | Uses `/mnt/f` and `/mnt/d/R36S/PORT LPTRACKER/BUILD/U2523/lgpt_r36sx_u2523.so`; Bacon-1.5 payload is `sd_root/cubegm/cores/lgpt_core.so` + `LGPT_R36SX_Bacon-1.5_SD_ROOT.zip`. Do not use without separate audit. |
+| `scripts/install.sh` | **LEGACY U2523 — NOT CANONICAL FOR BACON-1.5** | Uses `/mnt/f` and `/mnt/d/Toolchains/R36SX/audio-build-iterations/U2523 (ver lgpt-r36sx-port/docs/TOOLCHAINS.md)/lgpt_r36sx_u2523.so`; Bacon-1.5 payload is `sd_root/cubegm/cores/lgpt_core.so` + `LGPT_R36SX_Bacon-1.5_SD_ROOT.zip`. Do not use without separate audit. |
 | `scripts/verify.sh` | **LEGACY U2523 — NOT CANONICAL FOR BACON-1.5** | Same legacy paths/artifact names; not the Bacon-1.5 install contract (`Stock OS + TreeFrogUI + ZIP contents`). |
 
 Do not modify their functional behavior in CLASS A tasks — only label them.

@@ -1,7 +1,7 @@
 # AGENTS.md — Project Constitution
 
-**Version:** 2.1
-**Date:** 2026-08-23
+**Version:** 2.2
+**Date:** 2026-09-01
 **Repo:** https://github.com/ozkaoz/treefrog-content-manager
 **Scope:** Multi-agent operating contract for the TreeFrog Content Manager (global TreeFrogUI SD manager)
 
@@ -27,6 +27,16 @@ Every session MUST:
 2. Run preflight: `bash scripts/agent_preflight.sh` (or `python3 tests/test_agent_context_contract.py`).
 3. Resolve `REPO_ROOT`, `ACTIVE_BRANCH`, `HEAD`, `UPSTREAM`, `AHEAD_BEHIND`, `WORKTREE_STATE` from **Git directly** — never trust hardcoded docs.
 4. Confirm objective and change class (Section 4) before editing.
+
+### 1b. Local Environment (2026-09-01 reorganization)
+
+| Qué | Dónde |
+|-----|-------|
+| **Worktree activo de build** | `C:\Users\DaFunkNoise\Documents\Default Project\lgpt-r36sx-port` (remote = este repo; node_modules + cargo target listos para compilar) |
+| **Clon de referencia** | `D:\GitHub\treefrog-content-manager` (sincronizado con origin/main) |
+| Node portable (builds) | `C:\Users\DAFUNK~1\AppData\Local\Temp\opencode\node-portable\node-v22.14.0-win-x64` |
+| Validation local mínima | `scripts/quick_validate.ps1` (DEC-2026-09-01-02: checks proporcionales por clase de cambio; CI es el gate completo) |
+| Releases | GitHub Releases del repo — v1.0.1 = Latest (3 ejecutables por SO + source). El flujo: tag `v*` → build 3 OS → `--self-check` (BIOS catalog verificado) → publish Latest. |
 
 If unexplained local modifications exist: STOP, report `git status --short --branch` before editing.
 
@@ -143,6 +153,8 @@ Do not force every session to read full history. Evidence before synthesis.
 
 - One artifact name = one authoritative SHA. `GitHub release body == SHA256SUMS == manifest == included-files == downloaded asset`. Historical SHAs must be marked historical.
 - After publishing: `DOWNLOAD-BACK IS REQUIRED` and `REMOTE_SHA == LOCALLY_VALIDATED_SHA`.
+- Release assets: exactly ONE executable per OS (Windows portable `.exe` / Linux `.AppImage` / macOS `.dmg`) + auto-generated source. No setups, no `.sha256` sidecars, no extra binaries — per v1.0.1 contract.
+- Every shipped executable must pass `--self-check` (profile, systems, ffmpeg detection, **embedded BIOS catalog** — a portable binary with an empty BIOS section can never ship).
 - Validation routing per Section 4; detailed procedures in `docs/ai/VALIDATION.md`. Never use ambiguous `DONE/VERIFIED` without class-appropriate gate.
 - Provider neutrality: `AGENTS.md` is canonical. `CLAUDE.md / GEMINI.md / Copilot` etc. must be tiny routers pointing here if they exist — never duplicate full policy.
 
