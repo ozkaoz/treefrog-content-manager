@@ -103,6 +103,7 @@ export default function SdCardPanel({
   const [selectedRoms, setSelectedRoms] = useState<Set<string>>(new Set());
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [folderContents, setFolderContents] = useState<Record<string, string[]>>({});
+  const [dangerSearch, setDangerSearch] = useState("");
   const [progress, setProgress] = useState({ current: 0, total: 0, percentage: 0, message: '' });
   const [deleteProgress, setDeleteProgress] = useState({ 
     current: 0, 
@@ -616,16 +617,55 @@ export default function SdCardPanel({
         <h3 style={{ color: 'var(--danger)', marginBottom: '15px' }}>
           ⚠️ {t.dangerZone}
         </h3>
-        
+
+        {/* Search: filter folders and files to quickly identify and select */}
+        <input
+          type="text"
+          value={dangerSearch}
+          onChange={(e) => setDangerSearch(e.target.value)}
+          placeholder={t.searchPlaceholder || "Search file..."}
+          style={{
+            width: '100%', padding: '10px 14px', marginBottom: '15px',
+            borderRadius: '6px', border: '1px solid var(--border-color)',
+            backgroundColor: 'var(--input-bg, transparent)', color: 'var(--text-primary)',
+            fontSize: '14px',
+          }}
+        />
+        {dangerSearch.trim() !== "" && (
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: '10px' }}>
+            {(() => {
+              const q = dangerSearch.trim().toLowerCase();
+              const foldersHit = romList.filter(({ folder }) => folder.toLowerCase().includes(q)).length;
+              const fileHits = Object.values(folderContents).reduce((acc: number, files: string[]) =>
+                acc + (files as string[]).filter(f => f.toLowerCase().includes(q)).length, 0);
+              return `${foldersHit} folders / ${fileHits} files match "${dangerSearch.trim()}" — open folders to search their files`;
+            })()}
+          </div>
+        )}
+
         <div style={{ marginBottom: '15px', color: 'var(--text-primary)' }}>
           <h4 style={{ color: 'var(--text-primary)' }}>{t.romFoldersOnSd}:</h4>
           {romList.length === 0 ? (
             <div style={{ fontSize: 11, color: "var(--text-muted)" }}>No ROM folders detected. Analyze the SD first.</div>
           ) : (
-            romList.map(({ folder, count }) => {
+            romList
+              .filter(({ folder }) => {
+                const q = dangerSearch.trim().toLowerCase();
+                if (!q) return true;
+                // Show folder if folder matches OR any of its known files match
+                if (folder.toLowerCase().includes(q)) return true;
+                const files = folderContents[folder] || [];
+                return (files as string[]).some(f => f.toLowerCase().includes(q));
+              })
+              .map(({ folder, count }) => {
               const isExpanded = expandedFolders.has(folder);
-              const files = folderContents[folder] || [];
-              const isFolderSelected = selectedRoms.has(folder) || (files.length > 0 && files.every(f => selectedRoms.has(f)));
+              const files = (folderContents[folder] || []).filter(f => {
+                const q = dangerSearch.trim().toLowerCase();
+                return !q || f.toLowerCase().includes(q);
+              });
+              const isFolderSelected = selectedRoms.has(folder) || ((folderContents[folder] || []).length > 0 && (folderContents[folder] || []).every(f => selectedRoms.has(f)));
+              const hasSearch = dangerSearch.trim() !== "";
+              const showExpanded = isExpanded || hasSearch; // auto-expand while searching
               return (
                 <div key={folder} style={{ marginBottom: '8px' }}>
                   <label style={{ 
@@ -641,13 +681,17 @@ export default function SdCardPanel({
                       style={{ marginRight: '8px' }}
                     />
                     <span onClick={(e) => { e.preventDefault(); handleFolderClick(folder); }} style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '10px', transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', display: 'inline-block' }}>▶</span>
+                      <span style={{ fontSize: '10px', transform: showExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', display: 'inline-block' }}>▶</span>
                       {folder} <span style={{ color: 'var(--text-secondary)' }}>({count} files)</span>
                     </span>
                   </label>
-                  {isExpanded && files && (
-                    <div style={{ marginLeft: '24px', marginTop: '8px', paddingLeft: '12px', borderLeft: '2px solid var(--border-color)' }}>
-                      {files.map(filePath => (
+                  {showExpanded && files && (
+                    <div style={{ marginLeft: '24px', marginTop: '8px', paddingLeft: '12px', borderLeft: '2px solid var(--border-color)', maxHeight: hasSearch ? 260 : undefined, overflowY: hasSearch ? 'auto' : undefined }}>
+                      {(files.length === 0 && hasSearch) ? (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>
+                          No files match "{dangerSearch.trim()}" — open the folder (click the arrow) to load its file list and search again.
+                        </div>
+                      ) : files.map(filePath => (
                         <label key={filePath} style={{ display: 'block', marginBottom: '4px', fontSize: '13px', cursor: 'pointer' }}>
                           <input
                             type="checkbox"

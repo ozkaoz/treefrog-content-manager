@@ -235,6 +235,59 @@ pub fn validate_bios_file(path: &Path, bios_def: &serde_json::Value) -> BiosVali
         .ok()
         .map(|s| s.to_lowercase());
     let file_size = path.metadata().ok().map(|m| m.len());
+    // When the profile declares NO validation criteria (no hashes, no sizes —
+    // e.g. neogeo.zip, segacd bios_CD_*, ecwolf.pk3), an exact/accepted
+    // filename is a VALID selection: the user picked the file explicitly and
+    // there is nothing stricter to compare against. The reason makes this
+    // observable (validated by name only — profile declares no hash/size).
+    // Old behavior returned FoundUnknown ("no hash/size to validate") which
+    // made 9 of 13 BIOS unusable.
+    if !has_known_hashes && all_sizes.is_empty() {
+        let exact: Vec<String> = {
+            let mut v = Vec::new();
+            if let Some(arr) = bios_def
+                .get("accepted_filenames")
+                .and_then(|x| x.as_array())
+            {
+                for x in arr {
+                    if let Some(s) = x.as_str() {
+                        v.push(s.to_lowercase());
+                    }
+                }
+            }
+            for var in bios_def
+                .get("variants")
+                .and_then(|x| x.as_array())
+                .unwrap_or(&vec![])
+            {
+                if let Some(arr) = var.get("filenames").and_then(|x| x.as_array()) {
+                    for x in arr {
+                        if let Some(s) = x.as_str() {
+                            v.push(s.to_lowercase());
+                        }
+                    }
+                }
+            }
+            v
+        };
+        let is_exact = exact.contains(&filename.to_lowercase());
+        let reason = if is_exact {
+            "exact filename accepted (profile declares no hash/size — validated by name)"
+                .to_string()
+        } else {
+            "accepted alias/pattern (profile declares no hash/size — validated by name)".to_string()
+        };
+        return BiosValidation {
+            bios_id,
+            system_id,
+            state: BiosState::FoundValid,
+            reason,
+            required: false,
+            file: Some(path.to_string_lossy().to_string()),
+            hash: file_hash,
+            size: file_size,
+        };
+    }
     if has_known_hashes {
         if let Some(h) = &file_hash {
             if all_hashes.contains(h) {
@@ -549,4 +602,99 @@ pub fn get_valid_destinations(bios_def: &serde_json::Value) -> Vec<String> {
         }
     }
     dests
+}
+
+#[cfg(test)]
+mod bios_selectable_tests {
+    use super::*;
+
+    /// Regression (user report 2026-09-01): "Selected: neogeo.zip - filename
+    /// known but no hash/size to validate". When a BIOS definition declares
+    /// NO hash and NO size (neogeo, segacd, pcfx, amiga kickstart, ecwolf.pk3
+    /// ...), the accepted filename IS the validation: the user picked the
+    /// file explicitly. Old behavior made 9 of 13 BIOS unusable.
+    #[test]
+    fn bios_without_criteria_selectable_by_name() {
+        let defs = crate::bios_profile_json()
+            .get("bios_definitions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert!(!defs.is_empty());
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        // neogeo.zip - the exact user report
+        let neogeo = defs
+            .iter()
+            .find(|d| d.get("id").and_then(|x| x.as_str()) == Some("neogeo_bios"))
+            .unwrap();
+        let f = tmp.path().join("neogeo.zip");
+        std::fs::write(&f, b"fake neogeo bios").unwrap();
+        let res = validate_bios_file(&f, neogeo);
+        assert_eq!(
+            res.state,
+            BiosState::FoundValid,
+            "neogeo.zip must be selectable: {}",
+            res.reason
+        );
+        assert!(
+            res.reason.contains("name"),
+            "reason must be observable: {}",
+            res.reason
+        );
+
+        // segacd bios_CD_U.bin
+        let segacd = defs
+            .iter()
+            .find(|d| d.get("id").and_then(|x| x.as_str()) == Some("segacd_bios"))
+            .unwrap();
+        let f2 = tmp.path().join("bios_CD_U.bin");
+        std::fs::write(&f2, b"segacd").unwrap();
+        let res2 = validate_bios_file(&f2, segacd);
+        assert_eq!(res2.state, BiosState::FoundValid, "{}", res2.reason);
+    }
+
+    /// BIOS WITH a declared hash still validates by hash (the fix does not
+    /// relax hash checking), and with size still validates by size.
+    #[test]
+    fn bios_with_criteria_still_strict() {
+        let defs = crate::bios_profile_json()
+            .get("bios_definitions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        // gba_bios has a SHA-256 declared: wrong content -> invalid
+        let gba = defs
+            .iter()
+            .find(|d| d.get("id").and_then(|x| x.as_str()) == Some("gba_bios"))
+            .unwrap();
+        let f = tmp.path().join("gba_bios.bin");
+        std::fs::write(&f, b"wrong content").unwrap();
+        let res = validate_bios_file(&f, gba);
+        assert_eq!(
+            res.state,
+            BiosState::FoundInvalid,
+            "hash-declared BIOS must stay strict"
+        );
+
+        // ps1_bios has expected_size 524288: right size -> valid, wrong -> invalid
+        let ps1 = defs
+            .iter()
+            .find(|d| d.get("id").and_then(|x| x.as_str()) == Some("ps1_bios"))
+            .unwrap();
+        let f2 = tmp.path().join("scph1001.bin");
+        std::fs::write(&f2, vec![0u8; 524288]).unwrap();
+        let res2 = validate_bios_file(&f2, ps1);
+        assert_eq!(
+            res2.state,
+            BiosState::FoundValid,
+            "right size must validate"
+        );
+        let f3 = tmp.path().join("scph1002.bin");
+        std::fs::write(&f3, b"tiny").unwrap();
+        let res3 = validate_bios_file(&f3, ps1);
+        assert_eq!(res3.state, BiosState::FoundInvalid, "wrong size must fail");
+    }
 }

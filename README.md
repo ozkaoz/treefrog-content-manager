@@ -18,11 +18,7 @@ Get the latest release for your platform from the
 | **Linux x64** | `TreeFrog-Content-Manager-*-Linux-x64.AppImage` | AppImage |
 | **macOS x64** | `TreeFrog-Content-Manager-*-macOS-x64.dmg` | Disk image |
 
-Every asset ships with a `.sha256` file:
-
-```bash
-sha256sum -c TreeFrog-Content-Manager-*.sha256
-```
+> **Windows SmartScreen note:** the executable is not code-signed, so the first run may show *"Windows protected your PC"*. Click **More info → Run anyway** — the app is safe. This warning fades as the release builds download reputation; code-signing can be added later (issue pending a certificate).
 
 ## What it does
 
@@ -43,7 +39,6 @@ Overview (SD detection)
    → Games → Music → Videos → BIOS → LGPT
    → SD Card (danger zone: review + delete) → Sync
 ```
-
 - **One canonical plan**: what you preview is exactly what gets written. No re-scan, no drift between preview and deployment.
 - **Duplicates by SHA-256**, not by name. Same content = skipped; same name + different content = conflict you resolve (`skip / replace / keep_both / keep_destination / keep_source`). `keep_both` renames collision-safely (`_1`, `_2`, …) against both the SD and the rest of the plan.
 - **Space check** from the effective (resolved) actions — a conflict you resolve to `replace` counts, a duplicate you keep counts, nothing is double-counted.
@@ -74,7 +69,9 @@ npm install
 npx tauri build   # or: npm run dev for development
 ```
 
-Rust toolchain required (`cargo`). Frontend checks: `npx tsc --noEmit`. Backend checks: `cargo check` / `cargo test` (46 tests incl. path-escape and BIOS security fixtures). Python mirror tests: `python -m pytest tests` (224 tests).
+Rust toolchain required (`cargo`). Frontend checks: `npx tsc --noEmit`. Backend checks: `cargo check` / `cargo test` (47 tests incl. path-escape, BIOS security and portable-embed fixtures). Python mirror tests: `python -m pytest tests` (224 tests).
+
+Every shipped executable passes `--self-check` (profile, systems, ffmpeg detection **and the embedded BIOS catalog** — the BIOS section can never be empty in a portable binary).
 
 CI runs the full matrix on every push (`.github/workflows/validate.yml`): frontend typecheck+build, Rust fmt/check/test, pytest with FFmpeg (including real conversion-deploy tests), version consistency, and the Tauri packaging build.
 

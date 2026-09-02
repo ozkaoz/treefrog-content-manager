@@ -16,6 +16,58 @@ pub enum Kind {
     Ambiguous,
 }
 
+/// Artwork folders managed by Mini Scraper (external tool, per product contract:
+/// "Do NOT implement another scraper"). Files inside these folders are NEVER
+/// deployed by the Content Manager — copying them would write outside the
+/// content roots (e.g. `.res/.res/game.png` at SD root, a real bug fixed 2026-09-01).
+pub const ARTWORK_DIRS: [&str; 3] = [".res", "imgs", "images"];
+
+pub fn is_artwork_path(path: &Path) -> bool {
+    path.components().any(|c| {
+        let n = c.as_os_str().to_string_lossy().to_lowercase();
+        ARTWORK_DIRS.contains(&n.as_str())
+    })
+}
+
+/// BIOS filenames accepted by the declarative bios.json profile (single model).
+/// Lowercased exact names — matched against the file's lowercased name only
+/// (no substrings, no hardcoded lists).
+fn bios_json_accepted_names() -> Vec<String> {
+    use std::sync::OnceLock;
+    static NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    NAMES
+        .get_or_init(|| {
+            let mut out: Vec<String> = Vec::new();
+            let json = crate::bios_profile_json();
+            if let Some(defs) = json.get("bios_definitions").and_then(|v| v.as_array()) {
+                for def in defs {
+                    if let Some(arr) = def.get("accepted_filenames").and_then(|v| v.as_array()) {
+                        for f in arr {
+                            if let Some(s) = f.as_str() {
+                                out.push(s.to_lowercase());
+                            }
+                        }
+                    }
+                    if let Some(vars) = def.get("variants").and_then(|v| v.as_array()) {
+                        for var in vars {
+                            if let Some(arr) = var.get("filenames").and_then(|v| v.as_array()) {
+                                for f in arr {
+                                    if let Some(s) = f.as_str() {
+                                        out.push(s.to_lowercase());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            out.sort();
+            out.dedup();
+            out
+        })
+        .clone()
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Classification {
     pub kind: Kind,
@@ -40,6 +92,20 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
     let lower_path = path.to_string_lossy().to_lowercase().replace('\\', "/");
     // Prioridad absoluta de BIOS: todo dentro de cubegm/bios es BIOS, sin importar extensión
     if lower_path.contains("/cubegm/bios/") {
+        return Classification {
+            kind: Kind::Bios,
+            system_id: None,
+            destination: "cubegm/bios".into(),
+            archive_valid: false,
+            multi_file: false,
+            possible_destinations: None,
+        };
+    }
+    // BIOS por nombre EXACTO desde bios.json (modelo declarativo — sin listas
+    // hardcodeadas, sin falsos positivos por substring). Prioridad máxima:
+    // antes de los early handlers de .nes/.cue/.bin para que gba_bios.bin
+    // (un .bin) clasifique como BIOS y no caiga en la heurística CUE/BIN.
+    if bios_json_accepted_names().contains(&lower_name) {
         return Classification {
             kind: Kind::Bios,
             system_id: None,
@@ -234,14 +300,14 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tiff", ".tif", ".tga", ".ico",
     ];
     if image_exts.contains(&ext.as_str()) {
-        // Note: .res artwork folders are handled separately; still image kind but destination may be ignored if inside .res
-        if path.components().any(|c| {
-            c.as_os_str() == ".res" || c.as_os_str() == "Imgs" || c.as_os_str() == "images"
-        }) {
+        // Artwork inside .res / Imgs / images is Mini Scraper territory:
+        // NEVER deploy (the old code wrote it to `.res/.res/...` at the SD
+        // ROOT — outside content roots). Skip with an observable reason.
+        if is_artwork_path(path) {
             return Classification {
-                kind: Kind::Image,
+                kind: Kind::Unknown,
                 system_id: None,
-                destination: ".res".into(),
+                destination: String::new(),
                 archive_valid: false,
                 multi_file: false,
                 possible_destinations: None,
@@ -268,31 +334,11 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         };
     }
 
-    // BIOS by name patterns (from bios.json)
-    let bios_patterns = [
-        "scph",
-        "gba_bios.bin",
-        "o2rom.bin",
-        "disksys.rom",
-        "neogeo.zip",
-        "bios_cd",
-        "kick13.rom",
-        "kick20.rom",
-        "pcfx.rom",
-        "x86boot.img",
-    ];
-    for pat in bios_patterns {
-        if lower_name.contains(pat) {
-            return Classification {
-                kind: Kind::Bios,
-                system_id: None,
-                destination: "cubegm/bios".into(),
-                archive_valid: false,
-                multi_file: false,
-                possible_destinations: None,
-            };
-        }
-    }
+    // BIOS classification beyond the two priority checks at the top of
+    // classify(): (1) cubegm/bios folder and (2) bios.json exact filenames —
+    // both already handled above. No hardcoded BIOS lists here (removed
+    // 2026-09-01 audit: false positives like "scph*.bin" ROMs and
+    // substring-captured files).
 
     // Special handling for CUE/BIN: disambiguate PS1 vs MD/SegaCD via path/content/size
     if ext == ".cue" || ext == ".bin" {
@@ -475,5 +521,97 @@ pub fn classify(path: &Path, profile: &LoadedProfile) -> Classification {
         archive_valid: false,
         multi_file: false,
         possible_destinations: None,
+    }
+}
+
+#[cfg(test)]
+mod audit_2026_09_01_tests {
+    use super::*;
+
+    fn profile() -> LoadedProfile {
+        crate::profile::load_profile().unwrap()
+    }
+
+    /// Regression (critical, audit 2026-09-01): artwork inside `.res`/`Imgs`/
+    /// `images` folders is Mini Scraper territory and must NEVER be deployed.
+    /// The old code classified it with destination=".res" and the planner
+    /// wrote it to `.res/.res/game.png` at the SD ROOT (outside content roots).
+    #[test]
+    fn artwork_res_never_deployed() {
+        let p = profile();
+        let tmp = tempfile::TempDir::new().unwrap();
+        let res_png = tmp.path().join("GBA/.res/game.png");
+        std::fs::create_dir_all(res_png.parent().unwrap()).unwrap();
+        std::fs::write(&res_png, b"png").unwrap();
+        let c = classify(&res_png, &p);
+        assert_eq!(
+            c.kind,
+            Kind::Unknown,
+            "artwork .res must classify as Unknown"
+        );
+        assert!(
+            c.destination.is_empty(),
+            "artwork .res must have NO destination"
+        );
+
+        let imgs = tmp.path().join("Imgs/game.png");
+        std::fs::create_dir_all(imgs.parent().unwrap()).unwrap();
+        std::fs::write(&imgs, b"png").unwrap();
+        assert_eq!(classify(&imgs, &p).kind, Kind::Unknown);
+
+        // A normal image outside artwork still deploys to roms/images
+        let normal = tmp.path().join("photo.png");
+        std::fs::write(&normal, b"png").unwrap();
+        let c2 = classify(&normal, &p);
+        assert_eq!(c2.kind, Kind::Image);
+        assert_eq!(c2.destination, "roms/images");
+    }
+
+    /// Regression (critical, audit 2026-09-01): the hardcoded BIOS_HINTS list
+    /// was removed. Classification uses bios.json EXACT filenames only:
+    /// - a ROM named "scph-greatest-hits.bin" (substring match, not an exact
+    ///   bios.json filename) must NOT classify as BIOS (old false positive)
+    /// - exact bios.json filenames (e.g. gba_bios.bin, x86boot.img — it IS
+    ///   declared in bios.json for pico286) DO classify as BIOS
+    /// - files inside a cubegm/bios folder classify as BIOS (explicit layout)
+    #[test]
+    fn bios_classified_from_bios_json_exact_names_only() {
+        let p = profile();
+        let tmp = tempfile::TempDir::new().unwrap();
+
+        // ROM named like a BIOS pattern (substring) -> NOT bios (false positive)
+        let fake = tmp.path().join("scph-greatest-hits.bin");
+        std::fs::write(&fake, b"rom").unwrap();
+        let c = classify(&fake, &p);
+        assert_ne!(c.kind, Kind::Bios, "substring scph*.bin must NOT be BIOS");
+
+        // Exact bios.json filename -> BIOS (declarative model)
+        let gba_bios = tmp.path().join("gba_bios.bin");
+        std::fs::write(&gba_bios, b"bios").unwrap();
+        assert_eq!(classify(&gba_bios, &p).kind, Kind::Bios);
+        assert_eq!(classify(&gba_bios, &p).destination, "cubegm/bios");
+
+        // Inside a cubegm/bios source folder -> IS bios (explicit user layout)
+        let bios = tmp.path().join("cubegm/bios/my_custom_bios.bin");
+        std::fs::create_dir_all(bios.parent().unwrap()).unwrap();
+        std::fs::write(&bios, b"bios").unwrap();
+        assert_eq!(classify(&bios, &p).kind, Kind::Bios);
+        assert_eq!(classify(&bios, &p).destination, "cubegm/bios");
+    }
+
+    /// Audit 2026-09-01: Vectrex (vec) exists in the profile and classifies.
+    #[test]
+    fn vectrex_system_present_and_classifies() {
+        let p = profile();
+        assert!(
+            p.alias_to_system.contains_key("vec"),
+            "systems.json must contain the vec (Vectrex) alias"
+        );
+        let rom = std::path::Path::new("roms/vec/game.vec");
+        let c = classify(rom, &p);
+        assert_eq!(c.kind, Kind::Rom);
+        assert_eq!(c.destination, "roms/vec");
+        // .vec extension maps to vec
+        assert!(p.ext_to_system.contains_key(".vec"));
     }
 }

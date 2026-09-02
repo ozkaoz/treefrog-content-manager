@@ -122,11 +122,14 @@ def validate_bios_file(file_path: pathlib.Path, bios_def: dict, profile=None):
             # However for PS1, any 512 KiB file with scph*.bin is considered valid even without hash, per notes
             # So for those, if filename matches and size matches expected_size (if any), we can say found_valid via size
             # For PS1, expected_size is 524288, so if file size matches, it's valid
-            # For others with no size and no hash, it's unknown
+            # For others with no size and no hash (e.g. neogeo.zip, segacd
+            # bios_CD_*, ecwolf.pk3), the accepted filename IS the validation:
+            # the user picked the file explicitly. Valid by name (observable
+            # reason). Old behavior returned found_unknown which made 9 of 13
+            # BIOS unusable.
             if file_size in all_sizes or not all_sizes:
-                # If we have no size and no hash, it's unknown
                 if not all_hashes and not all_sizes:
-                    return {"state": "found_unknown", "reason": f"filename {filename} known but no hash/size to validate", "bios_id": bios_def.get("id"), "hash": file_hash, "size": file_size}
+                    return {"state": "found_valid", "reason": "exact filename accepted (profile declares no hash/size - validated by name)", "bios_id": bios_def.get("id"), "hash": file_hash, "size": file_size}
                 else:
                     return {"state": "found_valid", "reason": "filename matches and no hash to contradict", "bios_id": bios_def.get("id"), "hash": file_hash, "size": file_size}
 

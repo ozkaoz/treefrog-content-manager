@@ -4,23 +4,41 @@ sys.path.insert(0, str(REPO / "treefrog-manager" / "python"))
 from treefrog import profile, classify
 
 def test_bios_patterns():
+    # NOTE (2026-09-01 audit): the hardcoded BIOS name-hints were REMOVED.
+    # New contract: a general scan only classifies as BIOS files that
+    # explicitly live inside a cubegm/bios source folder. Loose BIOS-named
+    # files are handled by the dedicated BIOS tab (bios.json validation:
+    # filename + size + SHA-256). This avoids false positives (a ROM named
+    # scph-*.bin) and duplicating x86BOOT.img which TreeFrogUI already ships.
     p = profile.load_profile()
-    cases = [
-        ("scph1001.bin", "bios"),
-        ("gba_bios.bin", "bios"),
-        ("o2rom.bin", "bios"),
-        ("disksys.rom", "bios"),
-        ("neogeo.zip", "bios"),  # neogeo bios is .zip but should be classified bios due to name hint > archive? our classify checks archive first so .zip will be archive, not bios
-        ("kick13.rom", "bios"),
-        ("x86BOOT.img", "bios"),
+    loose_cases = [
+        "scph1001.bin",
+        "gba_bios.bin",
+        "o2rom.bin",
+        "disksys.rom",
+        "neogeo.zip",  # archive kind (archive check precedes)
+        "kick13.rom",
+        "x86BOOT.img",  # TreeFrogUI ships it already; never auto-capture
     ]
-    for name, expected in cases:
+    for name in loose_cases:
         c = classify.classify(pathlib.Path(name), p)
-        # neogeo.zip is archive kind, not bios, because archive check precedes bios — that's intentional: archive inspection then bios handling
         if name == "neogeo.zip":
+            # neogeo.zip es archive (el check de archive precede al de BIOS)
             assert c["kind"] == "archive"
+        elif name in ("scph1001.bin", "gba_bios.bin", "o2rom.bin", "disksys.rom", "kick13.rom", "x86BOOT.img"):
+            # nombres EXACTOS declarados en bios.json -> bios (modelo declarativo)
+            assert c["kind"] == "bios", f"exact bios.json name {name} must be bios, got {c['kind']}"
         else:
-            assert c["kind"] == expected, f"{name} -> {c['kind']}"
+            assert c["kind"] != "bios", f"loose {name} must NOT be auto-captured as bios"
+
+    # Substring false positive -> NO bios
+    c = classify.classify(pathlib.Path("scph-greatest-hits.bin"), p)
+    assert c["kind"] != "bios"
+
+    # Inside an explicit cubegm/bios folder -> bios
+    c = classify.classify(pathlib.Path("cubegm/bios/my_custom.bin"), p)
+    assert c["kind"] == "bios"
+    assert c["destination"] == "cubegm/bios"
 
 def test_lgpt_profile_paths():
     lgpt = profile.load_lgpt()

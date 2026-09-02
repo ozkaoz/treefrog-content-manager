@@ -1,6 +1,6 @@
 # Current Workspace State
 
-**Last reviewed:** 2026-08-30
+**Last reviewed:** 2026-09-01
 **Repo:** https://github.com/ozkaoz/treefrog-content-manager
 > This is a last-known snapshot and must be verified against direct evidence (Git, build, device, release asset). If it contradicts direct evidence, direct evidence wins.
 
@@ -13,71 +13,51 @@ Do not trust hardcoded historical state.
 
 ## Repository
 
-- Branch: RESOLVE FROM GIT AT SESSION START — `git branch --show-current` at session start
-- HEAD: RESOLVE FROM GIT AT SESSION START — `git rev-parse HEAD` at session start (do not hardcode SHA here; see Source/Physical/Release Golden for authoritative SHAs)
-- Upstream: RESOLVE FROM GIT AT SESSION START — `git rev-parse --abbrev-ref --symbolic-full-name @{u}` + `git status --short --branch`
-- Worktree: environment-specific — `git worktree list`
-- Stash: verify `git stash list`
+- Branch: RESOLVE FROM GIT AT SESSION START — `git branch --show-current`
+- HEAD: RESOLVE FROM GIT AT SESSION START — `git rev-parse HEAD` (see Release Golden for the shipped SHAs)
+- Upstream: `git rev-parse --abbrev-ref --symbolic-full-name @{u}` + `git status --short --branch`
+- Note: this repository hosts BOTH (a) the **TreeFrog Content Manager** (the product: `treefrog-manager/`) and (b) the historical **LGPT R36SX port** golden artifacts (`source/`, `sd_root/`, Bacon-* releases). The Content Manager is the active product; the LGPT port is preserved baseline/evidence.
 
-## Current Product Baseline
+## Current Product — TreeFrog Content Manager
 
-- Version: Bacon-1.5 TreeFrog Apps Migration (2026-08-24) — Apps-only
-- Core: `46bd84ebb0d1b1be8caec7c76fecbe6fb4baa8e9bbd603b44488bcc929dedec6` (1559548) — unchanged, `cubegm/cores/lgpt_core.so`
-- FrogUI: `76034bd3c142a9fe24df8729a1ef0dee6f1d8c6b4e5e046db05ebc890b54a0ef` (326700, `cubegm/cores/frogui_libretro.so`) — Apps LGPT, r36sx 028b011, CC BY-NC-SA 4.0, patch `patches/frogui_apps_lgpt.patch`
-- TreeFrogUI required: `v1.0.15_a` (Apps-capable)
-- ZIP: `LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `7295274` `faf7a230c06660b2299664f819f8d517c139311d5bbe8e8a0cbc421623ba0dec` (57 files, Apps→LGPT, Games absent) — `docs/BACON_1_5_RELEASE_MANIFEST.md`, `LGPT_R36SX_Bacon-1.5_SHA256SUMS.txt`
-- Install: `Stock OS + TreeFrogUI v1.0.15_a + ZIP → Apps→LGPT` `POST_INSTALL_MANUAL_FIXES=0` `VISIBLE_LGPT_ENTRIES_TOTAL=1`
-
-## Source Golden
-
-- `49a640b` (main) — Apps migration Apps-only, deterministic from `sd_root` (57 files), FrogUI 76034b, wrapper/core unchanged.
-
-## Physical Golden
-
-- Payload `faf7a230c06660b2299664f819f8d517c139311d5bbe8e8a0cbc421623ba0dec` (57 files, Apps→LGPT) **TRUE clean-install PASS** via `Stock OS + TreeFrogUI v1.0.15_a + ZIP` `POST_INSTALL_MANUAL_FIXES=0` — `TREEFROGUI_BOOT PASS`, `TREEFROG_APPS_ENTRY_LGPT=1 / GAMES=0`, `LOCAL/WINDOWS/SP404/ANDROID/SWITCHING PASS`, `LGPT functional regression PASS`.
-- Evidence: `docs/BACON_1_5_TREEFROG_APPS_PHYSICAL_PASS.md` (2026-08-24), `build/release_candidate/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` physically validated.
-- Previous `C5C77A...` (56 files, Games→LGPT) remains historical.
-
-## Release Golden
-
-- New ZIP `faf7a230c06660b2299664f819f8d517c139311d5bbe8e8a0cbc421623ba0dec` `7295274` `57` built deterministically, `unzip -t PASS`, `bootstrap PASS`, `test_treefrog_apps_lgpt_release PASS`, `TRUE_PHYSICAL_CLEAN_INSTALL PASS`, **published**, **download-back `REMOTE_SHA==LOCAL_SHA` `faf7a230`**, `REMOTE_IDENTICAL=YES`, `LATEST=YES` `PRERELEASE=NO` `DRAFT=NO`.
-- Previous `C5C77A0212e4784a9d0e6d0eddc4de1a8bbe0943b9ebef8b13a18a82a6b9cb1e` `7138546` `56` remains historical (Games→LGPT, v1.0.14_a).
-- Tag `Bacon-1.5` moved from `d404091`/`86e071` to `ba43a71` (`27edc78` annotated) — `RELEASE_GOLDEN_COMMIT=ba43a71`.
-
-## Current Objective
-
-- **TreeFrog Content Manager — Full audit + hardening (2026-08-31) — DONE (host-validated, physical SD pending):** Canonical plan model enforced end-to-end. `paths.rs` = single destination validator (`resolve_validated_destination` rejects absolute/UNC/drive/`..`/empty/ADS/reserved/illegal + resolves containment; used by writer, planner, BIOS, overrides, archive extraction). BIOS removed from parallel write path — flows as normal PlanEntry through planner→resolution→validation→space→deploy; stock guard derived from `bios.json` (no hardcoded lists). Real video conversion: staged temp → ffmpeg → ffprobe-validate → deploy; `convert_then_copy` never copies the original (fixed ffmpeg `-vf scale=min(640\,iw)` filtergraph escaping bug in both Rust+Python). `effective_action()` used by deploy/progress/summary/space/collisions. Space calc from effective actions (no double count). `keep_both` collision-safe (`_1,_2,_3…` vs disk+plan+case) in backend `planner::apply_resolutions_ctx` + `resolve_plan` command; frontend thin. `sd::detect` tri-state (accessible/writable/healthy proven, never inferred). BIOS catalog/validate derived from `bios.json` (single model). Version single source (`app_version` = Cargo pkg). Stable SD id = volume GUID+serial (mount path excluded). SQLite persistence (migrations; job/job_entry/deployment/content_fingerprint; scoped remainder documented in `db.rs`). Archives: ZIP only; 7z/RAR explicit `unsupported_archive`. CI `validate.yml` (frontend tsc+build, cargo fmt/check/test, pytest+ffmpeg, version-consistency gate) + release requires validation. Validation: `cargo fmt --check` PASS, `cargo check` PASS, `cargo test` 43/43 PASS (incl. BIOS escape/security/integration), pytest 213/213 PASS (incl. real-ffmpeg conversion deploy), `tsc --noEmit` PASS, `npm run build` PASS, Windows x64 .exe build PASS (`--self-check PASS`, GUI smoke PASS). See `docs/ai/AUDIT_2026-08-31_TREEFROG_MANAGER.md`.
-- **TreeFrog Content Manager — Phase 3A SD target detection + target validation + deployment-plan integration (READ-ONLY, no SD writes) — DONE:** Platform abstraction for removable volumes (Windows: `GetLogicalDrives`/`GetDriveTypeW`/`GetVolumeInformationW`/`GetDiskFreeSpaceExW` via `windows` crate, no admin, no modify; `VolumeInfo` with path/label/filesystem/total/free/removable/accessible); TreeFrogUI validation via `sd_markers.json` (cubegm/ + roms/ → valid, cubegm xor roms → incomplete, none → unknown, not accessible → inaccessible, TreeFrogUI global); read-only target analysis (`analyze_target` never creates files, shows `Volume TREEFROG` `exFAT` `64 GB` `42.8 GB` `TreeFrogUI ✓` `LGPT ✓` `READY`, `existing_count`/`total_size`, `rom_dirs`/`media_dirs`/`bios_dirs`/`lgpt_dirs`); target indexing reusing `scanner`/`hash` (`walkdir` read-only, `sha256` for duplicate, logical units preserved); planner single source (`dry_run_with_target` = `SOURCE SCAN → TARGET SCAN → plan → validate_destination_path → check_case_collision → calculate_space`); space calc (`bytes_to_copy`/`extract`/`generate`/`skip`, `required` vs `available`, `insufficient_space`); safe path handling (absolute/traversal/drive/UNC/ADS/reserved/illegal `<>:\"|?*`/backslash/case-collision, profile as source); SD Card UI `SdCardPanel.tsx` native `pickFolder` → `Selected E:\` `Volume` `Filesystem` `Capacity` `Free` `TreeFrogUI` `LGPT` `Status` → `[Analyze]` → `[Dry-run with target]` → `New/Changed/Duplicate/Conflict/Conversion/BIOS warnings/Insufficient space` (`Space: Required 8.42 GB / Available 7.91 GB / Not enough space`), Sync disabled.
-- **TreeFrog Content Manager — Completed:** Bootstrap/scanner, Archive ingestion, Duplicate/conflict, Video pipeline, BIOS (A+B+Manager), Desktop UX (native dialogs, Windows theme, branding `frog-canonical.png` 314×280, portable `14.29 MB` + installer `3.49 MB`), LGPT Samples/Projects, **SD target (3A) 17 new tests** — all `182 tests PASS`.
-- **Release golden preserved:** `Bacon-1.5` `RELEASE_GOLDEN=PASS` — `TREEFROGUI_REQUIRED=v1.0.15_a`, `POST_INSTALL_MANUAL_FIXES=0`, `DOWNLOAD-BACK PASS` (`git diff -- sd_root` = NO).
-- **Idle baseline:** No active SD writes — await Phase 3B deployment engine (staging, atomic rename, resume).
-
-## Last Relevant Validation
-
-- `RELEASE_AUDIO_BOOTSTRAP PASS` + `FROG_UI_APPS_LGPT PASS` (Apps-only, hide) + `TREEFROG_APPS_RELEASE PASS` (57 files, frogui 76034b)
-- `TRUE_PHYSICAL_CLEAN_INSTALL PASS` (`Stock OS + TreeFrogUI v1.0.15_a + ZIP` → `POST_INSTALL_MANUAL_FIXES=0`)
-- `DOWNLOAD-BACK PASS` (`/tmp/download_back/LGPT_R36SX_Bacon-1.5_SD_ROOT.zip` `faf7a230` 7295274 57, `unzip -t PASS`, `test_treefrog_apps_lgpt_release PASS`)
-- `ELFs`: shipped `b07bbb` vs vanilla `f10caa` vs apps-only `76034b` — MIPS32r2 O32 hard-float 7 PHDR GLIBC 2.0/2.2/2.3/2.15, no generic drift
-- `MANAGER 2E.3`: `frog-canonical.png` 314×280 `frog-square.png` 512×512 `icon.ico` 48487B 7 sizes (16 307B 40 unique, 32 876B 177 unique) header `[frog upright legs DOWN]` + `window/taskbar/Desktop/StartMenu/installer` all frog via fresh install after `tauri.conf.json` `icon.ico` first → PE 7 PNG-compressed icons + `portable` 14.29 MB + `installer` 3.49 MB both `7` sizes not solid, `165 tests PASS` + `MANUAL_QA_2E.md` + zero SD writes
-- `MANAGER 2E.2/2E.1/2E` preserved: `header-preview.png` `build/branding-preview.png` + `clean_test` `14.33 MB` + `explorer cache` handling
+- **Version: 0.1.1** (Cargo/package.json/tauri.conf, consistent — CI-enforced)
+- **Release: v1.0.1 = LATEST** — https://github.com/ozkaoz/treefrog-content-manager/releases/tag/v1.0.1
+  - Assets: `TreeFrog-Content-Manager-0.1.1-Windows-x64.exe` (portable), `TreeFrog-Content-Manager-0.1.1-Linux-x64.AppImage`, `TreeFrog-Content-Manager-0.1.1-macOS-x64.dmg` + auto source zip/tar.gz
+  - **DOWNLOAD-BACK PASS**: exe downloaded from the release, `--self-check PASS` (profile 1.1.0, 75 systems, `bios catalog entries: 13`), GUI smoke PASS
+  - Release flow: tag `v*` → build 1 executable per OS → `--self-check` (BIOS catalog verified) on each platform → publish Latest. No re-validation in release (same commit already passed validate.yml on push to main).
+- **Architecture state (audit 2026-08-31 + UI 2026-09-01, all shipped in v1.0.1):**
+  - One canonical plan model: preview == deployment (`planEntries` param — no re-scan drift)
+  - `paths.rs`: single destination validator (absolute/UNC/drive/`..`/empty/ADS/reserved/illegal + containment); used by writer/planner/BIOS/overrides/archives
+  - BIOS = normal PlanEntry flow (no parallel write path); `bios.json` **embedded** in the binary (portable contract: BIOS catalog never empty on any platform) + filesystem override for dev
+  - Real video conversion (staged → ffmpeg → ffprobe-validate → deploy; ffmpeg filtergraph escaping bug fixed); `convert_then_copy` never copies the original
+  - `effective_action()` everywhere; space from effective actions; `keep_both` collision-safe `_1.._N` (backend authority, `resolve_plan` command, thin frontend)
+  - `sd::detect` tri-state (writable/healthy proven, never inferred); stable SD id = Windows volume GUID + serial
+  - SQLite persistence (migrations; job/job_entry/deployment/content_fingerprint)
+  - Archives: ZIP only (safe adapter); 7z/RAR explicitly `unsupported_archive`
+  - Per-tab deploy to exact TreeFrogUI paths: Games→`roms/<SYSTEM>/`, Music→`roms/music/` (subfolder=playlist), Videos→`roms/videos/`, BIOS→`cubegm/bios/`, LGPT→`lgpt/samples|projects/`
+  - UI: unified panel buttons (Scan/Clear/Back/Skip/Continue/Sync — actions above Browse); **Sync to SD always active** (observable outcome); Music search gated by scan; BIOS search removed; shared `SdStatusBar` (real SD state everywhere, refreshed after every sync via `sdRefreshSignal`); dynamic Overview status from live plans + real SD counts
+- **Validation state:** CI green on push (validate.yml: frontend tsc+build, Rust fmt/check/test 47, pytest 224 incl. real-ffmpeg conversion + security fixtures, version gate, Tauri build). Local policy: minimal per-change checks (`scripts/quick_validate.ps1`, DEC-2026-09-01-02); CI is the full gate.
 
 ## Known Issues / Risks
 
-- `scripts/install.sh`/`verify.sh` legacy U2523 — not canonical.
-- Dirty exFAT false failures — SD health check before runtime blame.
-- Generic GCC 12.4 black-screen (029584…); official SDK 6.3.0 required.
+- **SmartScreen (unsigned binaries)**: the Windows exe shows "Windows protected your PC" because it is not code-signed. Options documented: Certum Open Source (~€69/yr), OV/EV certs, or wait for organic reputation. Workflow ready to add signing when a cert is provided.
+- `video_presets.json` declares `status: PROVISIONAL_UNVALIDATED` (= not hardware-validated on device; conversions themselves are executed + ffprobe-validated).
+- Physical R36SX deploy validation of the Manager remains pending (no device in session); all SD-write paths covered by canonical-validation security tests on fixtures.
+
+## Historical baseline preserved (LGPT R36SX port — NOT the active product)
+
+- Bacon-1.5 golden: ZIP `faf7a230…` (57 files, Apps→LGPT), `Stock OS + TreeFrogUI v1.0.15_a + ZIP`, `POST_INSTALL_MANUAL_FIXES=0`, download-back PASS. See `docs/BACON_1_5_*` and Git history.
 
 ## Pending Validation
 
-- Content Manager 3A: SD target detection + validation + analysis + indexing + planner integration + space calculation + safe path + SD Card UI + zero-write — awaiting implementation.
+- Physical SD deploy with the Manager on a real device (user-accepted host validation so far).
 
 ## Next Exact Action
 
-- Implement `treefrog-manager/src-tauri/src/sd_target.rs` / `python/treefrog/sd_target.py` (Windows removable volumes via `windows` crate, `GetVolumeInformationW`/`GetDiskFreeSpaceExW`, markers from `sd_markers.json`), `target_scan` read-only, `target_index` reuse `scanner`/`hash`, `planner` integration, `space` calc, `safe_path` validation, `SdCard.tsx` UI with native `pickFolder`, `tauri` commands `list_volumes`/`analyze_target`/`dry_run_with_target`, tests with temp fixture, `npm run build` + `cargo check` + `pytest` + `git diff -- sd_root` empty + Windows build portable+installer + SD Card tab + manual SD (if available).
+- None blocked. Optional next steps: code-signing certificate for SmartScreen; physical-device deploy validation round.
 
 ## Stop Conditions
 
 - Any protected runtime drift (lgpt wrapper/core, OTG, audio, H38) → STOP
 - Any inferred PHYSICAL PASS without device → STOP
-- Generic GCC FrogUI → STOP
 - Machine-specific path as authority → STOP

@@ -1008,13 +1008,23 @@ def plan(scanned, sd_root: str, profile):
             manual+=1
             continue
         else:
-            # Preserve relative subpath so two unknown files with the same name
-            # in different folders never collide at the same destination.
-            rel = sf["relative_hint"].replace("\\", "/")
-            if not rel or rel == file_name:
+            # NOTE (2026-09-01 audit): the OLD code appended the FULL
+            # relative_hint when the source had subfolders — producing
+            # roms/GBA/GBA/game.gba (duplicated system folder). Rust (the
+            # deployed planner) always uses just the file name for content
+            # with a known destination; only UNKNOWN files preserve their
+            # relative subpath (for review). Mirror that behavior here.
+            if dest_base and dest_base not in ("", "roms/UNKNOWN"):
                 dest_rel = f"{dest_base}/{file_name}"
             else:
-                dest_rel = f"{dest_base}/{rel}"
+                # Unknown content: preserve relative subpath so two unknown
+                # files with the same name in different folders never collide
+                # (review-only; never deployed).
+                rel = sf["relative_hint"].replace("\\", "/")
+                if not rel or rel == file_name:
+                    dest_rel = f"{dest_base}/{file_name}" if dest_base else f"roms/UNKNOWN/{file_name}"
+                else:
+                    dest_rel = f"roms/UNKNOWN/{rel}"
 
         dest_abs = sd_path / dest_rel
         exists = dest_abs.exists()

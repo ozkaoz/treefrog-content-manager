@@ -7,705 +7,1482 @@
   "systems": [
     {
       "id": "nes_fceumm",
-      "folder_aliases": ["FC", "nes"],
+      "folder_aliases": [
+        "FC",
+        "nes"
+      ],
       "display_name": "NES / Famicom",
       "core": "fceumm_libretro.so",
-      "extensions": [".nes", ".unf", ".unif", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".nes",
+        ".unf",
+        ".unif",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "notes": "FDS separate folder fds"
     },
     {
       "id": "nes_quicknes",
-      "folder_aliases": ["NES", "nesq"],
+      "folder_aliases": [
+        "NES",
+        "nesq"
+      ],
       "display_name": "NES (fast)",
       "core": "quicknes_libretro.so",
-      "extensions": [".nes", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".nes",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "nestopia",
-      "folder_aliases": ["nest"],
+      "folder_aliases": [
+        "nest"
+      ],
       "display_name": "NES (accurate)",
       "core": "nestopia_libretro.so",
-      "extensions": [".nes", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".nes",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "fds",
-      "folder_aliases": ["fds"],
+      "folder_aliases": [
+        "fds"
+      ],
       "display_name": "Famicom Disk System",
       "core": "fceumm_libretro.so",
-      "extensions": [".fds", ".nes", ".zip"],
+      "extensions": [
+        ".fds",
+        ".nes",
+        ".zip"
+      ],
       "archive_payload_valid": [],
       "multi_file": false,
       "bios_ref": "fds"
     },
     {
       "id": "snes",
-      "folder_aliases": ["SFC", "snes"],
+      "folder_aliases": [
+        "SFC",
+        "snes"
+      ],
       "display_name": "Super Famicom / SNES",
       "core": "snes9x2005_plus_libretro.so",
-      "extensions": [".sfc", ".smc", ".fig", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".sfc",
+        ".smc",
+        ".fig",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "snes02",
-      "folder_aliases": ["snes02"],
+      "folder_aliases": [
+        "snes02"
+      ],
       "display_name": "SNES (2002)",
       "core": "snes9x2002_libretro.so",
-      "extensions": [".sfc", ".smc", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".sfc",
+        ".smc",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "gba_gpsp",
-      "folder_aliases": ["GBA", "gba"],
+      "folder_aliases": [
+        "GBA",
+        "gba"
+      ],
       "display_name": "Game Boy Advance",
       "core": "gpsp_libretro.so",
-      "extensions": [".gba", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gba",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "bios_ref": "gba"
     },
     {
       "id": "gba_mgba",
-      "folder_aliases": ["mgba", "gbaf"],
+      "folder_aliases": [
+        "mgba",
+        "gbaf"
+      ],
       "display_name": "GBA (accurate)",
       "core": "mgba_libretro.so",
-      "extensions": [".gba", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gba",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "bios_ref": "gba"
     },
     {
       "id": "gba_vbanext",
-      "folder_aliases": ["gbav"],
+      "folder_aliases": [
+        "gbav"
+      ],
       "display_name": "GBA (VBA Next)",
       "core": "vba_next_libretro.so",
-      "extensions": [".gba", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gba",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "gb",
-      "folder_aliases": ["gb", "dblcherrygb"],
+      "folder_aliases": [
+        "gb",
+        "dblcherrygb"
+      ],
       "display_name": "Game Boy / Color",
       "core": "gambatte_libretro.so",
-      "extensions": [".gb", ".gbc", ".dmg", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gb",
+        ".gbc",
+        ".dmg",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "gearboy",
-      "folder_aliases": ["gbgb"],
+      "folder_aliases": [
+        "gbgb"
+      ],
       "display_name": "Game Boy (Gearboy)",
       "core": "gearboy_libretro.so",
-      "extensions": [".gb", ".gbc", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gb",
+        ".gbc",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "tgbdual",
-      "folder_aliases": ["gbb"],
+      "folder_aliases": [
+        "gbb"
+      ],
       "display_name": "Game Boy (TGBDual)",
       "core": "tgbdual_libretro.so",
-      "extensions": [".gb", ".gbc", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gb",
+        ".gbc",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "md_picodrive",
-      "folder_aliases": ["MD", "SMS", "sega"],
+      "folder_aliases": [
+        "MD",
+        "SMS",
+        "sega"
+      ],
       "display_name": "Mega Drive / Genesis / Master System",
       "core": "picodrive_libretro.so",
-      "extensions": [".md", ".smd", ".gen", ".bin", ".sms", ".gg", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".md",
+        ".smd",
+        ".gen",
+        ".bin",
+        ".sms",
+        ".gg",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "32x",
-      "folder_aliases": ["32x"],
+      "folder_aliases": [
+        "32x"
+      ],
       "display_name": "Sega 32X",
       "core": "picodrive_libretro.so",
-      "extensions": [".32x", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".32x",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "gg",
-      "folder_aliases": ["GG", "gg"],
+      "folder_aliases": [
+        "GG",
+        "gg"
+      ],
       "display_name": "Game Gear",
       "core": "gearsystem_libretro.so",
-      "extensions": [".gg", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".gg",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "gpgx",
-      "folder_aliases": ["gpgx"],
+      "folder_aliases": [
+        "gpgx"
+      ],
       "display_name": "Mega Drive (accurate)",
       "core": "genesis_plus_gx_libretro.so",
-      "extensions": [".md", ".smd", ".gen", ".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".md",
+        ".smd",
+        ".gen",
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "segacd",
-      "folder_aliases": ["segacd"],
+      "folder_aliases": [
+        "segacd"
+      ],
       "display_name": "Sega CD / Mega CD",
       "core": "genesis_plus_gx_libretro.so",
-      "extensions": [".iso", ".cue", ".bin", ".chd", ".zip", ".7z"],
+      "extensions": [
+        ".iso",
+        ".cue",
+        ".bin",
+        ".chd",
+        ".zip",
+        ".7z"
+      ],
       "archive_payload_valid": [],
       "multi_file": true,
-      "multi_file_sets": ["CUE/BIN", "CHD"],
+      "multi_file_sets": [
+        "CUE/BIN",
+        "CHD"
+      ],
       "bios_ref": "segacd"
     },
     {
       "id": "ps_psx",
-      "folder_aliases": ["PS", "ps1", "psx"],
+      "folder_aliases": [
+        "PS",
+        "ps1",
+        "psx"
+      ],
       "display_name": "PlayStation (PCSX4ALL + pcsx_rearmed fallback)",
       "core": "pcsx_rearmed_libretro.so",
       "standalone_binary": "cubegm/pcsx4all",
-      "extensions": [".iso", ".bin", ".cue", ".img", ".mdf", ".pbp", ".chd", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z", ".pbp"],
+      "extensions": [
+        ".iso",
+        ".bin",
+        ".cue",
+        ".img",
+        ".mdf",
+        ".pbp",
+        ".chd",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z",
+        ".pbp"
+      ],
       "multi_file": true,
-      "multi_file_sets": ["CUE/BIN", "M3U"],
+      "multi_file_sets": [
+        "CUE/BIN",
+        "M3U"
+      ],
       "bios_ref": "ps1"
     },
     {
       "id": "ps1r",
-      "folder_aliases": ["ps1r"],
+      "folder_aliases": [
+        "ps1r"
+      ],
       "display_name": "PlayStation (lightrec JIT pcsx_rearmed only)",
       "core": "pcsx_rearmed_libretro.so",
-      "extensions": [".iso", ".bin", ".cue", ".pbp", ".chd", ".zip", ".7z"],
-      "archive_payload_valid": [".pbp", ".chd"],
+      "extensions": [
+        ".iso",
+        ".bin",
+        ".cue",
+        ".pbp",
+        ".chd",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".pbp",
+        ".chd"
+      ],
       "multi_file": true,
-      "multi_file_sets": ["CUE/BIN"],
+      "multi_file_sets": [
+        "CUE/BIN"
+      ],
       "bios_ref": "ps1"
     },
     {
       "id": "pce",
-      "folder_aliases": ["pce"],
+      "folder_aliases": [
+        "pce"
+      ],
       "display_name": "PC Engine / TurboGrafx-16",
       "core": "mednafen_pce_fast_libretro.so",
-      "extensions": [".pce", ".sgx", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".pce",
+        ".sgx",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "pcesgx",
-      "folder_aliases": ["pcesgx"],
+      "folder_aliases": [
+        "pcesgx"
+      ],
       "display_name": "PC Engine SuperGrafx",
       "core": "mednafen_supergrafx_libretro.so",
-      "extensions": [".pce", ".sgx", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".pce",
+        ".sgx",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "pcfx",
-      "folder_aliases": ["pcfx"],
+      "folder_aliases": [
+        "pcfx"
+      ],
       "display_name": "PC-FX",
       "core": "mednafen_pcfx_libretro.so",
-      "extensions": [".pce", ".cue", ".bin", ".chd", ".zip"],
+      "extensions": [
+        ".pce",
+        ".cue",
+        ".bin",
+        ".chd",
+        ".zip"
+      ],
       "archive_payload_valid": [],
       "multi_file": true,
-      "multi_file_sets": ["CUE/BIN"],
+      "multi_file_sets": [
+        "CUE/BIN"
+      ],
       "bios_ref": "pcfx"
     },
     {
       "id": "pc8800",
-      "folder_aliases": ["pc8800"],
+      "folder_aliases": [
+        "pc8800"
+      ],
       "display_name": "NEC PC-8800",
       "core": "quasi88_libretro.so",
-      "extensions": [".d88", ".88d", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".d88",
+        ".88d",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": true,
       "bios_ref": "pc88"
     },
     {
       "id": "ngpc",
-      "folder_aliases": ["ngpc"],
+      "folder_aliases": [
+        "ngpc"
+      ],
       "display_name": "Neo Geo Pocket / Color",
       "core": "race_libretro.so",
-      "extensions": [".ngp", ".ngc", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".ngp",
+        ".ngc",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "geolith",
-      "folder_aliases": ["geolith"],
+      "folder_aliases": [
+        "geolith"
+      ],
       "display_name": "Neo Geo AES/MVS",
       "core": "geolith_libretro.so",
-      "extensions": [".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "bios_ref": "neogeo"
     },
     {
       "id": "wswan",
-      "folder_aliases": ["wswan"],
+      "folder_aliases": [
+        "wswan"
+      ],
       "display_name": "WonderSwan / Color",
       "core": "mednafen_wswan_libretro.so",
-      "extensions": [".ws", ".wsc", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".ws",
+        ".wsc",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "wsv",
-      "folder_aliases": ["wsv"],
+      "folder_aliases": [
+        "wsv"
+      ],
       "display_name": "Watara Supervision",
       "core": "potator_libretro.so",
-      "extensions": [".sv", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".sv",
+        ".zip",
+        ".7z",
+        ".wsv"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "vb",
-      "folder_aliases": ["vb"],
+      "folder_aliases": [
+        "vb"
+      ],
       "display_name": "Virtual Boy",
       "core": "mednafen_vb_libretro.so",
-      "extensions": [".vb", ".vboy", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".vb",
+        ".vboy",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "a26",
-      "folder_aliases": ["a26"],
+      "folder_aliases": [
+        "a26"
+      ],
       "display_name": "Atari 2600",
       "core": "stella2014_libretro.so",
-      "extensions": [".a26", ".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".a26",
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "a5200",
-      "folder_aliases": ["a5200"],
+      "folder_aliases": [
+        "a5200"
+      ],
       "display_name": "Atari 5200",
       "core": "a5200_libretro.so",
-      "extensions": [".a52", ".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".a52",
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "a78",
-      "folder_aliases": ["a78"],
+      "folder_aliases": [
+        "a78"
+      ],
       "display_name": "Atari 7800",
       "core": "prosystem_libretro.so",
-      "extensions": [".a78", ".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".a78",
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "a800",
-      "folder_aliases": ["a800"],
+      "folder_aliases": [
+        "a800"
+      ],
       "display_name": "Atari 800",
       "core": "atari800_libretro.so",
-      "extensions": [".atr", ".xex", ".com", ".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".atr",
+        ".xex",
+        ".com",
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "lnx",
-      "folder_aliases": ["lnx"],
+      "folder_aliases": [
+        "lnx"
+      ],
       "display_name": "Atari Lynx",
       "core": "handy_libretro.so",
-      "extensions": [".lnx", ".o", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".lnx",
+        ".o",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "atari-st",
-      "folder_aliases": ["atari-st"],
+      "folder_aliases": [
+        "atari-st"
+      ],
       "display_name": "Atari ST",
       "core": "castaway_libretro.so",
-      "extensions": [".st", ".stx", ".msa", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".st",
+        ".stx",
+        ".msa",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "bios_ref": "atari-st"
     },
     {
       "id": "amiga",
-      "folder_aliases": ["amiga"],
+      "folder_aliases": [
+        "amiga"
+      ],
       "display_name": "Commodore Amiga",
       "core": "uae_libretro.so",
-      "extensions": [".adf", ".adz", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z", ".adz"],
+      "extensions": [
+        ".adf",
+        ".adz",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z",
+        ".adz"
+      ],
       "multi_file": true,
-      "multi_file_sets": ["ADF multi-disk"],
+      "multi_file_sets": [
+        "ADF multi-disk"
+      ],
       "bios_ref": "amiga"
     },
     {
       "id": "c64",
-      "folder_aliases": ["c64", "c64sc"],
+      "folder_aliases": [
+        "c64",
+        "c64sc"
+      ],
       "display_name": "Commodore 64 (VICE)",
       "core": "vice_x64_libretro.so",
-      "extensions": [".d64", ".g64", ".t64", ".prg", ".crt", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".d64",
+        ".g64",
+        ".t64",
+        ".prg",
+        ".crt",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "bios_ref": "c64_optional"
     },
     {
       "id": "c64f",
-      "folder_aliases": ["c64f", "c64fc"],
+      "folder_aliases": [
+        "c64f",
+        "c64fc"
+      ],
       "display_name": "Commodore 64 (Frodo)",
       "core": "frodo_libretro.so",
-      "extensions": [".d64", ".t64", ".prg", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".d64",
+        ".t64",
+        ".prg",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "vic20",
-      "folder_aliases": ["vic20"],
+      "folder_aliases": [
+        "vic20"
+      ],
       "display_name": "Commodore VIC-20",
       "core": "vice_xvic_libretro.so",
-      "extensions": [".d64", ".prg", ".crt", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".d64",
+        ".prg",
+        ".crt",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "msx",
-      "folder_aliases": ["msx"],
+      "folder_aliases": [
+        "msx"
+      ],
       "display_name": "MSX",
       "core": "bluemsx_libretro.so",
-      "extensions": [".rom", ".mx1", ".mx2", ".col", ".dsk", ".cas", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".rom",
+        ".mx1",
+        ".mx2",
+        ".col",
+        ".dsk",
+        ".cas",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "spec",
-      "folder_aliases": ["spec"],
+      "folder_aliases": [
+        "spec"
+      ],
       "display_name": "ZX Spectrum",
       "core": "fuse_libretro.so",
-      "extensions": [".z80", ".sna", ".tap", ".tzx", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".z80",
+        ".sna",
+        ".tap",
+        ".tzx",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "zx81",
-      "folder_aliases": ["zx81"],
+      "folder_aliases": [
+        "zx81"
+      ],
       "display_name": "ZX81",
       "core": "81_libretro.so",
-      "extensions": [".p", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".p",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "col",
-      "folder_aliases": ["col"],
+      "folder_aliases": [
+        "col"
+      ],
       "display_name": "ColecoVision",
       "core": "gearcoleco_libretro.so",
-      "extensions": [".col", ".rom", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".col",
+        ".rom",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "amstrad",
-      "folder_aliases": ["amstrad", "amstradb"],
+      "folder_aliases": [
+        "amstrad",
+        "amstradb"
+      ],
       "display_name": "Amstrad CPC",
       "core": "cap32_libretro.so",
-      "extensions": [".dsk", ".sna", ".tap", ".cdt", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".dsk",
+        ".sna",
+        ".tap",
+        ".cdt",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "thom",
-      "folder_aliases": ["thom"],
+      "folder_aliases": [
+        "thom"
+      ],
       "display_name": "Thomson MO/TO",
       "core": "theodore_libretro.so",
-      "extensions": [".sap", ".fd", ".k7", ".m7", ".rom", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".sap",
+        ".fd",
+        ".k7",
+        ".m7",
+        ".rom",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "xmil",
-      "folder_aliases": ["xmil"],
+      "folder_aliases": [
+        "xmil"
+      ],
       "display_name": "Sharp X68000",
       "core": "x68k_libretro.so",
-      "extensions": [".dim", ".m3u", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".dim",
+        ".m3u",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": true
     },
     {
       "id": "pico286",
-      "folder_aliases": ["pico286"],
+      "folder_aliases": [
+        "pico286"
+      ],
       "display_name": "DOS / PC (8086-286)",
       "core": null,
       "standalone_binary": "cubegm/pico286",
-      "extensions": [".img", ".ima", ".vfd", ".zip", ".7z"],
+      "extensions": [
+        ".img",
+        ".ima",
+        ".vfd",
+        ".zip",
+        ".7z"
+      ],
       "archive_payload_valid": [],
       "multi_file": true,
-      "multi_file_sets": ["IMG set per game folder"],
+      "multi_file_sets": [
+        "IMG set per game folder"
+      ],
       "bios_ref": "pico286"
     },
     {
       "id": "quake",
-      "folder_aliases": ["Quake"],
+      "folder_aliases": [
+        "Quake"
+      ],
       "display_name": "Quake",
       "core": "tyrquake_libretro.so",
-      "extensions": [".pak", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".pak",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "quake2",
-      "folder_aliases": ["quake2"],
+      "folder_aliases": [
+        "quake2"
+      ],
       "display_name": "Quake II (needs baseq2/)",
       "core": "vitaquake2_libretro.so",
-      "extensions": [".pak", ".zip", ".7z"],
+      "extensions": [
+        ".pak",
+        ".zip",
+        ".7z"
+      ],
       "archive_payload_valid": [],
       "multi_file": true,
-      "multi_file_sets": ["baseq2 folder"],
+      "multi_file_sets": [
+        "baseq2 folder"
+      ],
       "notes": "Game data goes in baseq2/ subfolder"
     },
     {
       "id": "prboom",
-      "folder_aliases": ["prboom"],
+      "folder_aliases": [
+        "prboom"
+      ],
       "display_name": "Doom / Heretic / Hexen",
       "core": "prboom_libretro.so",
-      "extensions": [".wad", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".wad",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "wolf3d",
-      "folder_aliases": ["wolf3d"],
+      "folder_aliases": [
+        "wolf3d"
+      ],
       "display_name": "Wolfenstein 3D",
       "core": "ecwolf_libretro.so",
-      "extensions": [".wl6", ".sod", ".n3d", ".zip", ".7z"],
+      "extensions": [
+        ".wl6",
+        ".sod",
+        ".n3d",
+        ".zip",
+        ".7z"
+      ],
       "archive_payload_valid": [],
       "multi_file": true,
       "bios_ref": "wolf3d"
     },
     {
       "id": "cps1",
-      "folder_aliases": ["cps1"],
+      "folder_aliases": [
+        "cps1"
+      ],
       "display_name": "Capcom CPS-1 arcade",
       "core": "fbalpha2012_cps1_libretro.so",
-      "extensions": [".zip"],
-      "archive_payload_valid": [".zip"],
+      "extensions": [
+        ".zip"
+      ],
+      "archive_payload_valid": [
+        ".zip"
+      ],
       "multi_file": false,
       "notes": "Romsets version-locked per core"
     },
     {
       "id": "cps2",
-      "folder_aliases": ["cps2"],
+      "folder_aliases": [
+        "cps2"
+      ],
       "display_name": "Capcom CPS-2 arcade",
       "core": "fbalpha2012_cps2_libretro.so",
-      "extensions": [".zip"],
-      "archive_payload_valid": [".zip"],
+      "extensions": [
+        ".zip"
+      ],
+      "archive_payload_valid": [
+        ".zip"
+      ],
       "multi_file": false
     },
     {
       "id": "cps3",
-      "folder_aliases": ["cps3"],
+      "folder_aliases": [
+        "cps3"
+      ],
       "display_name": "Capcom CPS-3 arcade (experimental)",
       "core": "fbalpha2012_cps3_libretro.so",
-      "extensions": [".zip"],
-      "archive_payload_valid": [".zip"],
+      "extensions": [
+        ".zip"
+      ],
+      "archive_payload_valid": [
+        ".zip"
+      ],
       "multi_file": false
     },
     {
       "id": "neogeo",
-      "folder_aliases": ["neogeo"],
+      "folder_aliases": [
+        "neogeo"
+      ],
       "display_name": "Neo Geo arcade",
       "core": "fbalpha2012_neogeo_libretro.so",
-      "extensions": [".zip"],
-      "archive_payload_valid": [".zip"],
+      "extensions": [
+        ".zip"
+      ],
+      "archive_payload_valid": [
+        ".zip"
+      ],
       "multi_file": false,
       "bios_ref": "neogeo"
     },
     {
       "id": "m2k",
-      "folder_aliases": ["m2k"],
+      "folder_aliases": [
+        "m2k"
+      ],
       "display_name": "MAME 2000 (0.37b5)",
       "core": "mame2000_libretro.so",
-      "extensions": [".zip"],
-      "archive_payload_valid": [".zip"],
+      "extensions": [
+        ".zip"
+      ],
+      "archive_payload_valid": [
+        ".zip"
+      ],
       "multi_file": false
     },
     {
       "id": "pico8",
-      "folder_aliases": ["pico8", "fake08"],
+      "folder_aliases": [
+        "pico8",
+        "fake08"
+      ],
       "display_name": "PICO-8 (fake08)",
       "core": "fake08_libretro.so",
-      "extensions": [".p8", ".p8.png", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".p8",
+        ".p8.png",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "retro8",
-      "folder_aliases": ["retro8"],
+      "folder_aliases": [
+        "retro8"
+      ],
       "display_name": "PICO-8 (retro8)",
       "core": "retro8_libretro.so",
-      "extensions": [".p8", ".png", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".p8",
+        ".png",
+        ".zip",
+        ".7z",
+        ".p8.png"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "lowresnx",
-      "folder_aliases": ["lowres-nx"],
+      "folder_aliases": [
+        "lowres-nx"
+      ],
       "display_name": "LowRes NX",
       "core": "lowresnx_libretro.so",
-      "extensions": [".lowresnx", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".lowresnx",
+        ".zip",
+        ".7z",
+        ".nx"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "tic80",
-      "folder_aliases": ["tic80"],
+      "folder_aliases": [
+        "tic80"
+      ],
       "display_name": "TIC-80 fantasy console",
       "core": "tic80_libretro.so",
-      "extensions": [".tic", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".tic",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "pokem",
-      "folder_aliases": ["pokem"],
+      "folder_aliases": [
+        "pokem"
+      ],
       "display_name": "Pokémon Mini",
       "core": "pokemini_libretro.so",
-      "extensions": [".min", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".min",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "arduboy",
-      "folder_aliases": ["arduboy"],
+      "folder_aliases": [
+        "arduboy"
+      ],
       "display_name": "Arduboy (Ardens fast)",
       "core": "ardens_libretro.so",
-      "extensions": [".hex", ".arduboy", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".hex",
+        ".arduboy",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "arduous",
-      "folder_aliases": ["arduous"],
+      "folder_aliases": [
+        "arduous"
+      ],
       "display_name": "Arduboy (arduous cycle-accurate)",
       "core": "arduous_libretro.so",
-      "extensions": [".hex", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".hex",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "o2em",
-      "folder_aliases": ["o2em"],
+      "folder_aliases": [
+        "o2em"
+      ],
       "display_name": "Odyssey² / Videopac",
       "core": "o2em_libretro.so",
-      "extensions": [".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false,
       "bios_ref": "o2em"
     },
     {
       "id": "gme",
-      "folder_aliases": ["gme"],
+      "folder_aliases": [
+        "gme"
+      ],
       "display_name": "Game Music Emu",
       "core": "gme_libretro.so",
-      "extensions": [".nsf", ".spc", ".vgm", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".nsf",
+        ".spc",
+        ".vgm",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "gw",
-      "folder_aliases": ["gw"],
+      "folder_aliases": [
+        "gw"
+      ],
       "display_name": "Game & Watch",
       "core": "gw_libretro.so",
-      "extensions": [".mgw", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".mgw",
+        ".zip",
+        ".7z",
+        ".gw"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "int",
-      "folder_aliases": ["int"],
+      "folder_aliases": [
+        "int"
+      ],
       "display_name": "Mattel Intellivision",
       "core": "freeintv_libretro.so",
-      "extensions": [".int", ".bin", ".rom", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".int",
+        ".bin",
+        ".rom",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "fcf",
-      "folder_aliases": ["fcf"],
+      "folder_aliases": [
+        "fcf"
+      ],
       "display_name": "Fairchild Channel F",
       "core": "freechaf_libretro.so",
-      "extensions": [".chf", ".bin", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".chf",
+        ".bin",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "cdg",
-      "folder_aliases": ["cdg"],
+      "folder_aliases": [
+        "cdg"
+      ],
       "display_name": "CD+G Karaoke",
       "core": "pocketcdg_libretro.so",
-      "extensions": [".cdg", ".mp3", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".cdg",
+        ".mp3",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "chip8",
-      "folder_aliases": ["chip8"],
+      "folder_aliases": [
+        "chip8"
+      ],
       "display_name": "CHIP-8",
       "core": "jaxe_libretro.so",
-      "extensions": [".ch8", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".ch8",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "cavestory",
-      "folder_aliases": ["cavestory"],
+      "folder_aliases": [
+        "cavestory"
+      ],
       "display_name": "Cave Story",
       "core": "nxengine_libretro.so",
-      "extensions": [".exe", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".exe",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "flashback",
-      "folder_aliases": ["flashback"],
+      "folder_aliases": [
+        "flashback"
+      ],
       "display_name": "Flashback",
       "core": "reminiscence_libretro.so",
-      "extensions": [".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".zip",
+        ".7z",
+        ".abi",
+        ".epr"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "xrick",
-      "folder_aliases": ["xrick"],
+      "folder_aliases": [
+        "xrick"
+      ],
       "display_name": "Rick Dangerous",
       "core": "xrick_libretro.so",
-      "extensions": [".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "jnb",
-      "folder_aliases": ["jnb"],
+      "folder_aliases": [
+        "jnb"
+      ],
       "display_name": "Jump 'n Bump",
       "core": "jumpnbump_libretro.so",
-      "extensions": [".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "outrun",
-      "folder_aliases": ["outrun"],
+      "folder_aliases": [
+        "outrun"
+      ],
       "display_name": "Out Run",
       "core": "cannonball_libretro.so",
-      "extensions": [".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
       "multi_file": false
     },
     {
       "id": "vapor",
-      "folder_aliases": ["vapor"],
+      "folder_aliases": [
+        "vapor"
+      ],
       "display_name": "VaporSpec",
       "core": "vaporspec_libretro.so",
-      "extensions": [".vap", ".zip", ".7z"],
-      "archive_payload_valid": [".zip", ".7z"],
+      "extensions": [
+        ".vap",
+        ".zip",
+        ".7z"
+      ],
+      "archive_payload_valid": [
+        ".zip",
+        ".7z"
+      ],
+      "multi_file": false
+    },
+    {
+      "id": "vec",
+      "folder_aliases": [
+        "vec"
+      ],
+      "display_name": "Vectrex",
+      "core": "vecx_libretro.so",
+      "extensions": [
+        ".vec"
+      ],
+      "archive_payload_valid": [
+        ".vec"
+      ],
       "multi_file": false
     }
   ]

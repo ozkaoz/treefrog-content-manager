@@ -5,7 +5,17 @@ VIDEO_EXTS = {".mp4",".mkv",".avi",".mov",".m4v",".wmv",".mpg",".mpeg",".ts",".w
 IMAGE_EXTS = {".jpg",".jpeg",".png",".bmp",".gif",".webp",".tiff",".tif",".tga",".ico"}
 EBOOK_EXTS = {".epub",".mobi",".pdf",".cbz",".fb2",".xps"}
 ARCHIVE_EXTS = {".zip",".7z",".rar"}
-BIOS_HINTS = ["scph","gba_bios.bin","o2rom.bin","disksys.rom","neogeo.zip","bios_cd","kick13.rom","kick20.rom","pcfx.rom","x86boot.img"]
+# NOTE (2026-09-01): the old BIOS_HINTS hardcoded list was REMOVED — BIOS
+# classification is the single declarative model (bios.json via the dedicated
+# BIOS tab). A general ROM scan only classifies as BIOS files that explicitly
+# live in a cubegm/bios source folder. This avoids false positives (e.g. a ROM
+# named scph-xxx.bin) and duplicating x86BOOT.img which TreeFrogUI ships.
+# Artwork folders managed by Mini Scraper: files inside are NEVER deployed.
+ARTWORK_DIRS = (".res", "imgs", "images")
+
+
+def is_artwork_path(path: pathlib.Path) -> bool:
+    return any(p.name.lower() in ARTWORK_DIRS for p in path.parents) or path.parent.name.lower() in ARTWORK_DIRS
 
 def classify(path: pathlib.Path, profile):
     ext = path.suffix.lower()
@@ -45,9 +55,10 @@ def classify(path: pathlib.Path, profile):
     if ext in VIDEO_EXTS:
         return {"kind":"video","system_id":None,"destination":"roms/videos","multi_file":False,"archive_valid":False}
     if ext in IMAGE_EXTS:
-        # .res artwork
-        if ".res" in [p.name for p in path.parents] or path.parent.name in (".res","Imgs","images","Images"):
-            return {"kind":"image","system_id":None,"destination":".res","multi_file":False,"archive_valid":False}
+        # Artwork (Mini Scraper): NEVER deploy — the old code wrote it to
+        # `.res/.res/...` at the SD ROOT (outside content roots, real bug).
+        if is_artwork_path(path):
+            return {"kind":"unknown","system_id":None,"destination":"","multi_file":False,"archive_valid":False}
         return {"kind":"image","system_id":None,"destination":"roms/images","multi_file":False,"archive_valid":False}
     if ext in EBOOK_EXTS:
         return {"kind":"ebook","system_id":None,"destination":"roms/Ebook","multi_file":False,"archive_valid":False}
@@ -86,10 +97,27 @@ def classify(path: pathlib.Path, profile):
             pass
     if ext == ".lgpt":
         return {"kind":"lgpt_project","system_id":None,"destination":lgpt_projects_dest,"multi_file":True,"archive_valid":False}
-    # BIOS by name hints
-    for pat in BIOS_HINTS:
-        if pat in name_lower:
+    # BIOS: single declarative model (bios.json). Two paths to Bios:
+    # 1. Files explicitly inside a cubegm/bios folder (user layout —
+    #    matches both "cubegm/bios/..." and ".../cubegm/bios/...").
+    # 2. Loose files whose EXACT filename matches bios.json accepted_filenames.
+    posix = str(path).lower().replace("\\", "/")
+    if "/cubegm/bios/" in posix or posix.startswith("cubegm/bios/"):
+        return {"kind":"bios","system_id":None,"destination":"cubegm/bios","multi_file":False,"archive_valid":False}
+    try:
+        from .profile import load_bios
+        bios_defs = load_bios().get("bios_definitions", [])
+        accepted = set()
+        for d in bios_defs:
+            for f in d.get("accepted_filenames", []):
+                accepted.add(f.lower())
+            for var in d.get("variants", []):
+                for f in var.get("filenames", []):
+                    accepted.add(f.lower())
+        if name_lower in accepted:
             return {"kind":"bios","system_id":None,"destination":"cubegm/bios","multi_file":False,"archive_valid":False}
+    except Exception:
+        pass
     # ROM by profile
     ext_to_system = profile["ext_to_system"]
     if ext in ext_to_system:

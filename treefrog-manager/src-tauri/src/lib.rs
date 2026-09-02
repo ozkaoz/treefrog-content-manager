@@ -1458,8 +1458,21 @@ async fn delete_roms_from_sd(
     let mut deleted = 0usize;
     let mut failed = 0usize;
     let mut errors = Vec::new();
+    // Deduplicate absolute paths (case-insensitive): the UI selection can
+    // contain BOTH a folder and its individual files — the folder walkdir
+    // already enqueued every file under it, so processing the same file again
+    // would fail with NotFound on the second pass (the exact bug where the
+    // first delete showed an error but the second worked).
+    let mut seen_paths: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut unique_files: Vec<std::path::PathBuf> = Vec::with_capacity(files_to_process.len());
+    for fp in files_to_process {
+        let key = fp.to_string_lossy().to_lowercase();
+        if seen_paths.insert(key) {
+            unique_files.push(fp);
+        }
+    }
 
-    for file_path in files_to_process {
+    for file_path in unique_files {
         let normalized = file_path
             .to_string_lossy()
             .to_lowercase()
@@ -1475,6 +1488,11 @@ async fn delete_roms_from_sd(
             Ok(_) => {
                 deleted += 1;
                 tracing::info!("Deleted: {}", file_path.display());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Already deleted earlier in this same batch (e.g. via the
+                // folder walkdir). Idempotent success — NOT an error.
+                tracing::info!("Already deleted (skipped): {}", file_path.display());
             }
             Err(e) => {
                 failed += 1;

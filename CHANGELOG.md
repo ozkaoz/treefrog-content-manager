@@ -1,5 +1,40 @@
 # Changelog
 
+## TreeFrog Content Manager — V1.0.1 (Latest, 2026-09-01)
+
+Primera release estable del **TreeFrog Content Manager** (aplicación de escritorio para gestionar contenido de SD TreeFrogUI): https://github.com/ozkaoz/treefrog-content-manager/releases/tag/v1.0.1
+
+### v1.0.1 — Fix BIOS portable + verificación en release
+
+- **Fix**: la sección BIOS aparecía **vacía** en el exe portable. Causa raíz: `bios_profile_json()` leía `bios.json` solo desde rutas de archivo y el exe portable no lleva carpeta `profiles/` → catálogo vacío. Ahora `bios.json` va **embebido en el binario** (`include_str!`, igual que los demás perfiles) con override de archivo para dev — contrato portable en Windows/Linux/macOS.
+- `--self-check` ahora **verifica el catálogo BIOS** (falla si está vacío) y el release workflow ejecuta el self-check del binario recién compilado **en cada plataforma antes de publicarlo** — un binario con BIOS roto no puede salir.
+- Download-back PASS: exe descargado del release ejecutado desde carpeta vacía → `bios catalog entries: 13`, self-check PASS, GUI smoke PASS.
+- Versión 0.1.0 → 0.1.1.
+
+### v1.0.0 — Primera release estable
+
+- **Un plan canónico**: la preview es exactamente lo que se escribe (parámetro `planEntries`; sin re-escaneos ni desviación entre preview y deploy). Music arreglado (el job de música se filtraba silenciosamente) y LGPT ya no se despliega dos veces.
+- **Seguridad de rutas**: `paths.rs` — un único validador de destinos (rechaza absolutos/UNC/drive/`..`/vacíos/ADS/reservados/ilegales; verifica contención). BIOS eliminado del camino de escritura paralelo: fluye como PlanEntry normal por planner→resolución→validación→espacio→deploy. Cero escapes de rutas.
+- **Conversión de video real**: staged temp → ffmpeg → ffprobe-validación → deploy; `convert_then_copy` nunca copia el original (bug de escaping del filtergraph ffmpeg corregido en Rust+Python).
+- **BIOS**: modelo único desde `bios.json` (catálogo, validación filename/size/SHA-256 y stock-guard derivados del perfil; listas hardcodeadas eliminadas).
+- `effective_action()` en todas partes; cálculo de espacio desde acciones efectivas (sin doble conteo); `keep_both` con renombrado anti-colisiones `_1.._N` (autoridad del backend, comando `resolve_plan`, frontend thin).
+- `sd::detect` tri-estado (accessible/writable/healthy probados, nunca inferidos); identidad SD estable = GUID de volumen + serial de Windows (sin mount path).
+- Histórico de despliegues en SQLite (migraciones; job/job_entry/deployment/fingerprint).
+- Archivos: solo ZIP (adaptador seguro con límites/symlink/traversal); 7z/RAR explícitamente `unsupported_archive`.
+- **Destinos TreeFrogUI verificados** contra tzubertowski/TreeFrogUI: Games→`roms/<SYSTEM>/`, Music→`roms/music/` (subcarpeta=playlist), Videos→`roms/videos/`, BIOS→`cubegm/bios/`, LGPT→`lgpt/samples|projects/`.
+- **UI**: botones unificados Scan/Clear/Back/Skip/Continue/Sync (arriba de Browse) en todos los paneles; **Sync to SD siempre activo** (resultado observable); search de Music solo tras escanear; search de BIOS eliminado; barra de estado SD real (`SdStatusBar`) en todos los menús, refrescada tras cada sync; status de Overview dinámico.
+- **CI/Release**: `validate.yml` verde en Windows/Linux/macOS (frontend tsc+build, cargo fmt/check/test 47, pytest 224 con ffmpeg real + fixtures de seguridad, gate de versiones, Tauri build). Release simplificado: tag → 3 ejecutables (uno por SO, con self-check) → publish Latest.
+- Tests: cargo 47/47, pytest 224/224 (fixtures de seguridad de rutas, traversal BIOS, conversión ffmpeg real, paridad de botones, deploy por pestaña).
+
+### Auditoría 2026-08-31 (previa a v1.0.0)
+
+Ver `docs/ai/AUDIT_2026-08-31_TREEFROG_MANAGER.md` y `DEC-2026-08-31-01`: P0 escapes de rutas BIOS/destinos, P1 conversión real de video / espacio efectivo / keep_both / detección SD, P2 versiones / identidad SD / SQLite / CI. Todos los hallazgos corregidos con tests de regresión.
+
+---
+
+## LGPT R36SX port (historical — preserved baseline)
+
+
 ## Update: Bacon 1.5 U2.52.7 - Fix del VU del mixer (barras vacías desde H38.7-r4)
 
 - **Estado**: quinta iteración de la pre-release Bacon 1.5 tras el cuarto
